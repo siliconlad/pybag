@@ -1,2 +1,3 @@
 # pybag
-A python library for interacting with ROS 1/2 bag files
+
+A Python library to work with bag files without ROS.

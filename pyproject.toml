@@ -1,0 +1,14 @@
+[project]
+name = "pybag"
+version = "0.1.0"
+description = "A Python library to work with bag files without ROS."
+readme = "README.md"
+authors = [
+    { name = "Angus Stewart", email = "siliconlad@protonmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
