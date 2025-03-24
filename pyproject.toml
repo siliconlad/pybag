@@ -12,3 +12,15 @@ dependencies = []
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "ipython>=8.34.0",
+    "kappe>=0.19.1",
+    "mcap>=1.2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mcap>=1.0.0",
+]

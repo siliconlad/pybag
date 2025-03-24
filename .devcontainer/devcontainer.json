@@ -1,0 +1,26 @@
+{
+    "name": "ROS 2",
+    "dockerFile": "Dockerfile",
+    "workspaceFolder": "/pybag",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/pybag,type=bind,consistency=cached",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-vscode.cpptools",
+                "twxs.cmake",
+                "ms-iot.vscode-ros",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/bin/python3",
+                "editor.formatOnSave": true,
+                "editor.rulers": [
+                    100
+                ],
+                "ros.distro": "humble"
+            }
+        }
+    }
+}
