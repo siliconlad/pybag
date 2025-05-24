@@ -9,6 +9,9 @@ from pybag.records import *  # TODO: Make better
 # GLOBAL TODOs:
 # - TODO: Add logging
 # - TODO: Add tests with mcaps
+# - TODO: Parse ros2idl messages
+# - TODO: Control seeking behaviour
+# - TODO: Improve performance by batching the reads (maybe)
 
 
 class MalformedMCAP(Exception):
@@ -68,104 +71,87 @@ class BytesReader(BaseReader):
         pass
 
 
-class McapFileReader:
-    def __init__(self, file: BaseReader):
-        """
-        Initialize the MCAP reader.
-
-        Args:
-            file: The file to read from.
-        """
-        self._file: BaseReader = file
-        self._version = self._parse_magic_bytes()
-
-    @staticmethod
-    def from_file(file_path: Path | str) -> 'McapFileReader':
-        """
-        Create a new MCAP reader from a file.
-        """
-        return McapFileReader(FileReader(file_path))
-
-    @staticmethod
-    def from_bytes(data: bytes) -> 'McapFileReader':
-        """
-        Create a new MCAP reader from a bytes object.
-        """
-        return McapFileReader(BytesReader(data))
-
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        self._file.close()
-
-
-    def peek_record(self) -> int:
+class McapRecordReader:
+    @classmethod
+    def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
-        return self._file.peek(1)[:1]
+        return file.peek(1)[:1]
 
 
-    def read_record(self) -> Iterator[tuple[int, Any]]:
+    @classmethod
+    def read_record(cls, file: BaseReader) -> Iterator[tuple[int, Any]]:
         """Read the next record in the MCAP file."""
         while True:
-            record_type = int.from_bytes(self.peek_record(), 'little')
+            record_type = int.from_bytes(cls.peek_record(file), 'little')
             print(f'Peeked at {record_type} record...')
             if record_type == 0:
                 break  # EOF
-            yield record_type, self._parse_record(record_type)
+            yield record_type, cls._parse_record(record_type, file)
 
 
-    def _parse_record(self, record_type: int) -> Any:
+    @classmethod
+    def _parse_record(cls, record_type: int, file: BaseReader) -> Any:
         """Parse the next record in the MCAP file."""
         record_name = RecordType(record_type).name.lower()
         print(f'Parsing {record_name} record...')
-        return getattr(self, f'_parse_{record_name}')()
+        return getattr(cls, f'_parse_{record_name}')(file)
 
     # MCAP Serialization Handlers
 
-    def _parse_uint8(self) -> tuple[int, int]:
-        return 1, struct.unpack('<B', self._file.read(1))[0]
+    @classmethod
+    def _parse_uint8(cls, file: BaseReader) -> tuple[int, int]:
+        return 1, struct.unpack('<B', file.read(1))[0]
 
 
-    def _parse_uint16(self) -> tuple[int, int]:
-        return 2, struct.unpack('<H', self._file.read(2))[0]
+    @classmethod
+    def _parse_uint16(cls, file: BaseReader) -> tuple[int, int]:
+        return 2, struct.unpack('<H', file.read(2))[0]
 
 
-    def _parse_uint32(self) -> tuple[int, int]:
-        return 4, struct.unpack('<I', self._file.read(4))[0]
+    @classmethod
+    def _parse_uint32(cls, file: BaseReader) -> tuple[int, int]:
+        return 4, struct.unpack('<I', file.read(4))[0]
 
 
-    def _parse_uint64(self) -> tuple[int, int]:
-        return 8, struct.unpack('<Q', self._file.read(8))[0]
+    @classmethod
+    def _parse_uint64(cls, file: BaseReader) -> tuple[int, int]:
+        return 8, struct.unpack('<Q', file.read(8))[0]
 
 
-    def _parse_string(self) -> tuple[int, str]:
-        string_length_bytes, string_length = self._parse_uint32()
-        string = self._file.read(string_length)
+    @classmethod
+    def _parse_string(cls, file: BaseReader) -> tuple[int, str]:
+        string_length_bytes, string_length = cls._parse_uint32(file)
+        string = file.read(string_length)
         return string_length_bytes + string_length, string.decode()
 
 
-    def _parse_timestamp(self) -> tuple[int, int]:
-        return self._parse_uint64()
+    @classmethod
+    def _parse_timestamp(cls, file: BaseReader) -> tuple[int, int]:
+        return cls._parse_uint64(file)
 
 
-    def _parse_bytes(self, size: int) -> tuple[int, bytes]:
-        bytes = self._file.read(size)
+    @classmethod
+    def _parse_bytes(cls, file: BaseReader, size: int) -> tuple[int, bytes]:
+        bytes = file.read(size)
         return len(bytes), bytes
 
 
-    def _parse_tuple(self, first_type: str, second_type: str) -> tuple[int, tuple]:
-        first_value_length, first_value = getattr(self, f'_parse_{first_type}')()
-        second_value_length, second_value = getattr(self, f'_parse_{second_type}')()
+    @classmethod
+    def _parse_tuple(cls, file: BaseReader, first_type: str, second_type: str) -> tuple[int, tuple]:
+        first_value_length, first_value = getattr(cls, f'_parse_{first_type}')(file)
+        second_value_length, second_value = getattr(cls, f'_parse_{second_type}')(file)
         return first_value_length + second_value_length, (first_value, second_value)
 
 
-    def _parse_map(self, key_type: str, value_type: str) -> tuple[int, dict]:
-        map_length_bytes, map_length = self._parse_uint32()
+    @classmethod
+    def _parse_map(cls, file: BaseReader, key_type: str, value_type: str) -> tuple[int, dict]:
+        map_length_bytes, map_length = cls._parse_uint32(file)
         original_length = map_length
 
         map_key_value = {}
         while map_length > 0:
-            key_length, key = getattr(self, f'_parse_{key_type}')()
-            value_length, value = getattr(self, f'_parse_{value_type}')()
+            key_length, key = getattr(cls, f'_parse_{key_type}')(file)
+            value_length, value = getattr(cls, f'_parse_{value_type}')(file)
             map_key_value[key] = value
             map_length -= key_length + value_length
 
@@ -176,14 +162,19 @@ class McapFileReader:
         return map_length_bytes + map_length, map_key_value
 
 
-    def _parse_array(self, array_type_parser: Callable[[], tuple[int, Any]]) -> tuple[int, list]:
-        array_length_bytes, array_length = self._parse_uint32()
+    @classmethod
+    def _parse_array(
+        cls,
+        file: BaseReader,
+        array_type_parser: Callable[[BaseReader], tuple[int, Any]]
+    ) -> tuple[int, list]:
+        array_length_bytes, array_length = cls._parse_uint32(file)
         original_length = array_length
         print(f'Array length: {array_length}')
 
         array = []
         while array_length > 0:
-            value_length, value = array_type_parser()
+            value_length, value = array_type_parser(file)
             array.append(value)
             array_length -= value_length
 
@@ -195,111 +186,105 @@ class McapFileReader:
 
     # MCAP Record Handlers
 
-    def _parse_magic_bytes(self) -> str:
-        """Parse the magic bytes at the begining/end of the MCAP file."""
-        magic = self._file.read(8)
-        if magic != b'\x89MCAP\x30\r\n':  # TODO: Support multiple versions
-            raise MalformedMCAP(f'Invalid magic bytes: {str(magic)}')
-        return chr(magic[5])  # Return the version
-
-
-    def _parse_header(self) -> HeaderRecord:
+    @classmethod
+    def _parse_header(cls, file: BaseReader) -> HeaderRecord:
         """Parse the header record of an MCAP file."""
-        if (record_type := self._file.read(1)) != b'\x01':
+        if (record_type := file.read(1)) != b'\x01':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
-        _, profile = self._parse_string()
-        _, library = self._parse_string()
+        _ = cls._parse_uint64(file)
+        _, profile = cls._parse_string(file)
+        _, library = cls._parse_string(file)
 
         return HeaderRecord(profile, library)
 
 
-    def _parse_footer(self) -> FooterRecord:
+    @classmethod
+    def _parse_footer(cls, file: BaseReader) -> FooterRecord:
         """Parse the footer record of an MCAP file."""
-        if (record_type := self._file.read(1)) != b'\x02':
+        if (record_type := file.read(1)) != b'\x02':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         # Footer record length is fixed to 20 bytes
-        _, record_length = self._parse_uint64()
+        _, record_length = cls._parse_uint64(file)
         if record_length != 20:
             raise MalformedMCAP(f'Unexpected footer record length ({record_length} bytes).')
 
-        _, summary_start = self._parse_uint64()
-        _, summary_offset_start = self._parse_uint64()
-        _, summary_crc = self._parse_uint32()
+        _, summary_start = cls._parse_uint64(file)
+        _, summary_offset_start = cls._parse_uint64(file)
+        _, summary_crc = cls._parse_uint32(file)
 
         return FooterRecord(summary_start, summary_offset_start, summary_crc)
 
 
-    def _parse_schema(self) -> SchemaRecord | None:
-        if (record_type := self._file.read(1)) != b'\x03':
+    @classmethod
+    def _parse_schema(cls, file: BaseReader) -> SchemaRecord | None:
+        if (record_type := file.read(1)) != b'\x03':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _, record_length = self._parse_uint64()
+        _, record_length = cls._parse_uint64(file)
 
-        _, id = self._parse_uint16()
+        _, id = cls._parse_uint16(file)
         if id == 0:  # Invalid and should be ignored
             return None
 
-        _, name = self._parse_string()
-        _, encoding = self._parse_string()
-        _, data_length = self._parse_uint32()
-        _, data = self._parse_bytes(data_length)
+        _, name = cls._parse_string(file)
+        _, encoding = cls._parse_string(file)
+        _, data_length = cls._parse_uint32(file)
+        _, data = cls._parse_bytes(file, data_length)
 
         return SchemaRecord(id, name, encoding, data)
 
 
-    def _parse_channel(self) -> ChannelRecord:
-        if (record_type := self._file.read(1)) != b'\x04':
+    @classmethod
+    def _parse_channel(cls, file: BaseReader) -> ChannelRecord:
+        if (record_type := file.read(1)) != b'\x04':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _, record_length = self._parse_uint64()
+        _, record_length = cls._parse_uint64(file)
 
-        _, id = self._parse_uint16()
-        _, channel_id = self._parse_uint16()
-        _, topic = self._parse_string()
-        _, message_encoding = self._parse_string()
-        _, metadata = self._parse_map("string", "string")
+        _, id = cls._parse_uint16(file)
+        _, channel_id = cls._parse_uint16(file)
+        _, topic = cls._parse_string(file)
+        _, message_encoding = cls._parse_string(file)
+        _, metadata = cls._parse_map(file, "string", "string")
 
         return ChannelRecord(id, channel_id, topic, message_encoding, metadata)
 
 
-    def _parse_message(self) -> MessageRecord:
-        if (record_type := self._file.read(1)) != b'\x05':
+    @classmethod
+    def _parse_message(cls, file: BaseReader) -> MessageRecord:
+        if (record_type := file.read(1)) != b'\x05':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _, record_length = self._parse_uint64()
+        _, record_length = cls._parse_uint64(file)
 
-        _, channel_id = self._parse_uint16()
-        _, sequence = self._parse_uint32()
-        _, log_time = self._parse_timestamp()
-        _, publish_time = self._parse_timestamp()
+        _, channel_id = cls._parse_uint16(file)
+        _, sequence = cls._parse_uint32(file)
+        _, log_time = cls._parse_timestamp(file)
+        _, publish_time = cls._parse_timestamp(file)
         # Other fields: 2 + 4 + 8 + 8 = 22 bytes
-        _, data = self._parse_bytes(record_length - 22)
+        _, data = cls._parse_bytes(file, record_length - 22)
 
         return MessageRecord(channel_id, sequence, log_time, publish_time, data)
 
 
-    def _parse_chunk(self) -> ChunkRecord:
-        if (record_type := self._file.read(1)) != b'\x06':
+    @classmethod
+    def _parse_chunk(cls, file: BaseReader) -> ChunkRecord:
+        if (record_type := file.read(1)) != b'\x06':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, message_start_time = self._parse_timestamp()
-        _, message_end_time = self._parse_timestamp()
-        _, uncompressed_size = self._parse_uint64()
-        _, uncompressed_crc = self._parse_uint32()
-        _, compression = self._parse_string()
+        _, message_start_time = cls._parse_timestamp(file)
+        _, message_end_time = cls._parse_timestamp(file)
+        _, uncompressed_size = cls._parse_uint64(file)
+        _, uncompressed_crc = cls._parse_uint32(file)
+        _, compression = cls._parse_string(file)
         # TODO: Parse chunks records based on compression algorithm
-        _, records_length = self._parse_uint64()
-        _, records = self._parse_bytes(records_length)
+        _, records_length = cls._parse_uint64(file)
+        _, records = cls._parse_bytes(file, records_length)
 
         return ChunkRecord(
             message_start_time,
@@ -311,36 +296,36 @@ class McapFileReader:
         )
 
 
-    def _parse_message_index(self) -> MessageIndexRecord:
-        if (record_type := self._file.read(1)) != b'\x07':
+    @classmethod
+    def _parse_message_index(cls, file: BaseReader) -> MessageIndexRecord:
+        if (record_type := file.read(1)) != b'\x07':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _, message_index_length = self._parse_uint64()
+        _, message_index_length = cls._parse_uint64(file)
         print(f'Message index length: {message_index_length}')
 
-        _, channel_id = self._parse_uint16()
-        _, records = self._parse_array(lambda: self._parse_tuple("timestamp", "uint64"))
+        _, channel_id = cls._parse_uint16(file)
+        _, records = cls._parse_array(lambda: cls._parse_tuple(file, "timestamp", "uint64"))
 
         return MessageIndexRecord(channel_id, records)
 
 
-    def _parse_chunk_index(self) -> ChunkIndexRecord:
-        if (record_type := self._file.read(1)) != b'\x08':
+    @classmethod
+    def _parse_chunk_index(cls, file: BaseReader) -> ChunkIndexRecord:
+        if (record_type := file.read(1)) != b'\x08':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, message_start_time = self._parse_timestamp()
-        _, message_end_time = self._parse_timestamp()
-        _, chunk_start_offset = self._parse_uint64()
-        _, chunk_length = self._parse_uint64()
-        _, message_index_offsets = self._parse_map("uint16", "uint64")
-        _, message_index_length = self._parse_uint64()
-        _, compression = self._parse_string()
-        _, compressed_size = self._parse_uint64()
-        _, uncompressed_size = self._parse_uint64()
+        _, message_start_time = cls._parse_timestamp(file)
+        _, message_end_time = cls._parse_timestamp(file)
+        _, chunk_start_offset = cls._parse_uint64(file)
+        _, chunk_length = cls._parse_uint64(file)
+        _, message_index_offsets = cls._parse_map("uint16", "uint64")
+        _, message_index_length = cls._parse_uint64(file)
+        _, compression = cls._parse_string(file)
+        _, compressed_size = cls._parse_uint64(file)
+        _, uncompressed_size = cls._parse_uint64(file)
 
         return ChunkIndexRecord(
             message_start_time,
@@ -355,63 +340,63 @@ class McapFileReader:
         )
 
 
-    def _parse_attachment(self) -> AttachmentRecord:
-        if (record_type := self._file.read(1)) != b'\x09':
+    @classmethod
+    def _parse_attachment(cls, file: BaseReader) -> AttachmentRecord:
+        if (record_type := file.read(1)) != b'\x09':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, log_time = self._parse_timestamp()
-        _, create_time = self._parse_timestamp()
-        _, name = self._parse_string()
-        _, media_type = self._parse_string()
-        _, data_bytes_length = self._parse_uint64()
-        _, data_bytes = self._parse_bytes(data_bytes_length)
-        _, crc = self._parse_uint32()
+        _, log_time = cls._parse_timestamp(file)
+        _, create_time = cls._parse_timestamp(file)
+        _, name = cls._parse_string(file)
+        _, media_type = cls._parse_string(file)
+        _, data_bytes_length = cls._parse_uint64(file)
+        _, data_bytes = cls._parse_bytes(file, data_bytes_length)
+        _, crc = cls._parse_uint32(file)
 
         return AttachmentRecord(log_time, create_time, name, media_type, data_bytes, crc)
 
 
-    def _parse_metadata(self) -> MetadataRecord:
-        if (record_type := self._file.read(1)) != b'\x0C':
+    @classmethod
+    def _parse_metadata(cls, file: BaseReader) -> MetadataRecord:
+        if (record_type := file.read(1)) != b'\x0C':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, name = self._parse_string()
+        _, name = cls._parse_string(file)
         print(f'Parsing metadata for {name}...')
-        _, metadata = self._parse_map("string", "string")
+        _, metadata = cls._parse_map(file, "string", "string")
 
         return MetadataRecord(name, metadata)
 
 
-    def _parse_data_end(self) -> DataEndRecord:
-        if (record_type := self._file.read(1)) != b'\x0f':
+    @classmethod
+    def _parse_data_end(cls, file: BaseReader) -> DataEndRecord:
+        if (record_type := file.read(1)) != b'\x0f':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        data_section_crc = self._parse_uint32()
+        data_section_crc = cls._parse_uint32(file)
         return DataEndRecord(data_section_crc)
 
 
-    def _parse_attachment_index(self) -> AttachmentIndexRecord:
-        if (record_type := self._file.read(1)) != b'\x0A':
+    @classmethod
+    def _parse_attachment_index(cls, file: BaseReader) -> AttachmentIndexRecord:
+        if (record_type := file.read(1)) != b'\x0A':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, offset = self._parse_uint64()
-        _, length = self._parse_uint64()
-        _, log_time = self._parse_timestamp()
-        _, create_time = self._parse_timestamp()
-        _, data_size = self._parse_uint64()
-        _, name = self._parse_string()
-        _, media_type = self._parse_string()
+        _, offset = cls._parse_uint64(file)
+        _, length = cls._parse_uint64(file)
+        _, log_time = cls._parse_timestamp(file)
+        _, create_time = cls._parse_timestamp(file)
+        _, data_size = cls._parse_uint64(file)
+        _, name = cls._parse_string(file)
+        _, media_type = cls._parse_string(file)
 
         return AttachmentIndexRecord(
             offset,
@@ -423,36 +408,37 @@ class McapFileReader:
             media_type
         )
 
-    def _parse_metadata_index(self) -> MetadataIndexRecord:
-        if (record_type := self._file.read(1)) != b'\x0D':
+
+    @classmethod
+    def _parse_metadata_index(cls, file: BaseReader) -> MetadataIndexRecord:
+        if (record_type := file.read(1)) != b'\x0D':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, offset = self._parse_uint64()
-        _, length = self._parse_uint64()
-        _, name = self._parse_string()
+        _, offset = cls._parse_uint64(file)
+        _, length = cls._parse_uint64(file)
+        _, name = cls._parse_string(file)
 
         return MetadataIndexRecord(offset, length, name)
 
 
-    def _parse_statistics(self) -> StatisticsRecord:
-        if (record_type := self._file.read(1)) != b'\x0B':
+    @classmethod
+    def _parse_statistics(cls, file: BaseReader) -> StatisticsRecord:
+        if (record_type := file.read(1)) != b'\x0B':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, message_count = self._parse_uint64()
-        _, schema_count = self._parse_uint16()
-        _, channel_count = self._parse_uint32()
-        _, attachment_count = self._parse_uint32()
-        _, metadata_count = self._parse_uint32()
-        _, chunk_count = self._parse_uint32()
-        _, message_start_time = self._parse_timestamp()
-        _, message_end_time = self._parse_timestamp()
-        _, channel_message_counts = self._parse_map("uint16", "uint64")
+        _, message_count = cls._parse_uint64(file)
+        _, schema_count = cls._parse_uint16(file)
+        _, channel_count = cls._parse_uint32(file)
+        _, attachment_count = cls._parse_uint32(file)
+        _, metadata_count = cls._parse_uint32(file)
+        _, chunk_count = cls._parse_uint32(file)
+        _, message_start_time = cls._parse_timestamp(file)
+        _, message_end_time = cls._parse_timestamp(file)
+        _, channel_message_counts = cls._parse_map("uint16", "uint64")
 
         return StatisticsRecord(
             message_count,
@@ -467,18 +453,64 @@ class McapFileReader:
         )
 
 
-    def _parse_summary_offset(self) -> SummaryOffsetRecord:
-        if (record_type := self._file.read(1)) != b'\x0E':
+    @classmethod
+    def _parse_summary_offset(cls, file: BaseReader) -> SummaryOffsetRecord:
+        if (record_type := file.read(1)) != b'\x0E':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = self._parse_uint64()
+        _ = cls._parse_uint64(file)
 
-        _, group_opcode = self._parse_uint8()
-        _, group_start = self._parse_uint64()
-        _, group_length = self._parse_uint64()
+        _, group_opcode = cls._parse_uint8(file)
+        _, group_start = cls._parse_uint64(file)
+        _, group_length = cls._parse_uint64(file)
 
         return SummaryOffsetRecord(group_opcode, group_start, group_length)
+
+
+class McapFileReader:
+    def __init__(self, file: BaseReader):
+        """
+        Initialize the MCAP reader.
+
+        Args:
+            file: The file to read from.
+        """
+        self._file: BaseReader = file
+        self._version = self._parse_magic_bytes()
+
+
+    def read_record(self) -> Iterator[tuple[int, Any]]:
+        """Read the next record in the MCAP file."""
+        return McapRecordReader.read_record(self._file)
+
+
+    def _parse_magic_bytes(self) -> str:
+        """Parse the magic bytes at the begining/end of the MCAP file."""
+        magic = self._file.read(8)
+        if magic != b'\x89MCAP\x30\r\n':  # TODO: Support multiple versions
+            raise MalformedMCAP(f'Invalid magic bytes: {str(magic)}')
+        return chr(magic[5])  # Return the version
+
+
+    @staticmethod
+    def from_file(file_path: Path | str) -> 'McapFileReader':
+        """
+        Create a new MCAP reader from a file.
+        """
+        return McapFileReader(FileReader(file_path))
+
+
+    @staticmethod
+    def from_bytes(data: bytes) -> 'McapFileReader':
+        """
+        Create a new MCAP reader from a bytes object.
+        """
+        return McapFileReader(BytesReader(data))
+
+
+    def close(self) -> None:
+        """Close the MCAP file and release all resources."""
+        self._file.close()
 
    # Schema Management
 
