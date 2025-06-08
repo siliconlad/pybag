@@ -472,6 +472,7 @@ dev = [
     { name = "ipython", version = "9.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "kappe" },
     { name = "mcap" },
+    { name = "rosbags" },
 ]
 
 [package.metadata]
@@ -483,6 +484,7 @@ dev = [
     { name = "ipython", specifier = ">=8.34.0" },
     { name = "kappe", specifier = ">=0.19.1" },
     { name = "mcap", specifier = ">=1.2.2" },
+    { name = "rosbags", specifier = ">=0.10.10" },
 ]
 
 [[package]]
@@ -648,6 +650,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fe/0f/25911a9f080464c59fab9027482f822b86bf0608957a5fcc6eaac85aa515/PyYAML-6.0.2-cp313-cp313-musllinux_1_1_x86_64.whl", hash = "sha256:68ccc6023a3400877818152ad9a1033e3db8625d899c72eacb5a668902e4d652", size = 751597 },
     { url = "https://files.pythonhosted.org/packages/14/0d/e2c3b43bbce3cf6bd97c840b46088a3031085179e596d4929729d8d68270/PyYAML-6.0.2-cp313-cp313-win32.whl", hash = "sha256:bc2fa7c6b47d6bc618dd7fb02ef6fdedb1090ec036abab80d4681424b84c1183", size = 140527 },
     { url = "https://files.pythonhosted.org/packages/fa/de/02b54f42487e3d3c6efb3f89428677074ca7bf43aae402517bc7cca949f3/PyYAML-6.0.2-cp313-cp313-win_amd64.whl", hash = "sha256:8388ee1976c416731879ac16da0aff3f63b286ffdd57cdeb95f3f2e085687563", size = 156446 },
+]
+
+[[package]]
+name = "rosbags"
+version = "0.10.10"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lz4" },
+    { name = "numpy" },
+    { name = "ruamel-yaml" },
+    { name = "typing-extensions" },
+    { name = "zstandard" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1b/c7/32f56fbe61a64d8fde9538c9040e72950f57c2c68fec1903fbbb0aaf3420/rosbags-0.10.10.tar.gz", hash = "sha256:e5e99d2ad5650972c9cf0ab248e676f643859788c5bd273c5b24b35562783c12", size = 237638 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/92/29/532e7bc2d96a8e499e875dabed3e4b163b2baf585f64c30fa7806f814107/rosbags-0.10.10-py3-none-any.whl", hash = "sha256:77617e5ec3d451c9e6e14637be8f9a5e19bf114ef1427d247a92123132103b4c", size = 139239 },
 ]
 
 [[package]]
