@@ -1,5 +1,5 @@
 import struct
-from pybag.mcap_reader import BytesReader
+from pybag.io.raw_reader import BytesReader
 
 
 class CdrParser:

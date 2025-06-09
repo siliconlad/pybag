@@ -56,7 +56,7 @@ class FileReader(BaseReader):
         return self._file.seek(offset, FilePosition.START)
 
     def seek_from_end(self, offset: int) -> int:
-        return self._file.seek(offset, FilePosition.END)
+        return self._file.seek(-offset, FilePosition.END)
 
     def tell(self) -> int:
         return self._file.tell()

@@ -1,7 +1,31 @@
 import struct
+from enum import IntEnum
 from typing import Iterator, Any, Callable
-from pybag.mcap.raw_reader import BaseReader
+from pybag.io.raw_reader import BaseReader
 from pybag.mcap.records import *  # TODO: Make better
+
+
+# Number of bytes of fixed-sized records
+MAGIC_BYTES_SIZE = 8
+FOOTER_SIZE = 1 + 8 + 20
+
+
+class McapRecordType(IntEnum):
+    HEADER = 1
+    FOOTER = 2
+    SCHEMA = 3
+    CHANNEL = 4
+    MESSAGE = 5
+    CHUNK = 6
+    MESSAGE_INDEX = 7
+    CHUNK_INDEX = 8
+    ATTACHMENT = 9
+    ATTACHMENT_INDEX = 10
+    STATISTICS = 11
+    METADATA = 12
+    METADATA_INDEX = 13
+    SUMMARY_OFFSET = 14
+    DATA_END = 15
 
 
 class MalformedMCAP(Exception):
@@ -14,14 +38,14 @@ class McapRecordReader:
     @classmethod
     def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
-        return file.peek(1)[:1]
+        return int.from_bytes(file.peek(1)[:1], 'little')
 
 
     @classmethod
     def read_record(cls, file: BaseReader) -> Iterator[tuple[int, Any]]:
         """Read the next record in the MCAP file."""
         while True:
-            record_type = int.from_bytes(cls.peek_record(file), 'little')
+            record_type = cls.peek_record(file)
             print(f'Peeked at {record_type} record...')
             if record_type == 0:
                 break  # EOF
@@ -42,7 +66,7 @@ class McapRecordReader:
         """Parse the next record in the MCAP file."""
         record_name = RecordType(record_type).name.lower()
         print(f'Parsing {record_name} record...')
-        return getattr(cls, f'_parse_{record_name}')(file)
+        return getattr(cls, f'parse_{record_name}')(file)
 
     # MCAP Serialization Handlers
 
@@ -135,7 +159,7 @@ class McapRecordReader:
     # MCAP Record Handlers
 
     @classmethod
-    def _parse_header(cls, file: BaseReader) -> HeaderRecord:
+    def parse_header(cls, file: BaseReader) -> HeaderRecord:
         """Parse the header record of an MCAP file."""
         if (record_type := file.read(1)) != b'\x01':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
@@ -149,7 +173,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_footer(cls, file: BaseReader) -> FooterRecord:
+    def parse_footer(cls, file: BaseReader) -> FooterRecord:
         """Parse the footer record of an MCAP file."""
         if (record_type := file.read(1)) != b'\x02':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
@@ -167,7 +191,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_schema(cls, file: BaseReader) -> SchemaRecord | None:
+    def parse_schema(cls, file: BaseReader) -> SchemaRecord | None:
         if (record_type := file.read(1)) != b'\x03':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -186,7 +210,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_channel(cls, file: BaseReader) -> ChannelRecord:
+    def parse_channel(cls, file: BaseReader) -> ChannelRecord:
         if (record_type := file.read(1)) != b'\x04':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -202,7 +226,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_message(cls, file: BaseReader) -> MessageRecord:
+    def parse_message(cls, file: BaseReader) -> MessageRecord:
         if (record_type := file.read(1)) != b'\x05':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -219,7 +243,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_chunk(cls, file: BaseReader) -> ChunkRecord:
+    def parse_chunk(cls, file: BaseReader) -> ChunkRecord:
         if (record_type := file.read(1)) != b'\x06':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -245,7 +269,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_message_index(cls, file: BaseReader) -> MessageIndexRecord:
+    def parse_message_index(cls, file: BaseReader) -> MessageIndexRecord:
         if (record_type := file.read(1)) != b'\x07':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -259,7 +283,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_chunk_index(cls, file: BaseReader) -> ChunkIndexRecord:
+    def parse_chunk_index(cls, file: BaseReader) -> ChunkIndexRecord:
         if (record_type := file.read(1)) != b'\x08':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -289,7 +313,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_attachment(cls, file: BaseReader) -> AttachmentRecord:
+    def parse_attachment(cls, file: BaseReader) -> AttachmentRecord:
         if (record_type := file.read(1)) != b'\x09':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -307,7 +331,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_metadata(cls, file: BaseReader) -> MetadataRecord:
+    def parse_metadata(cls, file: BaseReader) -> MetadataRecord:
         if (record_type := file.read(1)) != b'\x0C':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -321,7 +345,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_data_end(cls, file: BaseReader) -> DataEndRecord:
+    def parse_data_end(cls, file: BaseReader) -> DataEndRecord:
         if (record_type := file.read(1)) != b'\x0f':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -332,7 +356,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_attachment_index(cls, file: BaseReader) -> AttachmentIndexRecord:
+    def parse_attachment_index(cls, file: BaseReader) -> AttachmentIndexRecord:
         if (record_type := file.read(1)) != b'\x0A':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -358,7 +382,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_metadata_index(cls, file: BaseReader) -> MetadataIndexRecord:
+    def parse_metadata_index(cls, file: BaseReader) -> MetadataIndexRecord:
         if (record_type := file.read(1)) != b'\x0D':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -372,7 +396,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_statistics(cls, file: BaseReader) -> StatisticsRecord:
+    def parse_statistics(cls, file: BaseReader) -> StatisticsRecord:
         if (record_type := file.read(1)) != b'\x0B':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
@@ -386,7 +410,7 @@ class McapRecordReader:
         _, chunk_count = cls._parse_uint32(file)
         _, message_start_time = cls._parse_timestamp(file)
         _, message_end_time = cls._parse_timestamp(file)
-        _, channel_message_counts = cls._parse_map("uint16", "uint64")
+        _, channel_message_counts = cls._parse_map(file, 'uint16', 'uint64')
 
         return StatisticsRecord(
             message_count,
@@ -402,7 +426,7 @@ class McapRecordReader:
 
 
     @classmethod
-    def _parse_summary_offset(cls, file: BaseReader) -> SummaryOffsetRecord:
+    def parse_summary_offset(cls, file: BaseReader) -> SummaryOffsetRecord:
         if (record_type := file.read(1)) != b'\x0E':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
