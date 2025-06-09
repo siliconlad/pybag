@@ -1,5 +1,13 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from enum import IntEnum
+
+
+class FilePosition(IntEnum):
+    START = 0    # Start of the file
+    CURRENT = 1  # Current file position
+    END = 2      # End of the file
+
 
 class BaseReader(ABC):
     @abstractmethod
@@ -10,6 +18,21 @@ class BaseReader(ABC):
     @abstractmethod
     def read(self, size: int | None = None) -> bytes:
         """Read the next bytes in the reader."""
+        ...
+
+    @abstractmethod
+    def seek_from_start(self, offset: int) -> int:
+        """Seek from the start of the reader."""
+        ...
+
+    @abstractmethod
+    def seek_from_end(self, offset: int) -> int:
+        """Seek from the end of the reader."""
+        ...
+
+    @abstractmethod
+    def tell(self) -> int:
+        """Get the current position in the reader."""
         ...
 
     @abstractmethod
@@ -29,6 +52,15 @@ class FileReader(BaseReader):
     def read(self, size: int | None = None) -> bytes:
         return self._file.read(size)
 
+    def seek_from_start(self, offset: int) -> int:
+        return self._file.seek(offset, FilePosition.START)
+
+    def seek_from_end(self, offset: int) -> int:
+        return self._file.seek(offset, FilePosition.END)
+
+    def tell(self) -> int:
+        return self._file.tell()
+
     def close(self) -> None:
         self._file.close()
 
@@ -47,6 +79,17 @@ class BytesReader(BaseReader):
         result = self._data[self._position:self._position + size]
         self._position += size
         return result
+
+    def seek_from_start(self, offset: int) -> int:
+        self._position = offset
+        return self._position
+
+    def seek_from_end(self, offset: int) -> int:
+        self._position = len(self._data) - offset
+        return self._position
+
+    def tell(self) -> int:
+        return self._position
 
     def align(self, size: int) -> 'BytesReader':
         if self._position % size > 0:
