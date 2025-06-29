@@ -1,18 +1,18 @@
-
 from abc import ABC, abstractmethod
 from pathlib import Path
+
 
 class BaseWriter(ABC):
     """Abstract base class for binary writers."""
 
     @abstractmethod
     def write(self, data: bytes) -> int:
-        """Write bytes to the writer."""
+        """Write bytes."""
         ...
 
     @abstractmethod
     def close(self) -> None:
-        """Close the writer and release all resources."""
+        """Close the writer."""
         ...
 
 
@@ -27,9 +27,7 @@ class FileWriter(BaseWriter):
         return self._file.write(data)
 
     def close(self) -> None:
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+        self._file.close()
 
 
 class BytesWriter(BaseWriter):
@@ -43,20 +41,16 @@ class BytesWriter(BaseWriter):
         return len(data)
 
     def align(self, size: int) -> None:
-        """Pad the buffer with zeros so the next write is aligned to ``size`` bytes."""
-        padding = (-len(self._buffer)) % size
-        if padding:
+        current_length = len(self._buffer)
+        if current_length % size > 0:
+            padding = size - (current_length % size)
             self._buffer.extend(b"\x00" * padding)
 
     def size(self) -> int:
-        """Return the total number of bytes written."""
         return len(self._buffer)
 
     def as_bytes(self) -> bytes:
-        """Return the written bytes and clear the buffer."""
-        data = bytes(self._buffer)
-        self._buffer.clear()
-        return data
+        return bytes(self._buffer)
 
     def close(self) -> None:
         self._buffer.clear()
