@@ -462,8 +462,11 @@ version = "0.1.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
-dev = [
-    { name = "mcap" },
+lz4 = [
+    { name = "lz4" },
+]
+zstd = [
+    { name = "zstandard" },
 ]
 
 [package.dev-dependencies]
@@ -476,8 +479,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mcap", marker = "extra == 'dev'", specifier = ">=1.0.0" }]
-provides-extras = ["dev"]
+requires-dist = [
+    { name = "lz4", marker = "extra == 'lz4'", specifier = ">=4.4.3" },
+    { name = "zstandard", marker = "extra == 'zstd'", specifier = ">=0.23.0" },
+]
+provides-extras = ["zstd", "lz4"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -1,9 +1,11 @@
 import struct
+import logging
 from enum import IntEnum
 from typing import Iterator, Any, Callable
 from pybag.io.raw_reader import BaseReader
 from pybag.mcap.records import *  # TODO: Make better
 
+logger = logging.getLogger(__name__)
 
 # Number of bytes of fixed-sized records
 MAGIC_BYTES_SIZE = 8
@@ -46,7 +48,7 @@ class McapRecordReader:
         """Read the next record in the MCAP file."""
         while True:
             record_type = cls.peek_record(file)
-            print(f'Peeked at {record_type} record...')
+            logger.debug(f'Peeked at {record_type} record...')
             if record_type == 0:
                 break  # EOF
             yield record_type, cls._parse_record(record_type, file)
@@ -65,7 +67,7 @@ class McapRecordReader:
     def _parse_record(cls, record_type: int, file: BaseReader) -> Any:
         """Parse the next record in the MCAP file."""
         record_name = RecordType(record_type).name.lower()
-        print(f'Parsing {record_name} record...')
+        logger.debug(f'Parsing {record_name} record...')
         return getattr(cls, f'parse_{record_name}')(file)
 
     # MCAP Serialization Handlers
@@ -142,7 +144,7 @@ class McapRecordReader:
     ) -> tuple[int, list]:
         array_length_bytes, array_length = cls._parse_uint32(file)
         original_length = array_length
-        print(f'Array length: {array_length}')
+        logger.debug(f'Array length: {array_length}')
 
         array = []
         while array_length > 0:
@@ -254,7 +256,6 @@ class McapRecordReader:
         _, uncompressed_size = cls._parse_uint64(file)
         _, uncompressed_crc = cls._parse_uint32(file)
         _, compression = cls._parse_string(file)
-        # TODO: Parse chunks records based on compression algorithm
         _, records_length = cls._parse_uint64(file)
         _, records = cls._parse_bytes(file, records_length)
 
@@ -274,10 +275,10 @@ class McapRecordReader:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, message_index_length = cls._parse_uint64(file)
-        print(f'Message index length: {message_index_length}')
+        logger.debug(f'Message index length: {message_index_length}')
 
         _, channel_id = cls._parse_uint16(file)
-        _, records = cls._parse_array(lambda: cls._parse_tuple(file, "timestamp", "uint64"))
+        _, records = cls._parse_array(file, lambda file: cls._parse_tuple(file, "timestamp", "uint64"))
 
         return MessageIndexRecord(channel_id, records)
 
@@ -293,7 +294,7 @@ class McapRecordReader:
         _, message_end_time = cls._parse_timestamp(file)
         _, chunk_start_offset = cls._parse_uint64(file)
         _, chunk_length = cls._parse_uint64(file)
-        _, message_index_offsets = cls._parse_map("uint16", "uint64")
+        _, message_index_offsets = cls._parse_map(file, "uint16", "uint64")
         _, message_index_length = cls._parse_uint64(file)
         _, compression = cls._parse_string(file)
         _, compressed_size = cls._parse_uint64(file)
@@ -338,7 +339,7 @@ class McapRecordReader:
         _ = cls._parse_uint64(file)
 
         _, name = cls._parse_string(file)
-        print(f'Parsing metadata for {name}...')
+        logger.debug(f'Parsing metadata for {name}...')
         _, metadata = cls._parse_map(file, "string", "string")
 
         return MetadataRecord(name, metadata)

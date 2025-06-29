@@ -7,7 +7,14 @@ authors = [
     { name = "Angus Stewart", email = "siliconlad@protonmail.com" }
 ]
 requires-python = ">=3.10"
-dependencies = []
+
+[project.optional-dependencies]
+zstd = [
+    "zstandard>=0.23.0",
+]
+lz4 = [
+    "lz4>=4.4.3",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -19,9 +26,4 @@ dev = [
     "kappe>=0.19.1",
     "mcap>=1.2.2",
     "rosbags>=0.10.10",
-]
-
-[project.optional-dependencies]
-dev = [
-    "mcap>=1.0.0",
 ]
