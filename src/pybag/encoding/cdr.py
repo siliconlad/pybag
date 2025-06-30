@@ -22,6 +22,8 @@ class CdrParser:
     def parse(self, type_str: str) -> Any:
         return getattr(self, type_str)()
 
+    # Primitive parsers -------------------------------------------------
+
     def bool(self) -> bool:
         value = struct.unpack('?', self._data.align(1).read(1))[0]
         return value
@@ -104,6 +106,8 @@ class CdrParser:
             return ''
         return self._data.read(length).decode()[:-1]
 
+    # Container parsers --------------------------------------------------
+
     def array(self, type: str, length: int) -> list:
         return [getattr(self, f'{type}')() for _ in range(length)]
 
@@ -118,13 +122,9 @@ class CdrEncoder:
     def __init__(self, *, little_endian: bool = True) -> None:
         """Create a new encoder.
 
-        Parameters
-        ----------
-        little_endian:
-            Whether the resulting CDR stream should be little endian.  ``True``
-            by default to match ROS 2 behaviour.
+        Args:
+            little_endian: Whether the resulting CDR stream should be little endian.
         """
-
         self._is_little_endian = little_endian
 
         # Writer used for the payload after the 4 byte encapsulation header.
@@ -135,15 +135,14 @@ class CdrEncoder:
         endian_flag = 1 if self._is_little_endian else 0
         self._header = bytes([0x00, endian_flag, 0x00, 0x00])
 
-    def parse(self, type_str: str, value: Any) -> None:  # pragma: no cover - thin wrapper
-        """Encode ``value`` based on ``type_str``.
-
-        This mirrors :meth:`CdrParser.parse` for convenience so callers can
-        dynamically choose the encoding function in the same way as the
-        parser does when decoding.
-        """
-
+    def encode(self, type_str: str, value: Any) -> None:
+        """Encode ``value`` based on ``type_str``."""
         getattr(self, type_str)(value)
+
+    def save(self) -> bytes:
+        """Return the encoded byte stream."""
+
+        return self._header + self._payload.as_bytes()
 
     # Primitive encoders -------------------------------------------------
 
@@ -217,13 +216,6 @@ class CdrEncoder:
         self.uint32(len(values))
         for v in values:
             getattr(self, type)(v)
-
-    # Finalisation -------------------------------------------------------
-
-    def save(self) -> bytes:
-        """Return the encoded byte stream."""
-
-        return self._header + self._payload.as_bytes()
 
 
 if __name__ == '__main__':
