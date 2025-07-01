@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 # Number of bytes of fixed-sized records
 MAGIC_BYTES_SIZE = 8
 FOOTER_SIZE = 1 + 8 + 20
+# Record type used to indicate end-of-file when peeking records
+EOF_RECORD_TYPE = 0
 
 
 class McapRecordType(IntEnum):

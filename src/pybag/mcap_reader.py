@@ -18,7 +18,13 @@ from pybag.mcap.records import (
 from pybag.schema.ros2msg import parse_ros2msg, Ros2MsgFieldType
 from pybag.encoding.cdr import CdrParser
 from pybag.io.raw_reader import BaseReader, FileReader, BytesReader
-from pybag.mcap.record_reader import McapRecordReader, MAGIC_BYTES_SIZE, FOOTER_SIZE, McapRecordType
+from pybag.mcap.record_reader import (
+    McapRecordReader,
+    MAGIC_BYTES_SIZE,
+    FOOTER_SIZE,
+    McapRecordType,
+    EOF_RECORD_TYPE,
+)
 
 # GLOBAL TODOs:
 # - TODO: Add tests with mcaps
@@ -454,7 +460,26 @@ class McapFileSequentialReader:
         """
         self._file = file
         self._version = McapRecordReader.read_magic_bytes(self._file)
-        logger.debug(f'MCAP version: {self._version}')
+        logger.debug(f"MCAP version: {self._version}")
+
+        # Warn users that the sequential reader can be very slow
+        logger.warning(
+            "Using SequentialReader, operations will be extremely slow due to "
+            "lack of a summary index"
+        )
+
+        # Read the footer for statistics and boundary information
+        self._file.seek_from_end(MAGIC_BYTES_SIZE)
+        mcap_version = McapRecordReader.read_magic_bytes(self._file)
+        assert self._version == mcap_version
+
+        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+        self._footer = McapRecordReader.parse_footer(self._file)
+
+        # Caches for expensive operations
+        self._schemas_cache: dict[int, SchemaRecord] | None = None
+        self._channels_cache: dict[int, ChannelRecord] | None = None
+        self._stats_cache: StatisticsRecord | None = None
 
     @staticmethod
     def from_file(file_path: Path | str) -> 'McapFileSequentialReader':
@@ -469,6 +494,216 @@ class McapFileSequentialReader:
         Create a new MCAP reader from a bytes object.
         """
         return McapFileSequentialReader(BytesReader(data))
+
+    # ---------------------------------------------------------------
+    # Internal helpers
+    # ---------------------------------------------------------------
+
+    def _iterate_data_records(self) -> Generator[tuple[int, Any], None, None]:
+        """Iterate over records in the data section of the file."""
+        # Start after the magic bytes and header
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        _ = McapRecordReader.parse_header(self._file)
+
+        while (record_type := McapRecordReader.peek_record(self._file)) not in (
+            EOF_RECORD_TYPE,
+            McapRecordType.DATA_END,
+        ):
+            yield record_type, McapRecordReader._parse_record(record_type, self._file)
+
+    def _iterate_records(self) -> Generator[tuple[int, Any], None, None]:
+        """Iterate over all records, decompressing chunks as needed."""
+        for record_type, record in self._iterate_data_records():
+            if record_type == McapRecordType.CHUNK:
+                reader = BytesReader(decompress_chunk(record))
+                for inner_type, inner_record in McapRecordReader.read_record(reader):
+                    yield inner_type, inner_record
+            else:
+                yield record_type, record
+
+    def _iterate_messages(
+        self,
+        channel_id: int | None = None,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Iterate over message records with optional filtering."""
+        for record_type, record in self._iterate_data_records():
+            if record_type == McapRecordType.MESSAGE:
+                if channel_id is not None and record.channel_id != channel_id:
+                    continue
+                if start_timestamp is not None and record.log_time < start_timestamp:
+                    continue
+                if end_timestamp is not None and record.log_time > end_timestamp:
+                    continue
+                yield record
+            elif record_type == McapRecordType.CHUNK:
+                if start_timestamp is not None and record.message_end_time < start_timestamp:
+                    continue
+                if end_timestamp is not None and record.message_start_time > end_timestamp:
+                    continue
+                for msg in self._iterate_messages_from_chunk(record):
+                    if channel_id is not None and msg.channel_id != channel_id:
+                        continue
+                    if start_timestamp is not None and msg.log_time < start_timestamp:
+                        continue
+                    if end_timestamp is not None and msg.log_time > end_timestamp:
+                        continue
+                    yield msg
+
+    # ---------------------------------------------------------------
+    # Resource management
+    # ---------------------------------------------------------------
+
+    def close(self) -> None:
+        self._file.close()
+
+    # ---------------------------------------------------------------
+    # Footer / statistics
+    # ---------------------------------------------------------------
+
+    def get_footer(self) -> FooterRecord:
+        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+        return McapRecordReader.parse_footer(self._file)
+
+    def _build_statistics(self) -> StatisticsRecord:
+        message_start_time = None
+        message_end_time = None
+        channel_message_counts: dict[int, int] = {}
+        schema_ids: set[int] = set()
+        channel_ids: set[int] = set()
+        attachment_count = 0
+        metadata_count = 0
+        chunk_count = 0
+
+        for record_type, record in self._iterate_records():
+            if record_type == McapRecordType.SCHEMA:
+                schema_ids.add(record.id)
+            elif record_type == McapRecordType.CHANNEL:
+                channel_ids.add(record.id)
+            elif record_type == McapRecordType.ATTACHMENT:
+                attachment_count += 1
+            elif record_type == McapRecordType.METADATA:
+                metadata_count += 1
+            elif record_type == McapRecordType.CHUNK:
+                chunk_count += 1
+            elif record_type == McapRecordType.MESSAGE:
+                channel_message_counts[record.channel_id] = (
+                    channel_message_counts.get(record.channel_id, 0) + 1
+                )
+                message_start_time = (
+                    record.log_time
+                    if message_start_time is None
+                    else min(message_start_time, record.log_time)
+                )
+                message_end_time = (
+                    record.log_time
+                    if message_end_time is None
+                    else max(message_end_time, record.log_time)
+                )
+
+        message_count = sum(channel_message_counts.values())
+        return StatisticsRecord(
+            message_count,
+            len(schema_ids),
+            len(channel_ids),
+            attachment_count,
+            metadata_count,
+            chunk_count,
+            message_start_time or 0,
+            message_end_time or 0,
+            channel_message_counts,
+        )
+
+    def get_statistics(self) -> StatisticsRecord:
+        if self._stats_cache is None:
+            self._stats_cache = self._build_statistics()
+        return self._stats_cache
+
+    def get_start_time(self) -> int:
+        return self.get_statistics().message_start_time
+
+    def get_end_time(self) -> int:
+        return self.get_statistics().message_end_time
+
+    def get_message_counts(self) -> dict[int, int]:
+        return self.get_statistics().channel_message_counts
+
+    # ---------------------------------------------------------------
+    # Schema / channel helpers
+    # ---------------------------------------------------------------
+
+    def _load_schemas(self) -> dict[int, SchemaRecord]:
+        schemas: dict[int, SchemaRecord] = {}
+        for record_type, record in self._iterate_data_records():
+            if record_type == McapRecordType.SCHEMA:
+                schemas[record.id] = record
+        return schemas
+
+    def get_schemas(self) -> dict[int, SchemaRecord]:
+        if self._schemas_cache is None:
+            self._schemas_cache = self._load_schemas()
+        return self._schemas_cache
+
+    def get_schema(self, schema_id: int) -> SchemaRecord | None:
+        return self.get_schemas().get(schema_id)
+
+    def _load_channels(self) -> dict[int, ChannelRecord]:
+        channels: dict[int, ChannelRecord] = {}
+        for record_type, record in self._iterate_data_records():
+            if record_type == McapRecordType.CHANNEL:
+                channels[record.id] = record
+        return channels
+
+    def get_channels(self) -> dict[int, ChannelRecord]:
+        if self._channels_cache is None:
+            self._channels_cache = self._load_channels()
+        return self._channels_cache
+
+    def get_channel(self, channel_id: int) -> ChannelRecord | None:
+        return self.get_channels().get(channel_id)
+
+    def get_channel_id(self, topic: str) -> int | None:
+        return next((c.id for c in self.get_channels().values() if c.topic == topic), None)
+
+    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            return None
+        return self.get_schema(channel.schema_id)
+
+    # ---------------------------------------------------------------
+    # Message helpers
+    # ---------------------------------------------------------------
+
+    def _iterate_messages_from_chunk(
+        self, chunk: ChunkRecord
+    ) -> Generator[MessageRecord, None, None]:
+        reader = BytesReader(decompress_chunk(chunk))
+        for r_type, r in McapRecordReader.read_record(reader):
+            if r_type == McapRecordType.MESSAGE:
+                yield r
+
+    def get_topic_message(
+        self,
+        channel_id: int,
+        timestamp: int,
+    ) -> MessageRecord | None:
+        for msg in self._iterate_messages(channel_id, timestamp, timestamp):
+            if msg.log_time == timestamp:
+                return msg
+        return None
+
+    def get_topic_messages(
+        self,
+        channel_id: int,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        yield from self._iterate_messages(channel_id, start_timestamp, end_timestamp)
+
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
+        return self.get_channel_schema(message.channel_id)
 
 
 
