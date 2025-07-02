@@ -3,7 +3,7 @@ from pathlib import Path
 from collections import namedtuple
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any, overload
+from typing import Any
 
 from pybag.mcap.records import (
     StatisticsRecord,
@@ -23,7 +23,6 @@ from pybag.mcap.record_reader import (
     MAGIC_BYTES_SIZE,
     FOOTER_SIZE,
     McapRecordType,
-    EOF_RECORD_TYPE,
 )
 
 # GLOBAL TODOs:
