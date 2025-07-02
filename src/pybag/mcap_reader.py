@@ -458,23 +458,16 @@ class McapFileSequentialReader:
         """
         Initialize the MCAP file sequential reader.
         """
+        logger.warning("Using SequentialReader, operations will be slow")
+
         self._file = file
         self._version = McapRecordReader.read_magic_bytes(self._file)
         logger.debug(f"MCAP version: {self._version}")
-
-        # Warn users that the sequential reader can be very slow
-        logger.warning(
-            "Using SequentialReader, operations will be extremely slow due to "
-            "lack of a summary index"
-        )
 
         # Read the footer for statistics and boundary information
         self._file.seek_from_end(MAGIC_BYTES_SIZE)
         mcap_version = McapRecordReader.read_magic_bytes(self._file)
         assert self._version == mcap_version
-
-        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        self._footer = McapRecordReader.parse_footer(self._file)
 
         # Caches for expensive operations
         self._schemas_cache: dict[int, SchemaRecord] | None = None
@@ -505,10 +498,7 @@ class McapFileSequentialReader:
         self._file.seek_from_start(MAGIC_BYTES_SIZE)
         _ = McapRecordReader.parse_header(self._file)
 
-        while (record_type := McapRecordReader.peek_record(self._file)) not in (
-            EOF_RECORD_TYPE,
-            McapRecordType.DATA_END,
-        ):
+        while (record_type := McapRecordReader.peek_record(self._file)) != McapRecordType.DATA_END:
             yield record_type, McapRecordReader._parse_record(record_type, self._file)
 
     def _iterate_records(self) -> Generator[tuple[int, Any], None, None]:
@@ -520,6 +510,14 @@ class McapFileSequentialReader:
                     yield inner_type, inner_record
             else:
                 yield record_type, record
+
+    def _iterate_messages_from_chunk(
+        self, chunk: ChunkRecord
+    ) -> Generator[MessageRecord, None, None]:
+        reader = BytesReader(decompress_chunk(chunk))
+        for r_type, r in McapRecordReader.read_record(reader):
+            if r_type == McapRecordType.MESSAGE:
+                yield r
 
     def _iterate_messages(
         self,
@@ -551,22 +549,13 @@ class McapFileSequentialReader:
                         continue
                     yield msg
 
-    # ---------------------------------------------------------------
     # Resource management
-    # ---------------------------------------------------------------
 
     def close(self) -> None:
         self._file.close()
 
-    # ---------------------------------------------------------------
-    # Footer / statistics
-    # ---------------------------------------------------------------
-
-    def get_footer(self) -> FooterRecord:
-        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        return McapRecordReader.parse_footer(self._file)
-
-    def _build_statistics(self) -> StatisticsRecord:
+    def _build_cache(self) -> None:
+        # Statistics
         message_start_time = None
         message_end_time = None
         channel_message_counts: dict[int, int] = {}
@@ -576,11 +565,14 @@ class McapFileSequentialReader:
         metadata_count = 0
         chunk_count = 0
 
+        # Iterate over all records to build the cache
         for record_type, record in self._iterate_records():
             if record_type == McapRecordType.SCHEMA:
                 schema_ids.add(record.id)
+                self._schemas_cache[record.id] = record
             elif record_type == McapRecordType.CHANNEL:
                 channel_ids.add(record.id)
+                self._channels_cache[record.id] = record
             elif record_type == McapRecordType.ATTACHMENT:
                 attachment_count += 1
             elif record_type == McapRecordType.METADATA:
@@ -603,7 +595,7 @@ class McapFileSequentialReader:
                 )
 
         message_count = sum(channel_message_counts.values())
-        return StatisticsRecord(
+        self._stats_cache = StatisticsRecord(
             message_count,
             len(schema_ids),
             len(channel_ids),
@@ -615,9 +607,11 @@ class McapFileSequentialReader:
             channel_message_counts,
         )
 
+    # Statistics
+
     def get_statistics(self) -> StatisticsRecord:
         if self._stats_cache is None:
-            self._stats_cache = self._build_statistics()
+            self._stats_cache = self._build_cache()
         return self._stats_cache
 
     def get_start_time(self) -> int:
@@ -629,35 +623,19 @@ class McapFileSequentialReader:
     def get_message_counts(self) -> dict[int, int]:
         return self.get_statistics().channel_message_counts
 
-    # ---------------------------------------------------------------
     # Schema / channel helpers
-    # ---------------------------------------------------------------
-
-    def _load_schemas(self) -> dict[int, SchemaRecord]:
-        schemas: dict[int, SchemaRecord] = {}
-        for record_type, record in self._iterate_data_records():
-            if record_type == McapRecordType.SCHEMA:
-                schemas[record.id] = record
-        return schemas
 
     def get_schemas(self) -> dict[int, SchemaRecord]:
         if self._schemas_cache is None:
-            self._schemas_cache = self._load_schemas()
+            self._schemas_cache = self._build_cache()
         return self._schemas_cache
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         return self.get_schemas().get(schema_id)
 
-    def _load_channels(self) -> dict[int, ChannelRecord]:
-        channels: dict[int, ChannelRecord] = {}
-        for record_type, record in self._iterate_data_records():
-            if record_type == McapRecordType.CHANNEL:
-                channels[record.id] = record
-        return channels
-
     def get_channels(self) -> dict[int, ChannelRecord]:
         if self._channels_cache is None:
-            self._channels_cache = self._load_channels()
+            self._channels_cache = self._build_cache()
         return self._channels_cache
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
@@ -672,17 +650,10 @@ class McapFileSequentialReader:
             return None
         return self.get_schema(channel.schema_id)
 
-    # ---------------------------------------------------------------
-    # Message helpers
-    # ---------------------------------------------------------------
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
+        return self.get_channel_schema(message.channel_id)
 
-    def _iterate_messages_from_chunk(
-        self, chunk: ChunkRecord
-    ) -> Generator[MessageRecord, None, None]:
-        reader = BytesReader(decompress_chunk(chunk))
-        for r_type, r in McapRecordReader.read_record(reader):
-            if r_type == McapRecordType.MESSAGE:
-                yield r
+    # Message helpers
 
     def get_topic_message(
         self,
@@ -701,10 +672,6 @@ class McapFileSequentialReader:
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
         yield from self._iterate_messages(channel_id, start_timestamp, end_timestamp)
-
-    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        return self.get_channel_schema(message.channel_id)
-
 
 
 class McapFileReaderFactory:
