@@ -487,9 +487,7 @@ class McapFileSequentialReader:
         """
         return McapFileSequentialReader(BytesReader(data))
 
-    # ---------------------------------------------------------------
     # Internal helpers
-    # ---------------------------------------------------------------
 
     def _iterate_data_records(self) -> Generator[tuple[int, Any], None, None]:
         """Iterate over records in the data section of the file."""
