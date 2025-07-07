@@ -1,5 +1,5 @@
-import re
 import logging
+import re
 from collections import defaultdict
 from enum import Enum
 

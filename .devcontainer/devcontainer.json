@@ -3,6 +3,7 @@
     "dockerFile": "Dockerfile",
     "workspaceFolder": "/pybag",
     "workspaceMount": "source=${localWorkspaceFolder},target=/pybag,type=bind,consistency=cached",
+    "mounts": [],
     "customizations": {
         "vscode": {
             "extensions": [

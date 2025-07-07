@@ -1,29 +1,29 @@
 import logging
-from pathlib import Path
 from collections import namedtuple
 from collections.abc import Generator
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+from pybag.encoding.cdr import CdrParser
+from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.mcap.record_reader import (
+    FOOTER_SIZE,
+    MAGIC_BYTES_SIZE,
+    McapRecordReader,
+    McapRecordType
+)
 from pybag.mcap.records import (
-    StatisticsRecord,
-    SchemaRecord,
     ChannelRecord,
-    FooterRecord,
     ChunkIndexRecord,
+    ChunkRecord,
+    FooterRecord,
     MessageIndexRecord,
     MessageRecord,
-    ChunkRecord,
+    SchemaRecord,
+    StatisticsRecord
 )
-from pybag.schema.ros2msg import parse_ros2msg, Ros2MsgFieldType
-from pybag.encoding.cdr import CdrParser
-from pybag.io.raw_reader import BaseReader, FileReader, BytesReader
-from pybag.mcap.record_reader import (
-    McapRecordReader,
-    MAGIC_BYTES_SIZE,
-    FOOTER_SIZE,
-    McapRecordType,
-)
+from pybag.schema.ros2msg import Ros2MsgFieldType, parse_ros2msg
 
 # GLOBAL TODOs:
 # - TODO: Add tests with mcaps
