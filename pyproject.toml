@@ -28,3 +28,6 @@ dev = [
     "rosbags>=0.10.10",
     "pre-commit>=3.5.0",
 ]
+
+[tool.isort]
+multi_line_output = 3
