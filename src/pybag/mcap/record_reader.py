@@ -1,9 +1,27 @@
-import struct
 import logging
+import struct
 from enum import IntEnum
-from typing import Iterator, Any, Callable
+from typing import Any, Callable, Iterator
+
 from pybag.io.raw_reader import BaseReader
-from pybag.mcap.records import *  # TODO: Make better
+from pybag.mcap.records import (
+    AttachmentIndexRecord,
+    AttachmentRecord,
+    ChannelRecord,
+    ChunkIndexRecord,
+    ChunkRecord,
+    DataEndRecord,
+    FooterRecord,
+    HeaderRecord,
+    MessageIndexRecord,
+    MessageRecord,
+    MetadataIndexRecord,
+    MetadataRecord,
+    RecordType,
+    SchemaRecord,
+    StatisticsRecord,
+    SummaryOffsetRecord
+)
 
 logger = logging.getLogger(__name__)
 

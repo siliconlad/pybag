@@ -1,5 +1,5 @@
-import struct
 import logging
+import struct
 from typing import Any
 
 from pybag.io.raw_reader import BytesReader

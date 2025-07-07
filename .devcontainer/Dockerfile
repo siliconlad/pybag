@@ -8,6 +8,11 @@ ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
 ENV ROS_DISTRO humble
 
+RUN rm /etc/apt/sources.list.d/ros2-latest.list && \
+    apt update && apt install curl && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
 # Install basic dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -17,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     lsb-release \
     vim \
+    tree \
     ros-humble-rosbag2-storage-mcap \
     && rm -rf /var/lib/apt/lists/*
 
