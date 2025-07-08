@@ -370,7 +370,7 @@ class McapRecordReader:
 
         _ = cls._parse_uint64(file)
 
-        data_section_crc = cls._parse_uint32(file)
+        _, data_section_crc = cls._parse_uint32(file)
         return DataEndRecord(data_section_crc)
 
 
