@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pybag.encoding.cdr import CdrParser
+from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.record_reader import (
     FOOTER_SIZE,
@@ -88,7 +88,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
         error_msg = f'Unknown encoding type: {schema.encoding}'
         raise McapUnknownEncodingError(error_msg)
 
-    cdr = CdrParser(message.data)
+    cdr = CdrDecoder(message.data)
     msg_schema, schema_msgs = parse_ros2msg(schema)
 
     def decode_field(field_schema: dict, field_schemas: dict) -> dict:
