@@ -1,10 +1,10 @@
 import sys
-from pathlib import Path
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from pybag.encoding.cdr import CdrEncoder, CdrDecoder
+from pybag.encoding.cdr import CdrDecoder, CdrEncoder
 
 
 class TestCdrEncoderDecoder(unittest.TestCase):
