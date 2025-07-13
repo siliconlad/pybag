@@ -8,6 +8,9 @@ authors = [
 ]
 requires-python = ">=3.10"
 
+[project.scripts]
+pybag = "pybag.cli.main:main"
+
 [project.optional-dependencies]
 zstd = [
     "zstandard>=0.23.0",
