@@ -1,4 +1,5 @@
 import pytest
+
 from pybag.encoding.cdr import CdrDecoder, CdrEncoder
 
 
