@@ -1,8 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 from pybag.io.raw_reader import BytesReader
 from pybag.io.raw_writer import BytesWriter
 from pybag.mcap.record_reader import McapRecordReader
@@ -26,7 +21,7 @@ from pybag.mcap.records import (
 )
 
 
-def test_header_roundtrip():
+def test_header_encode_decode():
     record = HeaderRecord(profile="test_profile", library="pybag")
     writer = BytesWriter()
     McapRecordWriter.write_header(writer, record)
@@ -35,7 +30,7 @@ def test_header_roundtrip():
     assert parsed == record
 
 
-def test_footer_roundtrip():
+def test_footer_encode_decode():
     record = FooterRecord(summary_start=1, summary_offset_start=2, summary_crc=3)
     writer = BytesWriter()
     McapRecordWriter.write_footer(writer, record)
@@ -44,7 +39,7 @@ def test_footer_roundtrip():
     assert parsed == record
 
 
-def test_channel_roundtrip():
+def test_channel_encode_decode():
     record = ChannelRecord(id=1, schema_id=2, topic="topic", message_encoding="encoding", metadata={"a": "b"})
     writer = BytesWriter()
     McapRecordWriter.write_channel(writer, record)
@@ -53,7 +48,7 @@ def test_channel_roundtrip():
     assert parsed == record
 
 
-def test_schema_roundtrip():
+def test_schema_encode_decode():
     record = SchemaRecord(id=1, name="name", encoding="enc", data=b"data")
     writer = BytesWriter()
     McapRecordWriter.write_schema(writer, record)
@@ -62,7 +57,7 @@ def test_schema_roundtrip():
     assert parsed == record
 
 
-def test_message_roundtrip():
+def test_message_encode_decode():
     record = MessageRecord(channel_id=1, sequence=2, log_time=3, publish_time=4, data=b"msg")
     writer = BytesWriter()
     McapRecordWriter.write_message(writer, record)
@@ -71,7 +66,7 @@ def test_message_roundtrip():
     assert parsed == record
 
 
-def test_chunk_roundtrip():
+def test_chunk_encode_decode():
     record = ChunkRecord(
         message_start_time=1,
         message_end_time=2,
@@ -87,7 +82,7 @@ def test_chunk_roundtrip():
     assert parsed == record
 
 
-def test_message_index_roundtrip():
+def test_message_index_encode_decode():
     record = MessageIndexRecord(channel_id=1, records=[(1, 2), (3, 4)])
     writer = BytesWriter()
     McapRecordWriter.write_message_index(writer, record)
@@ -96,7 +91,7 @@ def test_message_index_roundtrip():
     assert parsed == record
 
 
-def test_chunk_index_roundtrip():
+def test_chunk_index_encode_decode():
     record = ChunkIndexRecord(
         message_start_time=1,
         message_end_time=2,
@@ -115,7 +110,7 @@ def test_chunk_index_roundtrip():
     assert parsed == record
 
 
-def test_attachment_roundtrip():
+def test_attachment_encode_decode():
     record = AttachmentRecord(
         log_time=1,
         create_time=2,
@@ -131,7 +126,7 @@ def test_attachment_roundtrip():
     assert parsed == record
 
 
-def test_metadata_roundtrip():
+def test_metadata_encode_decode():
     record = MetadataRecord(name="meta", metadata={"k": "v"})
     writer = BytesWriter()
     McapRecordWriter.write_metadata(writer, record)
@@ -140,7 +135,7 @@ def test_metadata_roundtrip():
     assert parsed == record
 
 
-def test_data_end_roundtrip():
+def test_data_end_encode_decode():
     record = DataEndRecord(data_section_crc=1)
     writer = BytesWriter()
     McapRecordWriter.write_data_end(writer, record)
@@ -149,7 +144,7 @@ def test_data_end_roundtrip():
     assert parsed == record
 
 
-def test_attachment_index_roundtrip():
+def test_attachment_index_encode_decode():
     record = AttachmentIndexRecord(
         offset=1,
         length=2,
@@ -166,7 +161,7 @@ def test_attachment_index_roundtrip():
     assert parsed == record
 
 
-def test_metadata_index_roundtrip():
+def test_metadata_index_encode_decode():
     record = MetadataIndexRecord(offset=1, length=2, name="meta")
     writer = BytesWriter()
     McapRecordWriter.write_metadata_index(writer, record)
@@ -175,7 +170,7 @@ def test_metadata_index_roundtrip():
     assert parsed == record
 
 
-def test_statistics_roundtrip():
+def test_statistics_encode_decode():
     record = StatisticsRecord(
         message_count=1,
         schema_count=2,
@@ -194,7 +189,7 @@ def test_statistics_roundtrip():
     assert parsed == record
 
 
-def test_summary_offset_roundtrip():
+def test_summary_offset_encode_decode():
     record = SummaryOffsetRecord(group_opcode=1, group_start=2, group_length=3)
     writer = BytesWriter()
     McapRecordWriter.write_summary_offset(writer, record)
