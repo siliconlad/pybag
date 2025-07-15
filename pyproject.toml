@@ -31,6 +31,7 @@ test = [
 dev = [
     "kappe>=0.19.1",
     "mcap>=1.2.2",
+    "pre-commit>=4.2.0",
     "rosbags>=0.10.10",
 ]
 
