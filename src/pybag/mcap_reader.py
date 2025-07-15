@@ -1,5 +1,5 @@
 import logging
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,6 +7,7 @@ from typing import Any
 
 from pybag.encoding.cdr import CdrParser
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.io.raw_writer import BytesWriter, FileWriter
 from pybag.mcap.record_reader import (
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
@@ -21,7 +22,8 @@ from pybag.mcap.records import (
     MessageIndexRecord,
     MessageRecord,
     SchemaRecord,
-    StatisticsRecord
+    StatisticsRecord,
+    SummaryOffsetRecord
 )
 from pybag.schema.ros2msg import Ros2MsgFieldType, parse_ros2msg
 
@@ -706,13 +708,189 @@ class McapFileReaderFactory:
 
 
 class McapIndexBuilder:
-    """Class to build an index for an MCAP file."""
+    """Build a summary index for a sequential MCAP file."""
 
-    @staticmethod
-    def build(reader: McapFileSequentialReader) -> McapFileRandomAccessReader:
-        """Build an index for the MCAP file."""
-        # TODO: Implement
-        pass
+    @classmethod
+    def build(cls, reader: McapFileSequentialReader) -> McapFileRandomAccessReader:
+        """Append a summary section to the file and return a random access reader."""
+        if not isinstance(reader._file, FileReader):
+            raise ValueError("reader must be file based")
+
+        file_path = reader._file._file_path
+        reader_file = FileReader(file_path)
+        reader_file.seek_from_start(MAGIC_BYTES_SIZE)
+        McapRecordReader.parse_header(reader_file)
+
+        schemas: list[SchemaRecord] = []
+        channels: list[ChannelRecord] = []
+        chunk_infos: list[dict] = []
+        message_counts: dict[int, int] = {}
+        first_message_time: int | None = None
+        last_message_time: int | None = None
+        attachment_count = 0
+        metadata_count = 0
+
+        # Walk the data section collecting records and building message indices
+        while McapRecordReader.peek_record(reader_file) != McapRecordType.DATA_END:
+            chunk_start = reader_file.tell()
+            record_type = McapRecordReader.peek_record(reader_file)
+            if record_type == McapRecordType.SCHEMA:
+                record = McapRecordReader.parse_schema(reader_file)
+                if record:
+                    schemas.append(record)
+                continue
+            if record_type == McapRecordType.CHANNEL:
+                channels.append(McapRecordReader.parse_channel(reader_file))
+                continue
+            if record_type == McapRecordType.ATTACHMENT:
+                _ = McapRecordReader.parse_attachment(reader_file)
+                attachment_count += 1
+                continue
+            if record_type == McapRecordType.METADATA:
+                _ = McapRecordReader.parse_metadata(reader_file)
+                metadata_count += 1
+                continue
+            if record_type != McapRecordType.CHUNK:
+                # skip unknown or unsupported record types
+                _ = next(McapRecordReader.read_record(reader_file))
+                continue
+
+            chunk_record = McapRecordReader.parse_chunk(reader_file)
+            chunk_end = reader_file.tell()
+            chunk_reader = BytesReader(decompress_chunk(chunk_record))
+            per_channel_index: defaultdict[int, list[tuple[int, int]]] = defaultdict(list)
+
+            while (inner_type := McapRecordReader.peek_record(chunk_reader)) != 0:
+                position = chunk_reader.tell()
+                if inner_type != McapRecordType.MESSAGE:
+                    _ = next(McapRecordReader.read_record(chunk_reader))
+                    continue
+
+                msg = McapRecordReader.parse_message(chunk_reader)
+                per_channel_index[msg.channel_id].append((msg.log_time, position))
+                message_counts[msg.channel_id] = message_counts.get(msg.channel_id, 0) + 1
+                first_message_time = (
+                    msg.log_time if first_message_time is None else min(first_message_time, msg.log_time)
+                )
+                last_message_time = (
+                    msg.log_time if last_message_time is None else max(last_message_time, msg.log_time)
+                )
+
+            index_writer = BytesWriter()
+            index_offsets: dict[int, int] = {}
+            for channel_id, records in per_channel_index.items():
+                index_offsets[channel_id] = index_writer.size()
+                McapRecordWriter.write_message_index(index_writer, MessageIndexRecord(channel_id, records))
+
+            chunk_infos.append({
+                "record": chunk_record,
+                "start_offset": chunk_start,
+                "length": chunk_end - chunk_start,
+                "index_bytes": index_writer.as_bytes(),
+                "index_length": index_writer.size(),
+                "index_offsets": index_offsets,
+            })
+
+        McapRecordReader.parse_data_end(reader_file)
+        reader_file.close()
+
+        schema_writer = BytesWriter()
+        for schema in schemas:
+            McapRecordWriter.write_schema(schema_writer, schema)
+        schema_bytes = schema_writer.as_bytes()
+
+        channel_writer = BytesWriter()
+        for channel in channels:
+            McapRecordWriter.write_channel(channel_writer, channel)
+        channel_bytes = channel_writer.as_bytes()
+
+        summary_start = Path(file_path).stat().st_size - FOOTER_SIZE - MAGIC_BYTES_SIZE
+
+        offset = summary_start + len(schema_bytes) + len(channel_bytes)
+        for info in chunk_infos:
+            for channel_id, local_offset in info["index_offsets"].items():
+                info["index_offsets"][channel_id] = offset + local_offset
+            offset += len(info["index_bytes"])
+
+        message_index_bytes = b"".join(info["index_bytes"] for info in chunk_infos)
+
+        chunk_index_writer = BytesWriter()
+        for info in chunk_infos:
+            chunk_record = info["record"]
+            McapRecordWriter.write_chunk_index(
+                chunk_index_writer,
+                ChunkIndexRecord(
+                    chunk_record.message_start_time,
+                    chunk_record.message_end_time,
+                    info["start_offset"],
+                    info["length"],
+                    info["index_offsets"],
+                    info["index_length"],
+                    chunk_record.compression,
+                    len(chunk_record.records),
+                    chunk_record.uncompressed_size,
+                ),
+            )
+        chunk_index_bytes = chunk_index_writer.as_bytes()
+
+        statistics_record = StatisticsRecord(
+            sum(message_counts.values()),
+            len(schemas),
+            len(channels),
+            attachment_count,
+            metadata_count,
+            len(chunk_infos),
+            first_message_time or 0,
+            last_message_time or 0,
+            message_counts,
+        )
+        statistics_writer = BytesWriter()
+        McapRecordWriter.write_statistics(statistics_writer, statistics_record)
+        statistics_bytes = statistics_writer.as_bytes()
+
+        sections = [
+            (McapRecordType.SCHEMA, schema_bytes),
+            (McapRecordType.CHANNEL, channel_bytes),
+            (McapRecordType.MESSAGE_INDEX, message_index_bytes),
+            (McapRecordType.CHUNK_INDEX, chunk_index_bytes),
+            (McapRecordType.STATISTICS, statistics_bytes),
+        ]
+
+        offsets = []
+        current = summary_start
+        for code, data in sections:
+            offsets.append((code, current, len(data)))
+            current += len(data)
+
+        summary_offset_writer = BytesWriter()
+        for code, start, length in offsets:
+            McapRecordWriter.write_summary_offset(
+                summary_offset_writer, SummaryOffsetRecord(code, start, length)
+            )
+        summary_offset_bytes = summary_offset_writer.as_bytes()
+
+        footer_writer = BytesWriter()
+        McapRecordWriter.write_footer(footer_writer, FooterRecord(summary_start, current, 0))
+        footer_bytes = footer_writer.as_bytes()
+
+        magic_writer = BytesWriter()
+        McapRecordWriter.write_magic_bytes(magic_writer)
+        magic_bytes = magic_writer.as_bytes()
+
+        writer = FileWriter(file_path, "r+b")
+        writer._file.seek(summary_start)
+        writer._file.truncate()
+        writer.write(schema_bytes)
+        writer.write(channel_bytes)
+        writer.write(message_index_bytes)
+        writer.write(chunk_index_bytes)
+        writer.write(statistics_bytes)
+        writer.write(summary_offset_bytes)
+        writer.write(footer_bytes)
+        writer.write(magic_bytes)
+        writer.close()
+
+        return McapFileRandomAccessReader.from_file(file_path)
 
 
 class McapReader:
