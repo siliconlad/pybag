@@ -4,6 +4,7 @@ from enum import IntEnum
 from typing import Any, Callable, Iterator
 
 from pybag.io.raw_reader import BaseReader
+from pybag.mcap.crc_utils import CrcMismatchError, crc32c
 from pybag.mcap.records import (
     AttachmentIndexRecord,
     AttachmentRecord,
@@ -345,6 +346,9 @@ class McapRecordReader:
         _, data_bytes_length = cls._parse_uint64(file)
         _, data_bytes = cls._parse_bytes(file, data_bytes_length)
         _, crc = cls._parse_uint32(file)
+
+        if crc32c(data_bytes) != crc:
+            raise CrcMismatchError("Attachment CRC does not match")
 
         return AttachmentRecord(log_time, create_time, name, media_type, data_bytes, crc)
 

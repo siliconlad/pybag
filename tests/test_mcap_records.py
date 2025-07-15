@@ -1,5 +1,6 @@
 from pybag.io.raw_reader import BytesReader
 from pybag.io.raw_writer import BytesWriter
+from pybag.mcap.crc_utils import CrcMismatchError, crc32c
 from pybag.mcap.record_reader import McapRecordReader
 from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
@@ -19,6 +20,7 @@ from pybag.mcap.records import (
     StatisticsRecord,
     SummaryOffsetRecord
 )
+from pybag.mcap_reader import decompress_chunk
 
 
 def test_header_encode_decode():
@@ -71,7 +73,7 @@ def test_chunk_encode_decode():
         message_start_time=1,
         message_end_time=2,
         uncompressed_size=3,
-        uncompressed_crc=4,
+        uncompressed_crc=crc32c(b"records"),
         compression="",
         records=b"records",
     )
@@ -80,6 +82,29 @@ def test_chunk_encode_decode():
     reader = BytesReader(writer.as_bytes())
     parsed = McapRecordReader.parse_chunk(reader)
     assert parsed == record
+
+
+def test_decompress_chunk_crc() -> None:
+    record = ChunkRecord(
+        message_start_time=1,
+        message_end_time=2,
+        uncompressed_size=3,
+        uncompressed_crc=crc32c(b"records"),
+        compression="",
+        records=b"records",
+    )
+    assert decompress_chunk(record) == b"records"
+
+    bad = ChunkRecord(
+        message_start_time=1,
+        message_end_time=2,
+        uncompressed_size=3,
+        uncompressed_crc=0,
+        compression="",
+        records=b"records",
+    )
+    with pytest.raises(CrcMismatchError):
+        decompress_chunk(bad)
 
 
 def test_message_index_encode_decode():
@@ -117,13 +142,29 @@ def test_attachment_encode_decode():
         name="file",
         media_type="text/plain",
         data=b"payload",
-        crc=3,
+        crc=crc32c(b"payload"),
     )
     writer = BytesWriter()
     McapRecordWriter.write_attachment(writer, record)
     reader = BytesReader(writer.as_bytes())
     parsed = McapRecordReader.parse_attachment(reader)
     assert parsed == record
+
+
+def test_attachment_crc_mismatch() -> None:
+    record = AttachmentRecord(
+        log_time=1,
+        create_time=2,
+        name="file",
+        media_type="text/plain",
+        data=b"bad",
+        crc=0,
+    )
+    writer = BytesWriter()
+    McapRecordWriter.write_attachment(writer, record)
+    reader = BytesReader(writer.as_bytes())
+    with pytest.raises(CrcMismatchError):
+        McapRecordReader.parse_attachment(reader)
 
 
 def test_metadata_encode_decode():
