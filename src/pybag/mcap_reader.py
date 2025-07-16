@@ -7,6 +7,7 @@ from typing import Any
 
 from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.mcap.crc_utils import CrcMismatchError, crc32c
 from pybag.mcap.record_reader import (
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
@@ -70,15 +71,20 @@ def decompress_chunk(chunk: ChunkRecord) -> bytes:
     """Decompress the records field of a chunk."""
     if chunk.compression == 'zstd':
         import zstandard as zstd
-        return zstd.ZstdDecompressor().decompress(chunk.records)
+        data = zstd.ZstdDecompressor().decompress(chunk.records)
     elif chunk.compression == 'lz4':
         import lz4.frame
-        return lz4.frame.decompress(chunk.records)
+        data = lz4.frame.decompress(chunk.records)
     elif chunk.compression == '':
-        return chunk.records
+        data = chunk.records
     else:
         error_msg = f'Unknown compression type: {chunk.compression}'
         raise McapUnknownCompressionError(error_msg)
+
+    if crc32c(data) != chunk.uncompressed_crc:
+        raise CrcMismatchError('Chunk CRC does not match')
+
+    return data
 
 
 def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
