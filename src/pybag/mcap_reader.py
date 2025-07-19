@@ -503,7 +503,7 @@ class McapFileSequentialReader:
         for record_type, record in self._iterate_data_records():
             if record_type == McapRecordType.CHUNK:
                 reader = BytesReader(decompress_chunk(record))
-                for inner_type, inner_record in McapRecordParser.read_record(reader):
+                for inner_type, inner_record in McapRecordParser.parse_record(reader):
                     yield inner_type, inner_record
             else:
                 yield record_type, record
@@ -512,7 +512,7 @@ class McapFileSequentialReader:
         self, chunk: ChunkRecord
     ) -> Generator[MessageRecord, None, None]:
         reader = BytesReader(decompress_chunk(chunk))
-        for r_type, r in McapRecordParser.read_record(reader):
+        for r_type, r in McapRecordParser.parse_record(reader):
             if r_type == McapRecordType.MESSAGE:
                 yield r
 

@@ -54,7 +54,7 @@ class MalformedMCAP(Exception):
         super().__init__(error_msessage)
 
 
-class McapRecordParser:
+class McapRecordReader:
     @classmethod
     def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
@@ -62,7 +62,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def read_record(cls, file: BaseReader) -> Iterator[tuple[int, Any]]:
+    def parse_record(cls, file: BaseReader) -> Iterator[tuple[int, Any]]:
         """Read the next record in the MCAP file."""
         while True:
             record_type = cls.peek_record(file)
@@ -73,7 +73,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def read_magic_bytes(cls, file: BaseReader) -> str:
+    def parse_magic_bytes(cls, file: BaseReader) -> str:
         """Parse the magic bytes at the begining/end of the MCAP file."""
         magic = file.read(8)
         if magic != b'\x89MCAP\x30\r\n':  # TODO: Support multiple versions
