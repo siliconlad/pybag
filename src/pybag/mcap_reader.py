@@ -7,10 +7,10 @@ from typing import Any
 
 from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
-from pybag.mcap.record_reader import (
+from pybag.mcap.record_parser import (
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
-    McapRecordReader,
+    McapRecordParser,
     McapRecordType
 )
 from pybag.mcap.records import (
@@ -121,12 +121,12 @@ class McapFileRandomAccessReader:
             file: The file to read from.
         """
         self._file = file
-        self._version = McapRecordReader.read_magic_bytes(self._file)
+        self._version = McapRecordParser.read_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
 
         # Check magic bytes at the end of the file
         self._file.seek_from_end(MAGIC_BYTES_SIZE)
-        mcap_version = McapRecordReader.read_magic_bytes(self._file)
+        mcap_version = McapRecordParser.read_magic_bytes(self._file)
         assert self._version == mcap_version
 
         # Check footer at the end of the file
@@ -150,8 +150,8 @@ class McapFileRandomAccessReader:
         self._summary_offset = {}
         Offset = namedtuple('Offset', ['group_start', 'group_length'])
         self._file.seek_from_start(self._summary_offset_start)
-        while McapRecordReader.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
-            record = McapRecordReader.parse_summary_offset(self._file)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
+            record = McapRecordParser.parse_summary_offset(self._file)
             self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
     # Helpful Constructors
@@ -182,12 +182,12 @@ class McapFileRandomAccessReader:
     def get_footer(self) -> FooterRecord:
         """Get the footer record from the MCAP file."""
         self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        return McapRecordReader.parse_footer(self._file)
+        return McapRecordParser.parse_footer(self._file)
 
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
         self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS].group_start)
-        return McapRecordReader.parse_statistics(self._file)
+        return McapRecordParser.parse_statistics(self._file)
 
     def get_start_time(self) -> int:
         """
@@ -221,8 +221,8 @@ class McapFileRandomAccessReader:
         """
         self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
         schemas = {}
-        while McapRecordReader.peek_record(self._file) == McapRecordType.SCHEMA:
-            schema = McapRecordReader.parse_schema(self._file)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+            schema = McapRecordParser.parse_schema(self._file)
             schemas[schema.id] = schema
         return schemas
 
@@ -255,8 +255,8 @@ class McapFileRandomAccessReader:
         """
         self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
         channels = {}
-        while McapRecordReader.peek_record(self._file) == McapRecordType.CHANNEL:
-            channel = McapRecordReader.parse_channel(self._file)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+            channel = McapRecordParser.parse_channel(self._file)
             channels[channel.id] = channel
         return channels
 
@@ -301,8 +301,8 @@ class McapFileRandomAccessReader:
         """
         self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         chunk_indexes = []
-        while McapRecordReader.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
-            chunk_index = McapRecordReader.parse_chunk_index(self._file)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+            chunk_index = McapRecordParser.parse_chunk_index(self._file)
             if channel_id is None or channel_id in chunk_index.message_index_offsets:
                 chunk_indexes.append(chunk_index)
         return chunk_indexes
@@ -320,7 +320,7 @@ class McapFileRandomAccessReader:
         message_index = {}
         for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
             self._file.seek_from_start(message_index_offset)
-            message_index[channel_id] = McapRecordReader.parse_message_index(self._file)
+            message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
         return message_index
 
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
@@ -347,7 +347,7 @@ class McapFileRandomAccessReader:
             A ChunkRecord object.
         """
         self._file.seek_from_start(chunk_index.chunk_start_offset)
-        return McapRecordReader.parse_chunk(self._file)
+        return McapRecordParser.parse_chunk(self._file)
 
     def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
         """
@@ -401,7 +401,7 @@ class McapFileRandomAccessReader:
                 chunk = self.get_chunk(chunk_index)
                 reader = BytesReader(decompress_chunk(chunk))
                 reader.seek_from_start(offset)
-                return McapRecordReader.parse_message(reader)
+                return McapRecordParser.parse_message(reader)
         return None
 
     def get_topic_messages(
@@ -447,7 +447,7 @@ class McapFileRandomAccessReader:
 
                 # Read the message
                 reader.seek_from_start(offset)
-                yield McapRecordReader.parse_message(reader)
+                yield McapRecordParser.parse_message(reader)
 
 
 class McapFileSequentialReader:
@@ -460,12 +460,12 @@ class McapFileSequentialReader:
         logger.warning("Using SequentialReader, operations will be slow")
 
         self._file = file
-        self._version = McapRecordReader.read_magic_bytes(self._file)
+        self._version = McapRecordParser.read_magic_bytes(self._file)
         logger.debug(f"MCAP version: {self._version}")
 
         # Read the footer for statistics and boundary information
         self._file.seek_from_end(MAGIC_BYTES_SIZE)
-        mcap_version = McapRecordReader.read_magic_bytes(self._file)
+        mcap_version = McapRecordParser.read_magic_bytes(self._file)
         assert self._version == mcap_version
 
         # Caches for expensive operations
@@ -493,17 +493,17 @@ class McapFileSequentialReader:
         """Iterate over records in the data section of the file."""
         # Start after the magic bytes and header
         self._file.seek_from_start(MAGIC_BYTES_SIZE)
-        _ = McapRecordReader.parse_header(self._file)
+        _ = McapRecordParser.parse_header(self._file)
 
-        while (record_type := McapRecordReader.peek_record(self._file)) != McapRecordType.DATA_END:
-            yield record_type, McapRecordReader._parse_record(record_type, self._file)
+        while (record_type := McapRecordParser.peek_record(self._file)) != McapRecordType.DATA_END:
+            yield record_type, McapRecordParser._parse_record(record_type, self._file)
 
     def _iterate_records(self) -> Generator[tuple[int, Any], None, None]:
         """Iterate over all records, decompressing chunks as needed."""
         for record_type, record in self._iterate_data_records():
             if record_type == McapRecordType.CHUNK:
                 reader = BytesReader(decompress_chunk(record))
-                for inner_type, inner_record in McapRecordReader.read_record(reader):
+                for inner_type, inner_record in McapRecordParser.read_record(reader):
                     yield inner_type, inner_record
             else:
                 yield record_type, record
@@ -512,7 +512,7 @@ class McapFileSequentialReader:
         self, chunk: ChunkRecord
     ) -> Generator[MessageRecord, None, None]:
         reader = BytesReader(decompress_chunk(chunk))
-        for r_type, r in McapRecordReader.read_record(reader):
+        for r_type, r in McapRecordParser.read_record(reader):
             if r_type == McapRecordType.MESSAGE:
                 yield r
 

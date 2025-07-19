@@ -1,6 +1,6 @@
 from pybag.io.raw_reader import BytesReader
 from pybag.io.raw_writer import BytesWriter
-from pybag.mcap.record_reader import McapRecordReader
+from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     AttachmentIndexRecord,
@@ -26,7 +26,7 @@ def test_header_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_header(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_header(reader)
+    parsed = McapRecordParser.parse_header(reader)
     assert parsed == record
 
 
@@ -35,7 +35,7 @@ def test_footer_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_footer(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_footer(reader)
+    parsed = McapRecordParser.parse_footer(reader)
     assert parsed == record
 
 
@@ -44,7 +44,7 @@ def test_channel_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_channel(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_channel(reader)
+    parsed = McapRecordParser.parse_channel(reader)
     assert parsed == record
 
 
@@ -53,7 +53,7 @@ def test_schema_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_schema(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_schema(reader)
+    parsed = McapRecordParser.parse_schema(reader)
     assert parsed == record
 
 
@@ -62,7 +62,7 @@ def test_message_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_message(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_message(reader)
+    parsed = McapRecordParser.parse_message(reader)
     assert parsed == record
 
 
@@ -78,7 +78,7 @@ def test_chunk_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_chunk(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_chunk(reader)
+    parsed = McapRecordParser.parse_chunk(reader)
     assert parsed == record
 
 
@@ -87,7 +87,7 @@ def test_message_index_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_message_index(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_message_index(reader)
+    parsed = McapRecordParser.parse_message_index(reader)
     assert parsed == record
 
 
@@ -106,7 +106,7 @@ def test_chunk_index_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_chunk_index(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_chunk_index(reader)
+    parsed = McapRecordParser.parse_chunk_index(reader)
     assert parsed == record
 
 
@@ -122,7 +122,7 @@ def test_attachment_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_attachment(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_attachment(reader)
+    parsed = McapRecordParser.parse_attachment(reader)
     assert parsed == record
 
 
@@ -131,7 +131,7 @@ def test_metadata_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_metadata(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_metadata(reader)
+    parsed = McapRecordParser.parse_metadata(reader)
     assert parsed == record
 
 
@@ -140,7 +140,7 @@ def test_data_end_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_data_end(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_data_end(reader)
+    parsed = McapRecordParser.parse_data_end(reader)
     assert parsed == record
 
 
@@ -157,7 +157,7 @@ def test_attachment_index_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_attachment_index(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_attachment_index(reader)
+    parsed = McapRecordParser.parse_attachment_index(reader)
     assert parsed == record
 
 
@@ -166,7 +166,7 @@ def test_metadata_index_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_metadata_index(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_metadata_index(reader)
+    parsed = McapRecordParser.parse_metadata_index(reader)
     assert parsed == record
 
 
@@ -185,7 +185,7 @@ def test_statistics_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_statistics(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_statistics(reader)
+    parsed = McapRecordParser.parse_statistics(reader)
     assert parsed == record
 
 
@@ -194,5 +194,5 @@ def test_summary_offset_encode_decode():
     writer = BytesWriter()
     McapRecordWriter.write_summary_offset(writer, record)
     reader = BytesReader(writer.as_bytes())
-    parsed = McapRecordReader.parse_summary_offset(reader)
+    parsed = McapRecordParser.parse_summary_offset(reader)
     assert parsed == record

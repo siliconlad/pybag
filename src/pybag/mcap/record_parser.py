@@ -54,7 +54,7 @@ class MalformedMCAP(Exception):
         super().__init__(error_msessage)
 
 
-class McapRecordReader:
+class McapRecordParser:
     @classmethod
     def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
