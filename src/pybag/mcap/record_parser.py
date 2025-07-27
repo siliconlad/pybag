@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Number of bytes of fixed-sized records
 MAGIC_BYTES_SIZE = 8
-FOOTER_SIZE = 1 + 8 + 20
+FOOTER_SIZE = 20
 
 
 class McapRecordType(IntEnum):
@@ -54,11 +54,19 @@ class MalformedMCAP(Exception):
         super().__init__(error_msessage)
 
 
-class McapRecordReader:
+class McapRecordParser:
     @classmethod
     def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
         return int.from_bytes(file.peek(1)[:1], 'little')
+
+
+    @classmethod
+    def skip_record(cls, file: BaseReader) -> None:
+        """Skip the next record in the MCAP file."""
+        _ = file.read(1)  # Skip the record type
+        _, record_length = cls._parse_uint64(file)
+        file.seek_from_current(record_length)
 
 
     @classmethod

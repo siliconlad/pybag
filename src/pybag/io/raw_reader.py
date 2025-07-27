@@ -31,6 +31,11 @@ class BaseReader(ABC):
         ...
 
     @abstractmethod
+    def seek_from_current(self, offset: int) -> int:
+        """Seek from the current position of the reader."""
+        ...
+
+    @abstractmethod
     def tell(self) -> int:
         """Get the current position in the reader."""
         ...
@@ -57,6 +62,9 @@ class FileReader(BaseReader):
 
     def seek_from_end(self, offset: int) -> int:
         return self._file.seek(-offset, FilePosition.END)
+
+    def seek_from_current(self, offset: int) -> int:
+        return self._file.seek(offset, FilePosition.CURRENT)
 
     def tell(self) -> int:
         return self._file.tell()
@@ -86,6 +94,10 @@ class BytesReader(BaseReader):
 
     def seek_from_end(self, offset: int) -> int:
         self._position = len(self._data) - offset
+        return self._position
+
+    def seek_from_current(self, offset: int) -> int:
+        self._position += offset
         return self._position
 
     def tell(self) -> int:
