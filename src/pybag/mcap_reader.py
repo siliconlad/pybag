@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from pybag.encoding.cdr import CdrDecoder
+from pybag.encoding.ros1 import Ros1Decoder
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.record_reader import (
     FOOTER_SIZE,
@@ -23,6 +24,7 @@ from pybag.mcap.records import (
     SchemaRecord,
     StatisticsRecord
 )
+from pybag.schema.ros1msg import Ros1MsgFieldType, parse_ros1msg
 from pybag.schema.ros2msg import Ros2MsgFieldType, parse_ros2msg
 
 # GLOBAL TODOs:
@@ -83,24 +85,28 @@ def decompress_chunk(chunk: ChunkRecord) -> bytes:
 
 def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
     """Decode a message using a schema."""
-    # TODO: Support other encodings (e.g. ROS 1)
-    if schema.encoding != 'ros2msg':
+    if schema.encoding == 'ros2msg':
+        decoder = CdrDecoder(message.data)
+        msg_schema, schema_msgs = parse_ros2msg(schema)
+        field_type_enum = Ros2MsgFieldType
+    elif schema.encoding == 'ros1msg':
+        decoder = Ros1Decoder(message.data)
+        msg_schema, schema_msgs = parse_ros1msg(schema)
+        field_type_enum = Ros1MsgFieldType
+    else:
         error_msg = f'Unknown encoding type: {schema.encoding}'
         raise McapUnknownEncodingError(error_msg)
-
-    cdr = CdrDecoder(message.data)
-    msg_schema, schema_msgs = parse_ros2msg(schema)
 
     def decode_field(field_schema: dict, field_schemas: dict) -> dict:
         field = {}
         for field_name, field_dict in field_schema.items():
-            if field_dict['field_type'] == Ros2MsgFieldType.PRIMITIVE:
-                field[field_name] = cdr.parse(field_dict['data_type'])
-            elif field_dict['field_type'] == Ros2MsgFieldType.ARRAY:
-                field[field_name] = cdr.array(field_dict['data_type'], field_dict['length'])
-            elif field_dict['field_type'] == Ros2MsgFieldType.SEQUENCE:
-                field[field_name] = cdr.sequence(field_dict['data_type'])
-            elif field_dict['field_type'] == Ros2MsgFieldType.COMPLEX:
+            if field_dict['field_type'] == field_type_enum.PRIMITIVE:
+                field[field_name] = decoder.parse(field_dict['data_type'])
+            elif field_dict['field_type'] == field_type_enum.ARRAY:
+                field[field_name] = decoder.array(field_dict['data_type'], field_dict['length'])
+            elif field_dict['field_type'] == field_type_enum.SEQUENCE:
+                field[field_name] = decoder.sequence(field_dict['data_type'])
+            elif field_dict['field_type'] == field_type_enum.COMPLEX:
                 new_msg_schema = field_schemas[field_dict['data_type']]
                 field[field_name] = decode_field(new_msg_schema, field_schemas)
             else:
