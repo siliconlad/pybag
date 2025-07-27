@@ -1,458 +1,508 @@
 import logging
-import struct
-from enum import IntEnum
-from typing import Any, Callable, Iterator
+from abc import ABC, abstractmethod
+from collections import namedtuple
+from pathlib import Path
+from typing import Generator
 
-from pybag.io.raw_reader import BaseReader
+from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.mcap.error import (
+    McapNoStatisticsError,
+    McapNoSummaryIndexError,
+    McapNoSummarySectionError,
+    McapUnknownCompressionError,
+    McapUnknownSchemaError
+)
+from pybag.mcap.record_parser import (
+    FOOTER_SIZE,
+    MAGIC_BYTES_SIZE,
+    McapRecordParser,
+    McapRecordType
+)
 from pybag.mcap.records import (
-    AttachmentIndexRecord,
-    AttachmentRecord,
     ChannelRecord,
     ChunkIndexRecord,
     ChunkRecord,
-    DataEndRecord,
     FooterRecord,
-    HeaderRecord,
     MessageIndexRecord,
     MessageRecord,
-    MetadataIndexRecord,
-    MetadataRecord,
-    RecordType,
     SchemaRecord,
-    StatisticsRecord,
-    SummaryOffsetRecord
+    StatisticsRecord
 )
 
 logger = logging.getLogger(__name__)
 
-# Number of bytes of fixed-sized records
-MAGIC_BYTES_SIZE = 8
-FOOTER_SIZE = 1 + 8 + 20
+
+def decompress_chunk(chunk: ChunkRecord) -> bytes:
+    """Decompress the records field of a chunk."""
+    if chunk.compression == 'zstd':
+        import zstandard as zstd
+        return zstd.ZstdDecompressor().decompress(chunk.records)
+    elif chunk.compression == 'lz4':
+        import lz4.frame
+        return lz4.frame.decompress(chunk.records)
+    elif chunk.compression == '':
+        return chunk.records
+    else:
+        error_msg = f'Unknown compression type: {chunk.compression}'
+        raise McapUnknownCompressionError(error_msg)
 
 
-class McapRecordType(IntEnum):
-    HEADER = 1
-    FOOTER = 2
-    SCHEMA = 3
-    CHANNEL = 4
-    MESSAGE = 5
-    CHUNK = 6
-    MESSAGE_INDEX = 7
-    CHUNK_INDEX = 8
-    ATTACHMENT = 9
-    ATTACHMENT_INDEX = 10
-    STATISTICS = 11
-    METADATA = 12
-    METADATA_INDEX = 13
-    SUMMARY_OFFSET = 14
-    DATA_END = 15
+# TODO: Is this the minimal set of methods needed?
+class BaseMcapRecordReader(ABC):
+    @abstractmethod
+    def close(self) -> None:
+        """Close the MCAP file and release all resources."""
+        ...
+
+    @abstractmethod
+    def get_footer(self) -> FooterRecord:
+        """Get the footer record from the MCAP file."""
+        ...
+
+    @abstractmethod
+    def get_statistics(self) -> StatisticsRecord:
+        """Get the statistics record from the MCAP file."""
+        ...
+
+    # Schema Management
+
+    @abstractmethod
+    def get_schemas(self) -> dict[int, SchemaRecord]:
+        """Get all schemas defined in the MCAP file."""
+        ...
+
+    @abstractmethod
+    def get_schema(self, schema_id: int) -> SchemaRecord | None:
+        """Get a schema by its ID."""
+        ...
+
+    @abstractmethod
+    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
+        """Get the schema for a given channel ID."""
+        ...
+
+    @abstractmethod
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
+        """Get the schema for a given message."""
+        ...
+
+    # Channel Management
+
+    @abstractmethod
+    def get_channels(self) -> dict[int, ChannelRecord]:
+        """Get all channels/topics in the MCAP file."""
+        ...
+
+    @abstractmethod
+    def get_channel(self, channel_id: int) -> ChannelRecord | None:
+        """Get a channel by its ID."""
+        ...
+
+    @abstractmethod
+    def get_channel_id(self, topic: str) -> int | None:
+        """Get a channel ID by its topic."""
+        ...
+
+    # Message Index Management
+
+    @abstractmethod
+    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
+        """Get all message indexes from the MCAP file."""
+        ...
+
+    @abstractmethod
+    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
+        """Get a message index for a given channel ID."""
+        ...
+
+    # Chunk Management
+
+    @abstractmethod
+    def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
+        """Get all chunk indexes from the MCAP file."""
+        ...
+
+    @abstractmethod
+    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
+        """Get a chunk by its index."""
+        ...
+
+    # Message Management
+
+    @abstractmethod
+    def get_message(
+        self,
+        channel_id: int,
+        timestamp: int | None = None,
+    ) -> MessageRecord | None:
+        ...
+
+    @abstractmethod
+    def get_messages(
+        self,
+        channel_id: int,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        ...
 
 
-class MalformedMCAP(Exception):
-    """The MCAP format does not conform to the specification."""
-    def __init__(self, error_msessage: str):
-        super().__init__(error_msessage)
+class McapRecordRandomAccessReader(BaseMcapRecordReader):
+    """Class to efficiently get records from an MCAP file.
 
+    Args:
+        file: The file to read from.
+    """
 
-class McapRecordReader:
-    @classmethod
-    def peek_record(cls, file: BaseReader) -> int:
-        """Peek at the next record in the MCAP file."""
-        return int.from_bytes(file.peek(1)[:1], 'little')
+    def __init__(self, file: BaseReader):
+        self._file = file
 
+        self._version = McapRecordParser.parse_magic_bytes(self._file)
+        logger.debug(f'MCAP version: {self._version}')
 
-    @classmethod
-    def read_record(cls, file: BaseReader) -> Iterator[tuple[int, Any]]:
-        """Read the next record in the MCAP file."""
-        while True:
-            record_type = cls.peek_record(file)
-            logger.debug(f'Peeked at {record_type} record...')
-            if record_type == 0:
-                break  # EOF
-            yield record_type, cls._parse_record(record_type, file)
+        footer = self.get_footer()
 
+        # Summary section start
+        self._summary_start = footer.summary_start
+        logger.debug(f'Summary start: {self._summary_start}')
+        if self._summary_start == 0:
+            error_msg = 'No summary section detected in MCAP'
+            raise McapNoSummarySectionError(error_msg)
 
-    @classmethod
-    def read_magic_bytes(cls, file: BaseReader) -> str:
-        """Parse the magic bytes at the begining/end of the MCAP file."""
-        magic = file.read(8)
-        if magic != b'\x89MCAP\x30\r\n':  # TODO: Support multiple versions
-            raise MalformedMCAP(f'Invalid magic bytes: {str(magic)}')
-        return chr(magic[5])  # Return the version
+        # Summary offset section start
+        self._summary_offset_start = footer.summary_offset_start
+        logger.debug(f'Summary offset start: {self._summary_offset_start}')
+        if self._summary_offset_start == 0:
+            error_msg = 'No summary offset section detected in MCAP'
+            raise McapNoSummaryIndexError(error_msg)
 
+        # Load summary offsets
+        Offset = namedtuple('Offset', ['group_start', 'group_length'])
+        self._summary_offset: dict[int, Offset] = {}
+        self._file.seek_from_start(self._summary_offset_start)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
+            record = McapRecordParser.parse_summary_offset(self._file)
+            self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
-    @classmethod
-    def _parse_record(cls, record_type: int, file: BaseReader) -> Any:
-        """Parse the next record in the MCAP file."""
-        record_name = RecordType(record_type).name.lower()
-        logger.debug(f'Parsing {record_name} record...')
-        return getattr(cls, f'parse_{record_name}')(file)
+    # Helpful Constructors
 
-    # MCAP Serialization Handlers
+    @staticmethod
+    def from_file(file_path: Path | str) -> 'McapRecordRandomAccessReader':
+        """
+        Create a new MCAP reader from a file.
+        """
+        return McapRecordRandomAccessReader(FileReader(file_path))
 
-    @classmethod
-    def _parse_uint8(cls, file: BaseReader) -> tuple[int, int]:
-        return 1, struct.unpack('<B', file.read(1))[0]
+    @staticmethod
+    def from_bytes(data: bytes) -> 'McapRecordRandomAccessReader':
+        """
+        Create a new MCAP reader from a bytes object.
+        """
+        return McapRecordRandomAccessReader(BytesReader(data))
 
+    # Destructors
 
-    @classmethod
-    def _parse_uint16(cls, file: BaseReader) -> tuple[int, int]:
-        return 2, struct.unpack('<H', file.read(2))[0]
+    def close(self) -> None:
+        """Close the MCAP file and release all resources."""
+        self._file.close()
 
+    # Getters for records
 
-    @classmethod
-    def _parse_uint32(cls, file: BaseReader) -> tuple[int, int]:
-        return 4, struct.unpack('<I', file.read(4))[0]
+    def get_footer(self) -> FooterRecord:
+        """Get the footer record from the MCAP file."""
+        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_footer(self._file)
 
+    def get_statistics(self) -> StatisticsRecord:
+        """Get the statistics record from the MCAP file."""
+        if McapRecordType.STATISTICS not in self._summary_offset:
+            raise McapNoStatisticsError('No statistics section detected in MCAP')
+        self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS].group_start)
+        return McapRecordParser.parse_statistics(self._file)
 
-    @classmethod
-    def _parse_uint64(cls, file: BaseReader) -> tuple[int, int]:
-        return 8, struct.unpack('<Q', file.read(8))[0]
+    # Schema Management
 
+    def get_schemas(self) -> dict[int, SchemaRecord]:
+        """
+        Get all schemas defined in the MCAP file.
 
-    @classmethod
-    def _parse_string(cls, file: BaseReader) -> tuple[int, str]:
-        string_length_bytes, string_length = cls._parse_uint32(file)
-        string = file.read(string_length)
-        return string_length_bytes + string_length, string.decode()
+        Returns:
+            A dictionary mapping schema IDs to SchemaInfo objects.
+        """
+        self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
+        schemas = {}
+        while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+            schema = McapRecordParser.parse_schema(self._file)
+            if schema is None:  # Invalid schema, should be ignored
+                continue
+            schemas[schema.id] = schema
+        return schemas
 
+    def get_schema(self, schema_id: int) -> SchemaRecord | None:
+        """
+        Get a schema by its ID.
 
-    @classmethod
-    def _parse_timestamp(cls, file: BaseReader) -> tuple[int, int]:
-        return cls._parse_uint64(file)
+        Args:
+            schema_id: The ID of the schema.
 
+        Returns:
+            The schema or None if the schema does not exist.
+        """
+        return self.get_schemas().get(schema_id)
 
-    @classmethod
-    def _parse_bytes(cls, file: BaseReader, size: int) -> tuple[int, bytes]:
-        bytes = file.read(size)
-        return len(bytes), bytes
+    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
+        """
+        Get the schema for a given channel ID.
 
+        Args:
+            channel_id: The ID of the channel.
 
-    @classmethod
-    def _parse_tuple(cls, file: BaseReader, first_type: str, second_type: str) -> tuple[int, tuple]:
-        first_value_length, first_value = getattr(cls, f'_parse_{first_type}')(file)
-        second_value_length, second_value = getattr(cls, f'_parse_{second_type}')(file)
-        return first_value_length + second_value_length, (first_value, second_value)
-
-
-    @classmethod
-    def _parse_map(cls, file: BaseReader, key_type: str, value_type: str) -> tuple[int, dict]:
-        map_length_bytes, map_length = cls._parse_uint32(file)
-        original_length = map_length
-
-        map_key_value = {}
-        while map_length > 0:
-            key_length, key = getattr(cls, f'_parse_{key_type}')(file)
-            value_length, value = getattr(cls, f'_parse_{value_type}')(file)
-            map_key_value[key] = value
-            map_length -= key_length + value_length
-
-        if map_length != 0:
-            bytes_read = original_length - map_length
-            raise MalformedMCAP(f'Read {bytes_read} bytes. Expected {original_length}.')
-
-        return map_length_bytes + map_length, map_key_value
-
-
-    @classmethod
-    def _parse_array(
-        cls,
-        file: BaseReader,
-        array_type_parser: Callable[[BaseReader], tuple[int, Any]]
-    ) -> tuple[int, list]:
-        array_length_bytes, array_length = cls._parse_uint32(file)
-        original_length = array_length
-        logger.debug(f'Array length: {array_length}')
-
-        array = []
-        while array_length > 0:
-            value_length, value = array_type_parser(file)
-            array.append(value)
-            array_length -= value_length
-
-        if array_length != 0:
-            bytes_read = original_length - array_length
-            raise MalformedMCAP(f'Read {bytes_read} bytes. Expected {original_length}.')
-
-        return array_length_bytes + array_length, array
-
-    # MCAP Record Handlers
-
-    @classmethod
-    def parse_header(cls, file: BaseReader) -> HeaderRecord:
-        """Parse the header record of an MCAP file."""
-        if (record_type := file.read(1)) != b'\x01':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = cls._parse_uint64(file)
-        _, profile = cls._parse_string(file)
-        _, library = cls._parse_string(file)
-
-        return HeaderRecord(profile, library)
-
-
-    @classmethod
-    def parse_footer(cls, file: BaseReader) -> FooterRecord:
-        """Parse the footer record of an MCAP file."""
-        if (record_type := file.read(1)) != b'\x02':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        # Footer record length is fixed to 20 bytes
-        _, record_length = cls._parse_uint64(file)
-        if record_length != 20:
-            raise MalformedMCAP(f'Unexpected footer record length ({record_length} bytes).')
-
-        _, summary_start = cls._parse_uint64(file)
-        _, summary_offset_start = cls._parse_uint64(file)
-        _, summary_crc = cls._parse_uint32(file)
-
-        return FooterRecord(summary_start, summary_offset_start, summary_crc)
-
-
-    @classmethod
-    def parse_schema(cls, file: BaseReader) -> SchemaRecord | None:
-        if (record_type := file.read(1)) != b'\x03':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        _, record_length = cls._parse_uint64(file)
-
-        _, id = cls._parse_uint16(file)
-        if id == 0:  # Invalid and should be ignored
+        Returns:
+            The schema of the channel or None if the channel/schema does not exist.
+        """
+        channel = self.get_channel(channel_id)
+        if channel is None:
             return None
+        return self.get_schema(channel.schema_id)
 
-        _, name = cls._parse_string(file)
-        _, encoding = cls._parse_string(file)
-        _, data_length = cls._parse_uint32(file)
-        _, data = cls._parse_bytes(file, data_length)
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
+        """
+        Get the schema for a given message.
 
-        return SchemaRecord(id, name, encoding, data)
+        Args:
+            message: The message to get the schema for.
 
+        Returns:
+            The schema for the message.
+        """
+        schema = self.get_channel_schema(message.channel_id)
+        if schema is None:
+            raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
+        return schema
 
-    @classmethod
-    def parse_channel(cls, file: BaseReader) -> ChannelRecord:
-        if (record_type := file.read(1)) != b'\x04':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+    # Channel Management
 
-        _, record_length = cls._parse_uint64(file)
+    def get_channels(self) -> dict[int, ChannelRecord]:
+        """
+        Get all channels/topics in the MCAP file.
 
-        _, id = cls._parse_uint16(file)
-        _, channel_id = cls._parse_uint16(file)
-        _, topic = cls._parse_string(file)
-        _, message_encoding = cls._parse_string(file)
-        _, metadata = cls._parse_map(file, "string", "string")
+        Returns:
+            A dictionary mapping channel IDs to channel information.
+        """
+        self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
+        channels = {}
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+            channel = McapRecordParser.parse_channel(self._file)
+            channels[channel.id] = channel
+        return channels
 
-        return ChannelRecord(id, channel_id, topic, message_encoding, metadata)
+    def get_channel(self, channel_id: int) -> ChannelRecord | None:
+        """
+        Get channel information by its ID.
 
+        Args:
+            channel_id: The ID of the channel.
 
-    @classmethod
-    def parse_message(cls, file: BaseReader) -> MessageRecord:
-        if (record_type := file.read(1)) != b'\x05':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+        Returns:
+            The channel information or None if the channel does not exist.
+        """
+        return self.get_channels().get(channel_id)
 
-        _, record_length = cls._parse_uint64(file)
+    def get_channel_id(self, topic: str) -> int | None:
+        """Get a channel ID by its topic."""
+        for channel in self.get_channels().values():
+            if channel.topic == topic:
+                return channel.id
+        return None
 
-        _, channel_id = cls._parse_uint16(file)
-        _, sequence = cls._parse_uint32(file)
-        _, log_time = cls._parse_timestamp(file)
-        _, publish_time = cls._parse_timestamp(file)
-        # Other fields: 2 + 4 + 8 + 8 = 22 bytes
-        _, data = cls._parse_bytes(file, record_length - 22)
+    # Message Index Management
 
-        return MessageRecord(channel_id, sequence, log_time, publish_time, data)
+    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
+        """
+        Get all message indexes from the MCAP file.
 
+        Args:
+            chunk_index: The chunk index to get the message indexes from.
 
-    @classmethod
-    def parse_chunk(cls, file: BaseReader) -> ChunkRecord:
-        if (record_type := file.read(1)) != b'\x06':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+        Returns:
+            A list of MessageIndexRecord objects.
+        """
+        message_index = {}
+        for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
+            self._file.seek_from_start(message_index_offset)
+            message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
+        return message_index
 
-        _ = cls._parse_uint64(file)
+    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
+        """
+        Get a message index for a given channel ID.
 
-        _, message_start_time = cls._parse_timestamp(file)
-        _, message_end_time = cls._parse_timestamp(file)
-        _, uncompressed_size = cls._parse_uint64(file)
-        _, uncompressed_crc = cls._parse_uint32(file)
-        _, compression = cls._parse_string(file)
-        _, records_length = cls._parse_uint64(file)
-        _, records = cls._parse_bytes(file, records_length)
+        Args:
+            chunk_index: The chunk index to get the message indexes from.
+            channel_id: The ID of the channel.
 
-        return ChunkRecord(
-            message_start_time,
-            message_end_time,
-            uncompressed_size,
-            uncompressed_crc,
-            compression,
-            records
-        )
+        Returns:
+            A MessageIndexRecord object or None if the channel does not exist for the chunk.
+        """
+        return self.get_message_indexes(chunk_index).get(channel_id)
 
+    # Chunk Management
 
-    @classmethod
-    def parse_message_index(cls, file: BaseReader) -> MessageIndexRecord:
-        if (record_type := file.read(1)) != b'\x07':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+    def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
+        """
+        Get all chunk indexes from the MCAP file.
 
-        _, message_index_length = cls._parse_uint64(file)
-        logger.debug(f'Message index length: {message_index_length}')
+        Args:
+            channel_id: The ID of the channel to get the chunk indexes for. If None, all chunk indexes are returned.
 
-        _, channel_id = cls._parse_uint16(file)
-        _, records = cls._parse_array(file, lambda file: cls._parse_tuple(file, "timestamp", "uint64"))
+        Returns:
+            A list of ChunkIndexRecord objects.
+        """
+        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
+        chunk_indexes = []
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+            chunk_index = McapRecordParser.parse_chunk_index(self._file)
+            if channel_id is None or channel_id in chunk_index.message_index_offsets:
+                chunk_indexes.append(chunk_index)
+        return chunk_indexes
 
-        return MessageIndexRecord(channel_id, records)
+    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
+        """
+        Get a chunk by its index.
 
+        Args:
+            chunk_index: The chunk index to get the chunk from.
 
-    @classmethod
-    def parse_chunk_index(cls, file: BaseReader) -> ChunkIndexRecord:
-        if (record_type := file.read(1)) != b'\x08':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+        Returns:
+            A ChunkRecord object.
+        """
+        self._file.seek_from_start(chunk_index.chunk_start_offset)
+        return McapRecordParser.parse_chunk(self._file)
 
-        _ = cls._parse_uint64(file)
+    # Message Management
 
-        _, message_start_time = cls._parse_timestamp(file)
-        _, message_end_time = cls._parse_timestamp(file)
-        _, chunk_start_offset = cls._parse_uint64(file)
-        _, chunk_length = cls._parse_uint64(file)
-        _, message_index_offsets = cls._parse_map(file, "uint16", "uint64")
-        _, message_index_length = cls._parse_uint64(file)
-        _, compression = cls._parse_string(file)
-        _, compressed_size = cls._parse_uint64(file)
-        _, uncompressed_size = cls._parse_uint64(file)
+    def get_message(
+        self,
+        channel_id: int,
+        timestamp: int | None = None,
+    ) -> MessageRecord | None:
+        """
+        Get a message from a given channel at a given timestamp.
 
-        return ChunkIndexRecord(
-            message_start_time,
-            message_end_time,
-            chunk_start_offset,
-            chunk_length,
-            message_index_offsets,
-            message_index_length,
-            compression,
-            compressed_size,
-            uncompressed_size
-        )
+        If the timestamp is not provided, the first message in the channel is returned.
 
+        Args:
+            channel_id: The ID of the channel.
+            timestamp: The timestamp of the message.
 
-    @classmethod
-    def parse_attachment(cls, file: BaseReader) -> AttachmentRecord:
-        if (record_type := file.read(1)) != b'\x09':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+        Returns:
+            A MessageRecord object or None if the message does not exist.
+        """
+        chunk_indexes = self.get_chunk_indexes(channel_id)
+        for chunk_index in chunk_indexes:
+            if timestamp is None or (chunk_index.message_start_time <= timestamp <= chunk_index.message_end_time):
+                # The message must be in the chunk based on the start and end times
+                message_index = self.get_message_index(chunk_index, channel_id)
+                if message_index is None:
+                    return None
 
-        _ = cls._parse_uint64(file)
+                # Make sure the timestamp is in the message index
+                sorted_records = sorted(message_index.records, key=lambda x: x[0])
+                offset = next((r[1] for r in sorted_records if r[0] == timestamp), None)
+                if offset is None:
+                    return None
 
-        _, log_time = cls._parse_timestamp(file)
-        _, create_time = cls._parse_timestamp(file)
-        _, name = cls._parse_string(file)
-        _, media_type = cls._parse_string(file)
-        _, data_bytes_length = cls._parse_uint64(file)
-        _, data_bytes = cls._parse_bytes(file, data_bytes_length)
-        _, crc = cls._parse_uint32(file)
+                # Read data from chunk
+                chunk = self.get_chunk(chunk_index)
+                reader = BytesReader(decompress_chunk(chunk))
+                reader.seek_from_start(offset)
+                return McapRecordParser.parse_message(reader)
+        return None
 
-        return AttachmentRecord(log_time, create_time, name, media_type, data_bytes, crc)
+    def get_messages(
+        self,
+        channel_id: int,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        """
+        Get all messages from a given channel.
 
+        If the start and end timestamps are not provided, all messages in the channel are returned.
 
-    @classmethod
-    def parse_metadata(cls, file: BaseReader) -> MetadataRecord:
-        if (record_type := file.read(1)) != b'\x0C':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+        Args:
+            channel_id: The ID of the channel.
+            start_timestamp: The start timestamp to filter by. If None, no filtering is done.
+            end_timestamp: The end timestamp to filter by. If None, no filtering is done.
 
-        _ = cls._parse_uint64(file)
+        Returns:
+            A generator of MessageRecord objects.
+        """
+        chunk_indexes = self.get_chunk_indexes(channel_id)
+        for chunk_index in sorted(chunk_indexes, key=lambda x: x.message_start_time):
+            # Skip chunk that do not match the timestamp range
+            if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
+                continue
+            if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
+                continue
 
-        _, name = cls._parse_string(file)
-        logger.debug(f'Parsing metadata for {name}...')
-        _, metadata = cls._parse_map(file, "string", "string")
+            # Get the message index for the chunk
+            message_index = self.get_message_index(chunk_index, channel_id)
+            if message_index is None:
+                continue
 
-        return MetadataRecord(name, metadata)
+            # Read all messages in the chunk
+            chunk = self.get_chunk(chunk_index)
+            reader = BytesReader(decompress_chunk(chunk))
+            for timestamp, offset in sorted(message_index.records, key=lambda x: x[0]):
+                # Skip messages that do not match the timestamp range
+                if start_timestamp is not None and timestamp < start_timestamp:
+                    continue
+                if end_timestamp is not None and timestamp > end_timestamp:
+                    continue
 
+                # Read the message
+                reader.seek_from_start(offset)
+                yield McapRecordParser.parse_message(reader)
 
-    @classmethod
-    def parse_data_end(cls, file: BaseReader) -> DataEndRecord:
-        if (record_type := file.read(1)) != b'\x0f':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        _ = cls._parse_uint64(file)
-
-        _, data_section_crc = cls._parse_uint32(file)
-        return DataEndRecord(data_section_crc)
-
-
-    @classmethod
-    def parse_attachment_index(cls, file: BaseReader) -> AttachmentIndexRecord:
-        if (record_type := file.read(1)) != b'\x0A':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        _ = cls._parse_uint64(file)
-
-        _, offset = cls._parse_uint64(file)
-        _, length = cls._parse_uint64(file)
-        _, log_time = cls._parse_timestamp(file)
-        _, create_time = cls._parse_timestamp(file)
-        _, data_size = cls._parse_uint64(file)
-        _, name = cls._parse_string(file)
-        _, media_type = cls._parse_string(file)
-
-        return AttachmentIndexRecord(
-            offset,
-            length,
-            log_time,
-            create_time,
-            data_size,
-            name,
-            media_type
-        )
-
-
-    @classmethod
-    def parse_metadata_index(cls, file: BaseReader) -> MetadataIndexRecord:
-        if (record_type := file.read(1)) != b'\x0D':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        _ = cls._parse_uint64(file)
-
-        _, offset = cls._parse_uint64(file)
-        _, length = cls._parse_uint64(file)
-        _, name = cls._parse_string(file)
-
-        return MetadataIndexRecord(offset, length, name)
-
-
-    @classmethod
-    def parse_statistics(cls, file: BaseReader) -> StatisticsRecord:
-        if (record_type := file.read(1)) != b'\x0B':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
-
-        _ = cls._parse_uint64(file)
-
-        _, message_count = cls._parse_uint64(file)
-        _, schema_count = cls._parse_uint16(file)
-        _, channel_count = cls._parse_uint32(file)
-        _, attachment_count = cls._parse_uint32(file)
-        _, metadata_count = cls._parse_uint32(file)
-        _, chunk_count = cls._parse_uint32(file)
-        _, message_start_time = cls._parse_timestamp(file)
-        _, message_end_time = cls._parse_timestamp(file)
-        _, channel_message_counts = cls._parse_map(file, 'uint16', 'uint64')
-
-        return StatisticsRecord(
-            message_count,
-            schema_count,
-            channel_count,
-            attachment_count,
-            metadata_count,
-            chunk_count,
-            message_start_time,
-            message_end_time,
-            channel_message_counts
-        )
+    # TODO: Low Priority
+    # - Metadata Index
+    # - Attachment Index
 
 
-    @classmethod
-    def parse_summary_offset(cls, file: BaseReader) -> SummaryOffsetRecord:
-        if (record_type := file.read(1)) != b'\x0E':
-            raise MalformedMCAP(f'Unexpected record type ({record_type}).')
+class McapRecordReaderFactory:
+    """Factory to create a McapFileSequentialReader or McapFileRandomAccessReader."""
 
-        _ = cls._parse_uint64(file)
+    @staticmethod
+    def from_file(file_path: Path | str) -> McapRecordRandomAccessReader:
+        """Create a new MCAP reader from a file."""
+        try:
+            # Try to create a random access reader first
+            return McapRecordRandomAccessReader.from_file(file_path)
+        except McapNoSummarySectionError:
+            # If no summary section exists, fall back to sequential reader
+            # TODO: Implement the sequential reader
+            logger.warning('No summary section exists in MCAP, falling back to sequential reader')
+            raise NotImplementedError('Sequential readers are not implemented yet')
+        except McapNoSummaryIndexError:
+            # If no summary index exists, fall back to sequential reader
+            # TODO: Use sequential reader? Or just create the index?
+            logger.warning('No summary index exists in MCAP, falling back to sequential reader')
+            raise NotImplementedError('Sequential readers are not implemented yet')
 
-        _, group_opcode = cls._parse_uint8(file)
-        _, group_start = cls._parse_uint64(file)
-        _, group_length = cls._parse_uint64(file)
-
-        return SummaryOffsetRecord(group_opcode, group_start, group_length)
+    @staticmethod
+    def from_bytes(data: bytes) -> McapRecordRandomAccessReader:
+        """Create a new MCAP reader from a bytes object."""
+        try:
+            # Try to create a random access reader first
+            return McapRecordRandomAccessReader.from_bytes(data)
+        except McapNoSummarySectionError:
+            # If no summary section exists, fall back to sequential reader
+            # TODO: Implement the sequential reader
+            logger.warning('No summary section exists in MCAP, falling back to sequential reader')
+            raise NotImplementedError('Sequential readers are not implemented yet')
+        except McapNoSummaryIndexError:
+            # If no summary index exists, fall back to sequential reader
+            # TODO: Use sequential reader? Or just create the index?
+            logger.warning('No summary index exists in MCAP, falling back to sequential reader')
+            raise NotImplementedError('Sequential readers are not implemented yet')

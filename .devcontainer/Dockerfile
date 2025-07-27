@@ -36,6 +36,10 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 # Source ROS environment in bashrc
 RUN echo 'source /opt/ros/'$ROS_DISTRO'/setup.bash' >> /root/.bashrc
 
+# Git Config
+RUN git config --global push.autoSetupRemote true
+RUN git config --global core.editor "vim"
+
 # Switch back to dialog for any ad-hoc use of apt-get
 ENV DEBIAN_FRONTEND=
 
