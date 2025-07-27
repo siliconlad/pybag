@@ -1,10 +1,17 @@
 import logging
 from abc import ABC, abstractmethod
 from collections import namedtuple
-from typing import Generator
 from pathlib import Path
+from typing import Generator
 
-from pybag.io.raw_reader import BaseReader, FileReader, BytesReader
+from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.mcap.error import (
+    McapNoStatisticsError,
+    McapNoSummaryIndexError,
+    McapNoSummarySectionError,
+    McapUnknownCompressionError,
+    McapUnknownSchemaError
+)
 from pybag.mcap.record_parser import (
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
@@ -19,14 +26,7 @@ from pybag.mcap.records import (
     MessageIndexRecord,
     MessageRecord,
     SchemaRecord,
-    StatisticsRecord,
-)
-from pybag.mcap.error import (
-    McapNoSummarySectionError,
-    McapNoSummaryIndexError,
-    McapUnknownSchemaError,
-    McapUnknownCompressionError,
-    McapNoStatisticsError,
+    StatisticsRecord
 )
 
 logger = logging.getLogger(__name__)
