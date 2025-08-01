@@ -1,8 +1,10 @@
 """Test the reading of geometry_msgs messages."""
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from rosbags.rosbag2 import Writer, StoragePlugin
+
+from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
+
 from pybag.mcap_reader import McapFileReader
 
 
