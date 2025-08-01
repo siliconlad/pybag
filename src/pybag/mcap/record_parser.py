@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 # Number of bytes of fixed-sized records
 MAGIC_BYTES_SIZE = 8
-FOOTER_SIZE = 20
+FOOTER_SIZE = 29  # Includes the 1 byte record type and 8 bytes record length
 
 
 class McapRecordType(IntEnum):
