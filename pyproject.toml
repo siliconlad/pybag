@@ -31,10 +31,6 @@ test = [
    "mcap>=1.2.2",
    "rosbags>=0.10.10",
 ]
-dev = [
-    "kappe>=0.19.1",
-    "pre-commit>=4.2.0",
-]
 
 [tool.isort]
 multi_line_output = 3
