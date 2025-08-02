@@ -67,7 +67,6 @@ def read_with_official(mcap: Path) -> float:
     return perf_counter() - start
 
 
-
 def test_mcap_readers(benchmark: BenchmarkFixture) -> None:
     """Benchmark MCAP readers and ensure pybag is fastest."""
     with TemporaryDirectory() as tmpdir:
