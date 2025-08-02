@@ -11,7 +11,14 @@ from pybag.mcap.record_reader import (
     McapRecordReaderFactory
 )
 from pybag.mcap.records import MessageRecord, SchemaRecord
-from pybag.schema.ros2msg import Ros2MsgFieldType, parse_ros2msg
+from pybag.schema.ros2msg import (
+    Array,
+    Complex,
+    Primitive,
+    Ros2MsgSchema,
+    Schema,
+    Sequence
+)
 
 # GLOBAL TODOs:
 # - TODO: Add tests with mcaps
@@ -38,23 +45,23 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
         raise McapUnknownEncodingError(error_msg)
 
     cdr = CdrDecoder(message.data)
-    msg_schema, schema_msgs = parse_ros2msg(schema)
+    msg_schema, schema_msgs = Ros2MsgSchema().parse(schema)  # TODO: Store more permanently
 
-    def decode_field(field_schema: dict, field_schemas: dict) -> dict:
+    def decode_field(schema: Schema, sub_schemas: dict[str, Schema]) -> type:
         field = {}
-        for field_name, field_dict in field_schema.items():
-            if field_dict['field_type'] == Ros2MsgFieldType.PRIMITIVE:
-                field[field_name] = cdr.parse(field_dict['data_type'])
-            elif field_dict['field_type'] == Ros2MsgFieldType.ARRAY:
-                field[field_name] = cdr.array(field_dict['data_type'], field_dict['length'])
-            elif field_dict['field_type'] == Ros2MsgFieldType.SEQUENCE:
-                field[field_name] = cdr.sequence(field_dict['data_type'])
-            elif field_dict['field_type'] == Ros2MsgFieldType.COMPLEX:
-                new_msg_schema = field_schemas[field_dict['data_type']]
-                field[field_name] = decode_field(new_msg_schema, field_schemas)
+        for field_name, field_schema in schema.fields.items():
+            if isinstance(field_schema, Primitive):
+                field[field_name] = cdr.parse(field_schema.type)
+            elif isinstance(field_schema, Array):
+                field[field_name] = cdr.array(field_schema.type, field_schema.length)
+            elif isinstance(field_schema, Sequence):
+                field[field_name] = cdr.sequence(field_schema.type)
+            elif isinstance(field_schema, Complex):
+                sub_schema = sub_schemas[field_schema.type]
+                field[field_name] = decode_field(sub_schema, sub_schemas)
             else:
-                raise ValueError(f'Unknown field type: {field_dict["field_type"]}')
-        return field
+                raise ValueError(f'Unknown field type: {field_schema}')
+        return type(schema.name.replace('/', '.'), (), field)
 
     return decode_field(msg_schema, schema_msgs)
 
