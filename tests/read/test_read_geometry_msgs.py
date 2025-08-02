@@ -35,4 +35,7 @@ def test_vector3_rosbags():
         assert messages[0].sequence == 0
         assert messages[0].channel_id == connection.id
 
-        # TODO: Test the actual message data
+        assert messages[0].data.x == 1.0
+        assert messages[0].data.y == 2.0
+        assert messages[0].data.z == 3.0
+        # TODO: Test the type somehow?

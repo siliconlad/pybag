@@ -1,6 +1,8 @@
 import logging
 import re
+from abc import ABC
 from collections import defaultdict
+from dataclasses import dataclass
 from enum import Enum
 
 from pybag.mcap.records import SchemaRecord
@@ -28,128 +30,126 @@ PRIMITIVE_TYPE_MAP = {
 }
 
 
-class Ros2MsgFieldType(str, Enum):
-    PRIMITIVE = 'primitive'
-    ARRAY = 'array'
-    SEQUENCE = 'sequence'
-    COMPLEX = 'complex'
-
-
 class Ros2MsgError(Exception):
     """Exception raised for errors in the ROS2 message parsing."""
     def __init__(self, message: str):
         super().__init__(message)
 
 
-def parse_ros2msg_type(field_raw_type: str, package_name: str) -> dict:
-    # Check if the field is a string with a length limit
-    string_length_match = re.match(r'string(.*)\[', field_raw_type)
+class SchemaField(ABC):
+    ...
 
-    # Handle arrays
-    if re.match(r'.*\[.*\]$', field_raw_type):
-        if match := re.match(r'.*\[(\d*)\]$', field_raw_type):
-            field_type = Ros2MsgFieldType.ARRAY
-            length = int(match.group(1))
-        else:
-            field_type = Ros2MsgFieldType.SEQUENCE
-            length = None
 
-        # TODO: Do something with a string length limit
-        if string_length_match:
+@dataclass
+class Primitive(SchemaField):
+    type: str
+
+
+@dataclass
+class Array(SchemaField):
+    type: str
+    length: int
+
+
+@dataclass
+class Sequence(SchemaField):
+    type: str
+
+
+@dataclass
+class Complex(SchemaField):
+    type: str
+
+
+@dataclass
+class Schema:
+    name: str
+    fields: dict[str, SchemaField]
+
+
+class Ros2MsgSchema:
+    def __init__(self):
+        self._cache = None  # TODO: Cache messages we come across
+
+    def _parse_field_type(self, field_raw_type: str, package_name: str) -> SchemaField:
+        # Check if the field is a string with a length limit
+        string_length_match = re.match(r'string(.*)\[', field_raw_type)
+
+        # Handle arrays
+        if re.match(r'.*\[.*\]$', field_raw_type):
+            element_type = re.match(r'^(.*)\[', field_raw_type).group(1)
+            if match := re.match(r'.*\[(\d*)\]$', field_raw_type):
+                length = int(match.group(1))
+                return Array(element_type, length)
+            return Sequence(element_type)
+
+        # Handle strings with a length limit
+        if 'string' in field_raw_type and string_length_match:
+            # TODO: Do something with the limit
             logger.debug(f'String is limited: {string_length_match.group(1)}')
+            return Primitive('string')
 
-        # Get the type of the array elements
-        element_type = re.match(r'^(.*)\[', field_raw_type).group(1)
-        return {
-            'field_type': field_type,
-            'data_type': element_type,
-            'length': length
-        }
+        # Handle primitive types
+        if field_raw_type in PRIMITIVE_TYPE_MAP:
+            return Primitive(field_raw_type)
 
-    # Handle strings with a length limit
-    if 'string' in field_raw_type and string_length_match:
-        # TODO: Do something with the limit
-        logger.debug(f'String is limited: {string_length_match.group(1)}')
-        return {
-            'field_type': Ros2MsgFieldType.PRIMITIVE,
-            'data_type': 'string',
-        }
+        # Handle complex types
+        data_type = field_raw_type
+        if field_raw_type == 'Header':
+            data_type = 'std_msgs/Header'
+        elif '/' not in field_raw_type:
+            data_type = f'{package_name}/{field_raw_type}'
+        return Complex(data_type)
 
-    # Handle primitive types
-    if field_raw_type in PRIMITIVE_TYPE_MAP:
-        return {
-            'field_type': Ros2MsgFieldType.PRIMITIVE,
-            'data_type': field_raw_type,
-        }
+    def _parse_field(self, field: str, package_name: str) -> tuple[str, SchemaField]:
+        # Remove inline comments
+        field = re.sub(r'#.*\n', '', field)
 
-    # Handle complex types
-    data_type = field_raw_type
-    if field_raw_type == 'Header':
-        data_type = 'std_msgs/Header'
-    elif '/' not in field_raw_type:
-        data_type = f'{package_name}/{field_raw_type}'
-    return {
-        'field_type': Ros2MsgFieldType.COMPLEX,
-        'data_type': data_type,
-    }
+        # TODO: Handle default values + constant values
+        # TODO: split() does not work for strings and arrays
+        field_raw_type, field_raw_name = field.split()[:2]
+        if '=' in field_raw_name:
+            error_msg = 'Constant values are not supported yet'
+            raise Ros2MsgError(error_msg)
 
+        field_name = field_raw_name
+        schema_field = self._parse_field_type(field_raw_type, package_name)
 
-def parse_ros2msg_field(package_name: str, field: str) -> tuple[str, dict]:
-    # Remove inline comments
-    field = re.sub(r'#.*\n', '', field)
+        return field_name, schema_field
 
-    # TODO: Handle default values + constant values
-    # TODO: split() does not work for strings and arrays
-    field_raw_type, field_raw_name = field.split()[:2]
-    if '=' in field_raw_name:
-        error_msg = 'Constant values are not supported yet'
-        raise Ros2MsgError(error_msg)
+    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
+        assert schema.encoding == 'ros2msg'
+        logger.debug(f'Parsing schema: {schema.name}')
+        package_name = schema.name.split('/')[0]
+        msg = schema.data.decode('utf-8')
 
-    field_name = field_raw_name
-    field_type = parse_ros2msg_type(field_raw_type, package_name)
+        # Tidy up the message schema
+        msg = '\n'.join([line.strip() for line in msg.split('\n')])  # Remove blank space
+        msg = re.sub(r'#.*\n', '', msg, flags=re.MULTILINE)  # Remove line comments
+        msg = re.sub(r'\n\n', '\n', msg, flags=re.MULTILINE)  # Remove empty lines
 
-    return field_name, {
-        'field_type': field_type['field_type'],
-        'data_type': field_type['data_type'],
-        'length': field_type.get('length'),
-    }
+        # Split along '=' delimiter
+        msg = [m.strip() for m in msg.split('=' * 80)]
 
+        msg_schema = {}
+        # The first message does not have the 'MSG: ' prefix line
+        main_fields = [m.strip() for m in msg[0].split('\n')]
+        for raw_field in main_fields:
+            field_name, field = self._parse_field(raw_field, package_name)
+            msg_schema[field_name] = field
 
-def parse_ros2msg(schema: SchemaRecord) -> tuple[dict, dict]:
-    """Parse a ros2msg schema record."""
-    assert schema.encoding == 'ros2msg'
-    logger.debug(f'Parsing schema: {schema.name}')
-    package_name = schema.name.split('/')[0]
-    msg = schema.data.decode('utf-8')
+        sub_msg_schemas = {}
+        for sub_msg in msg[1:]:
+            sub_msg_name = sub_msg.split('\n')[0].strip()[5:]  # Remove 'MSG: ' prefix
+            sub_msg_fields = [m.strip() for m in sub_msg.split('\n')[1:] if m]
+            # TODO: Do some caching here
+            sub_msg_schema = {}
+            for raw_field in sub_msg_fields:
+                field_name, field = self._parse_field(package_name, raw_field)
+                sub_msg_schema[field_name] = field
+            sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
-    # Tidy up the message schema
-    msg = '\n'.join([line.strip() for line in msg.split('\n')])  # Remove blank space
-    msg = re.sub(r'#.*\n', '', msg, flags=re.MULTILINE)  # Remove line comments
-    msg = re.sub(r'\n\n', '\n', msg, flags=re.MULTILINE)  # Remove empty lines
-
-    # Split along '=' delimiter
-    msg = [m.strip() for m in msg.split('=' * 80)]
-
-    msg_schema = defaultdict(dict)
-    # The first message does not have the 'MSG: ' prefix line
-    main_fields = [m.strip() for m in msg[0].split('\n')]
-    for field in main_fields:
-        logger.debug(f'Field: {field}')
-        field_name, field_dict = parse_ros2msg_field(package_name, field)
-        msg_schema[field_name] = field_dict
-        logger.debug(f'{field_name}: {field_dict}')
-
-    schema_msgs = defaultdict(dict)
-    for sub_msg in msg[1:]:
-        sub_msg_name = sub_msg.split('\n')[0].strip()[5:]  # Remove 'MSG: ' prefix
-        sub_msg_fields = [m.strip() for m in sub_msg.split('\n')[1:] if m]
-        for field in sub_msg_fields:
-            logger.debug(f'{sub_msg_name}: {field}')
-            field_name, field_dict = parse_ros2msg_field(package_name, field)
-            schema_msgs[sub_msg_name][field_name] = field_dict
-            logger.debug(f'{field_name}: {field_dict}')
-
-    return msg_schema, schema_msgs
+        return Schema(schema.name, msg_schema), sub_msg_schemas
 
 
 if __name__ == "__main__":
