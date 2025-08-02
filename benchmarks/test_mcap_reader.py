@@ -5,10 +5,10 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 
 from mcap.reader import make_reader
+from pytest_benchmark.fixture import BenchmarkFixture
 from rosbags.highlevel import AnyReader
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
-from pytest_benchmark.fixture import BenchmarkFixture
 
 from pybag.mcap_reader import McapFileReader
 
