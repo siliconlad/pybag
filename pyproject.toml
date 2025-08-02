@@ -27,12 +27,13 @@ build-backend = "hatchling.build"
 test = [
    "pytest>=8.4.1",
    "pytest-cov>=6.2.1",
+   "pytest-benchmark>=4.0.0",
+   "mcap>=1.2.2",
+   "rosbags>=0.10.10",
 ]
 dev = [
     "kappe>=0.19.1",
-    "mcap>=1.2.2",
     "pre-commit>=4.2.0",
-    "rosbags>=0.10.10",
 ]
 
 [tool.isort]
@@ -40,4 +41,4 @@ multi_line_output = 3
 
 [tool.pytest.ini_options]
 addopts = "--cov=pybag"
-testpaths = ["tests"]
+testpaths = ["tests", "benchmarks"]
