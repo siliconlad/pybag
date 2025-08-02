@@ -12,6 +12,7 @@ from pybag.mcap.record_reader import (
 )
 from pybag.mcap.records import MessageRecord, SchemaRecord
 from pybag.schema.ros2msg import (
+    PRIMITIVE_TYPE_MAP,
     Array,
     Complex,
     Primitive,
@@ -53,9 +54,25 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
             if isinstance(field_schema, Primitive):
                 field[field_name] = cdr.parse(field_schema.type)
             elif isinstance(field_schema, Array):
-                field[field_name] = cdr.array(field_schema.type, field_schema.length)
+                if field_schema.type in PRIMITIVE_TYPE_MAP:
+                    field[field_name] = cdr.array(field_schema.type, field_schema.length)
+                elif field_schema.type in sub_schemas:
+                    length = field_schema.length
+                    sub_schema = sub_schemas[field_schema.type]
+                    fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
+                    field[field_name] = fields
+                else:
+                    raise ValueError(f'Unknown field type: {field_schema}')
             elif isinstance(field_schema, Sequence):
-                field[field_name] = cdr.sequence(field_schema.type)
+                if field_schema.type in PRIMITIVE_TYPE_MAP:
+                    field[field_name] = cdr.sequence(field_schema.type)
+                elif field_schema.type in sub_schemas:
+                    length = cdr.uint32()
+                    sub_schema = sub_schemas[field_schema.type]
+                    fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
+                    field[field_name] = fields
+                else:
+                    raise ValueError(f'Unknown field type: {field_schema}')
             elif isinstance(field_schema, Complex):
                 sub_schema = sub_schemas[field_schema.type]
                 field[field_name] = decode_field(sub_schema, sub_schemas)

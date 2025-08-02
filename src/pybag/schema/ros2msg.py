@@ -78,7 +78,7 @@ class Ros2MsgSchema:
         # Handle arrays
         if re.match(r'.*\[.*\]$', field_raw_type):
             element_type = re.match(r'^(.*)\[', field_raw_type).group(1)
-            if match := re.match(r'.*\[(\d*)\]$', field_raw_type):
+            if match := re.match(r'.*\[(\d+)\]$', field_raw_type):
                 length = int(match.group(1))
                 return Array(element_type, length)
             return Sequence(element_type)
@@ -145,7 +145,7 @@ class Ros2MsgSchema:
             # TODO: Do some caching here
             sub_msg_schema = {}
             for raw_field in sub_msg_fields:
-                field_name, field = self._parse_field(package_name, raw_field)
+                field_name, field = self._parse_field(raw_field, package_name)
                 sub_msg_schema[field_name] = field
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 

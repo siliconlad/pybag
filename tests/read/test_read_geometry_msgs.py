@@ -3,6 +3,7 @@ from array import array
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import numpy as np
 import pytest
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
@@ -64,7 +65,7 @@ def test_pose_with_covariance_rosbags(typestore: Typestore):
             position=Point(x=1.0, y=2.0, z=3.0),
             orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
         ),
-        covariance=[float(i) for i in range(36)],
+        covariance=np.array([float(i) for i in range(36)]),
     )
     with TemporaryDirectory() as temp_dir:
         mcap_file, channel_id = _write_rosbags(temp_dir, msg, typestore)
@@ -256,7 +257,7 @@ def test_accel_with_covariance_rosbags(typestore: Typestore):
             linear=Vector3(x=1.0, y=2.0, z=3.0),
             angular=Vector3(x=4.0, y=5.0, z=6.0),
         ),
-        covariance=array('d', [float(i) for i in range(36)]),
+        covariance=np.array([float(i) for i in range(36)]),
     )
     with TemporaryDirectory() as temp_dir:
         mcap_file, channel_id = _write_rosbags(temp_dir, msg, typestore)
@@ -520,7 +521,7 @@ def test_accel_with_covariance_stamped_rosbags(typestore: Typestore):
                 linear=Vector3(x=1.0, y=2.0, z=3.0),
                 angular=Vector3(x=4.0, y=5.0, z=6.0),
             ),
-            covariance=[float(i) for i in range(36)],
+            covariance=np.array([float(i) for i in range(36)]),
         ),
     )
     with TemporaryDirectory() as temp_dir:
@@ -822,7 +823,7 @@ def test_twist_with_covariance_stamped_rosbags(typestore: Typestore):
                 linear=Vector3(x=1.0, y=2.0, z=3.0),
                 angular=Vector3(x=4.0, y=5.0, z=6.0),
             ),
-            covariance=[float(i) for i in range(36)],
+            covariance=np.array([float(i) for i in range(36)]),
         ),
     )
     with TemporaryDirectory() as temp_dir:
@@ -857,7 +858,7 @@ def test_twist_with_covariance_rosbags(typestore: Typestore):
             linear=Vector3(x=1.0, y=2.0, z=3.0),
             angular=Vector3(x=4.0, y=5.0, z=6.0),
         ),
-        covariance=[float(i) for i in range(36)],
+        covariance=np.array([float(i) for i in range(36)]),
     )
     with TemporaryDirectory() as temp_dir:
         mcap_file, channel_id = _write_rosbags(temp_dir, msg, typestore)
@@ -892,7 +893,7 @@ def test_pose_with_covariance_stamped_rosbags(typestore: Typestore):
                 position=Point(x=1.0, y=2.0, z=3.0),
                 orientation=Quaternion(x=0.0, y=0.0, z=0.0, w=1.0),
             ),
-            covariance=[float(i) for i in range(36)],
+            covariance=np.array([float(i) for i in range(36)]),
         ),
     )
     with TemporaryDirectory() as temp_dir:
