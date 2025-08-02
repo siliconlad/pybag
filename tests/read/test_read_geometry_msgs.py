@@ -9,7 +9,7 @@ from rosbags.typesys import Stores, get_typestore
 from pybag.mcap_reader import McapFileReader
 
 
-def find_mcap_file(temp_dir: str) -> Path:
+def _find_mcap_file(temp_dir: str) -> Path:
     return next(Path(temp_dir).rglob('*.mcap'))
 
 
@@ -42,7 +42,7 @@ def test_vector3_rosbags():
         connection_id = _write_rosbags(
             temp_dir, msg, typestore, timestamp=timestamp
         )
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -73,7 +73,7 @@ def test_pose_with_covariance_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -98,7 +98,7 @@ def test_vector3_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -124,7 +124,7 @@ def test_pose_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -159,7 +159,7 @@ def test_inertia_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -190,7 +190,7 @@ def test_transform_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -214,7 +214,7 @@ def test_twist_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -243,7 +243,7 @@ def test_accel_with_covariance_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -269,7 +269,7 @@ def test_quaternion_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -293,7 +293,7 @@ def test_transform_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -320,7 +320,7 @@ def test_wrench_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -344,7 +344,7 @@ def test_accel_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -369,7 +369,7 @@ def test_polygon_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -388,7 +388,7 @@ def test_pose2d_rosbags():
     msg = Pose2D(x=1.0, y=2.0, theta=3.0)
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -416,7 +416,7 @@ def test_pose_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -444,7 +444,7 @@ def test_accel_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -479,7 +479,7 @@ def test_accel_with_covariance_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -498,7 +498,7 @@ def test_quaternion_rosbags():
     msg = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -516,7 +516,7 @@ def test_point_rosbags():
     msg = Point(x=1.0, y=2.0, z=3.0)
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -544,7 +544,7 @@ def test_inertia_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -574,7 +574,7 @@ def test_polygon_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -609,7 +609,7 @@ def test_pose_array_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -632,7 +632,7 @@ def test_point_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -651,7 +651,7 @@ def test_point32_rosbags():
     msg = Point32(x=1.0, y=2.0, z=3.0)
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -674,7 +674,7 @@ def test_wrench_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -701,7 +701,7 @@ def test_twist_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -736,7 +736,7 @@ def test_twist_with_covariance_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -765,7 +765,7 @@ def test_twist_with_covariance_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
@@ -801,7 +801,7 @@ def test_pose_with_covariance_stamped_rosbags():
     )
     with TemporaryDirectory() as temp_dir:
         connection_id = _write_rosbags(temp_dir, msg, typestore)
-        mcap_file = find_mcap_file(temp_dir)
+        mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
         messages = list(reader.messages('/rosbags'))
         assert len(messages) == 1
