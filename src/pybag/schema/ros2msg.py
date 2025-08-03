@@ -133,7 +133,7 @@ class Ros2MsgSchema:
 
         msg_schema = {}
         # The first message does not have the 'MSG: ' prefix line
-        main_fields = [m.strip() for m in msg[0].split('\n')]
+        main_fields = [m.strip() for m in msg[0].split('\n') if m.strip()]
         for raw_field in main_fields:
             field_name, field = self._parse_field(raw_field, package_name)
             msg_schema[field_name] = field
