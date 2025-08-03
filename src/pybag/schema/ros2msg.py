@@ -44,6 +44,10 @@ class SchemaField(ABC):
 class Primitive(SchemaField):
     type: str
 
+    @classmethod
+    def is_primitive(cls, type: str) -> bool:
+        return type in PRIMITIVE_TYPE_MAP
+
 
 @dataclass
 class Array(SchemaField):

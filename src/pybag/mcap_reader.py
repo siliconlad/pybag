@@ -12,7 +12,6 @@ from pybag.mcap.record_reader import (
 )
 from pybag.mcap.records import MessageRecord, SchemaRecord
 from pybag.schema.ros2msg import (
-    PRIMITIVE_TYPE_MAP,
     Array,
     Complex,
     Primitive,
@@ -54,7 +53,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
             if isinstance(field_schema, Primitive):
                 field[field_name] = cdr.parse(field_schema.type)
             elif isinstance(field_schema, Array):
-                if field_schema.type in PRIMITIVE_TYPE_MAP:
+                if Primitive.is_primitive(field_schema.type):
                     field[field_name] = cdr.array(field_schema.type, field_schema.length)
                 elif field_schema.type in sub_schemas:
                     length = field_schema.length
@@ -64,7 +63,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
                 else:
                     raise ValueError(f'Unknown field type: {field_schema}')
             elif isinstance(field_schema, Sequence):
-                if field_schema.type in PRIMITIVE_TYPE_MAP:
+                if Primitive.is_primitive(field_schema.type):
                     field[field_name] = cdr.sequence(field_schema.type)
                 elif field_schema.type in sub_schemas:
                     length = cdr.uint32()
