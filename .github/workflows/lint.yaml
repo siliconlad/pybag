@@ -23,4 +23,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv run --group test pytest .
+      - run: |
+          uv run --group test pytest --cov-report=xml --cov-report=term .
+      - uses: irongut/CodeCoverageSummary@v1
+        with:
+          filename: coverage.xml
+          format: markdown
+          output: coverage-summary.md
+      - run: |
+          echo '### Pytest Coverage Summary' >> $GITHUB_STEP_SUMMARY
+          cat coverage-summary.md >> $GITHUB_STEP_SUMMARY
