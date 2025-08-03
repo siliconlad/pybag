@@ -42,6 +42,12 @@ class CdrDecoder:
         )[0]
         return value
 
+    def byte(self) -> int:
+        return self.int8()
+
+    def char(self) -> int:
+        return self.uint8()
+
     def int16(self) -> int:
         value = struct.unpack(
             '<h' if self._is_little_endian else '>h',
@@ -159,6 +165,12 @@ class CdrEncoder:
         self._payload.align(1)
         fmt = "<B" if self._is_little_endian else ">B"
         self._payload.write(struct.pack(fmt, value))
+
+    def byte(self, value: int) -> None:
+        self.int8(value)
+
+    def char(self, value: int) -> None:
+        self.uint8(value)
 
     def int16(self, value: int) -> None:
         self._payload.align(2)
