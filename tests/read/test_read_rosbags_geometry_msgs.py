@@ -16,17 +16,24 @@ def _find_mcap_file(temp_dir: str) -> Path:
     return next(Path(temp_dir).rglob('*.mcap'))
 
 
-def _write_rosbags(temp_dir: str, msg, typestore, *, timestamp: int = 0) -> tuple[Path, int]:
+def _write_rosbags(
+    temp_dir: str,
+    msg,
+    typestore,
+    topic: str = '/rosbags',
+    *,
+    timestamp: int = 0,
+) -> tuple[Path, int]:
     with Writer(Path(temp_dir) / 'rosbags', version=9, storage_plugin=StoragePlugin.MCAP) as writer:
-        connection = writer.add_connection('/rosbags', msg.__msgtype__, typestore=typestore)
+        connection = writer.add_connection(topic, msg.__msgtype__, typestore=typestore)
         writer.write(connection, timestamp, typestore.serialize_cdr(msg, msg.__msgtype__))
     return _find_mcap_file(temp_dir), connection.id
 
 
-def _make_header(typestore):
-    Header = typestore.types['std_msgs/msg/Header']
-    Time = typestore.types['builtin_interfaces/msg/Time']
-    return Header(stamp=Time(sec=1, nanosec=2), frame_id='frame')
+def _make_header(typestore: Typestore, frame_id: str = "frame", sec: int = 1, nanosec: int = 2):
+    Header = typestore.types["std_msgs/msg/Header"]
+    Time = typestore.types["builtin_interfaces/msg/Time"]
+    return Header(stamp=Time(sec=sec, nanosec=nanosec), frame_id=frame_id)
 
 
 @pytest.fixture(params=[Stores.ROS2_JAZZY, Stores.ROS2_HUMBLE])
