@@ -8,9 +8,9 @@ import pytest
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.store import Typestore
-from pybag.schema.ros2msg import Ros2MsgError
 
 from pybag.mcap_reader import McapFileReader
+from pybag.schema.ros2msg import Ros2MsgError
 
 
 def _find_mcap_file(temp_dir: str) -> Path:
