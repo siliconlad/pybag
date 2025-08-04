@@ -24,12 +24,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: |
-          uv run --group test pytest --cov-report=xml --cov-report=term .
+          uv run --group test pytest --cov-report=xml --cov-report=term tests/
       - uses: irongut/CodeCoverageSummary@v1.3.0
         with:
           filename: coverage.xml
           format: markdown
-          output: coverage-summary.md
+          output: file
+          thresholds: '50 90'
       - run: |
           echo '### Pytest Coverage Summary' >> $GITHUB_STEP_SUMMARY
-          cat coverage-summary.md >> $GITHUB_STEP_SUMMARY
+          cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
