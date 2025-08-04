@@ -1,4 +1,5 @@
 """Test the reading of sensor_msgs messages."""
+import math
 from array import array
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -49,7 +50,7 @@ def test_battery_state_rosbags(typestore: Typestore):
         header=_make_header(typestore),
         voltage=12.0,
         temperature=25.0,
-        current=float('nan'),
+        current=math.nan,
         charge=2.0,
         capacity=3.0,
         design_capacity=4.0,
@@ -58,8 +59,8 @@ def test_battery_state_rosbags(typestore: Typestore):
         power_supply_health=BatteryState.POWER_SUPPLY_HEALTH_GOOD,
         power_supply_technology=BatteryState.POWER_SUPPLY_TECHNOLOGY_LION,
         present=True,
-        cell_voltage=np.array([3.7, 3.8, float('nan')], dtype=np.float32),
-        cell_temperature=np.array([30.0, 31.0, float('nan')], dtype=np.float32),
+        cell_voltage=np.array([3.5, 3.5, math.nan], dtype=np.float32),
+        cell_temperature=np.array([30.0, 30.0, math.nan], dtype=np.float32),
         location='loc',
         serial_number='123',
     )
@@ -78,7 +79,7 @@ def test_battery_state_rosbags(typestore: Typestore):
         assert messages[0].data.header.frame_id == 'frame'
         assert messages[0].data.voltage == 12.0
         assert messages[0].data.temperature == 25.0
-        assert messages[0].data.current == float('nan')
+        assert math.isnan(messages[0].data.current)
         assert messages[0].data.charge == 2.0
         assert messages[0].data.capacity == 3.0
         assert messages[0].data.design_capacity == 4.0
@@ -87,8 +88,14 @@ def test_battery_state_rosbags(typestore: Typestore):
         assert messages[0].data.power_supply_health == 1  # POWER_SUPPLY_HEALTH_GOOD
         assert messages[0].data.power_supply_technology == 2  # POWER_SUPPLY_TECHNOLOGY_LION
         assert messages[0].data.present is True
-        assert messages[0].data.cell_voltage == [3.7, 3.8, float('nan')]
-        assert messages[0].data.cell_temperature == [30.0, 31.0, float('nan')]
+        assert len(messages[0].data.cell_voltage) == 3
+        assert messages[0].data.cell_voltage[0] == 3.5
+        assert messages[0].data.cell_voltage[1] == 3.5
+        assert math.isnan(messages[0].data.cell_voltage[2])
+        assert len(messages[0].data.cell_temperature) == 3
+        assert messages[0].data.cell_temperature[0] == 30.0
+        assert messages[0].data.cell_temperature[1] == 30.0
+        assert math.isnan(messages[0].data.cell_temperature[2])
         assert messages[0].data.location == 'loc'
         assert messages[0].data.serial_number == '123'
 
@@ -615,7 +622,7 @@ def test_nav_sat_fix_rosbags(typestore: Typestore):
         assert messages[0].data.header.stamp.sec == 1
         assert messages[0].data.header.stamp.nanosec == 2
         assert messages[0].data.header.frame_id == 'frame'
-        assert messages[0].data.status.status == 3  # STATUS_FIX
+        assert messages[0].data.status.status == 0  # STATUS_FIX
         assert messages[0].data.latitude == 1.0
         assert messages[0].data.longitude == 2.0
         assert messages[0].data.altitude == 3.0
@@ -673,7 +680,7 @@ def test_point_cloud2_rosbags(typestore: Typestore):
         assert messages[0].data.width == 2
         assert messages[0].data.fields[0].name == 'x'
         assert messages[0].data.fields[0].offset == 0
-        assert messages[0].data.fields[0].datatype == 5  # FLOAT32
+        assert messages[0].data.fields[0].datatype == 7  # FLOAT32
         assert messages[0].data.fields[0].count == 1
         assert messages[0].data.is_bigendian == False
         assert messages[0].data.point_step == 4
@@ -698,7 +705,7 @@ def test_point_field_rosbags(typestore: Typestore):
         assert messages[0].channel_id == channel_id
         assert messages[0].data.name == 'x'
         assert messages[0].data.offset == 0
-        assert messages[0].data.datatype == 5  # FLOAT32
+        assert messages[0].data.datatype == 7  # FLOAT32
         assert messages[0].data.count == 1
 
 
@@ -714,7 +721,7 @@ def test_range_rosbags(typestore: Typestore):
         range=5.0,
     )
     if 'variance' in Range.__dataclass_fields__:  # Was added after ROS2 Humble
-        kwargs['variance'] = 0.1
+        kwargs['variance'] = 0.5
     msg = Range(**kwargs)
     with TemporaryDirectory() as temp_dir:
         mcap_file, channel_id = _write_rosbags(temp_dir, msg, typestore)
@@ -732,7 +739,7 @@ def test_range_rosbags(typestore: Typestore):
         assert messages[0].data.radiation_type == 0  # ULTRASOUND
         assert messages[0].data.range == 5.0
         if 'variance' in Range.__dataclass_fields__:
-            assert messages[0].data.variance == 0.1
+            assert messages[0].data.variance == 0.5
 
 
 def test_region_of_interest_rosbags(typestore: Typestore):

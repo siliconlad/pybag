@@ -66,6 +66,12 @@ class Complex(SchemaField):
 
 
 @dataclass
+class Constant(SchemaField):
+    type: str
+    value: int | float | bool | str | bytes
+
+
+@dataclass
 class Schema:
     name: str
     fields: dict[str, SchemaField]
@@ -105,16 +111,27 @@ class Ros2MsgSchema:
             data_type = f'{package_name}/{field_raw_type}'
         return Complex(data_type)
 
+    def _parse_constant_value(self, field_type: str, raw_value: str) -> int | float | bool | str:
+        logger.debug(f'Parsing constant value: {field_type} = {raw_value}')
+        raw_value = raw_value.strip()
+        if field_type in PRIMITIVE_TYPE_MAP:
+            if PRIMITIVE_TYPE_MAP[field_type] == str:
+                return raw_value.strip('"').strip("'")
+            return PRIMITIVE_TYPE_MAP[field_type](raw_value)
+        msg = f'Unknown constant type: {field_type}'
+        raise Ros2MsgError(msg)
+
     def _parse_field(self, field: str, package_name: str) -> tuple[str, SchemaField]:
         # Remove inline comments
         field = re.sub(r'#.*\n', '', field)
 
-        # TODO: Handle default values + constant values
         # TODO: split() does not work for strings and arrays
-        field_raw_type, field_raw_name = field.split()[:2]
+        field_raw_type, remainder = field.split(maxsplit=1)
+        field_raw_name = remainder.split()[0]
         if '=' in field_raw_name:
-            error_msg = 'Constant values are not supported yet'
-            raise Ros2MsgError(error_msg)
+            field_name, raw_value = field_raw_name.split('=', 1)
+            value = self._parse_constant_value(field_raw_type, raw_value)
+            return field_name, Constant(field_raw_type, value)
 
         field_name = field_raw_name
         schema_field = self._parse_field_type(field_raw_type, package_name)

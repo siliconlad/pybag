@@ -1,4 +1,5 @@
 import logging
+import math
 import struct
 from typing import Any
 
