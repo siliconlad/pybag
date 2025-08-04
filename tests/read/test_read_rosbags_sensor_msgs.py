@@ -615,7 +615,7 @@ def test_nav_sat_fix_rosbags(typestore: Typestore):
         assert messages[0].data.header.stamp.sec == 1
         assert messages[0].data.header.stamp.nanosec == 2
         assert messages[0].data.header.frame_id == 'frame'
-        assert messages[0].data.status.status == 3  # STATUS_FIX
+        assert messages[0].data.status.status == 0  # STATUS_FIX
         assert messages[0].data.latitude == 1.0
         assert messages[0].data.longitude == 2.0
         assert messages[0].data.altitude == 3.0
@@ -673,7 +673,7 @@ def test_point_cloud2_rosbags(typestore: Typestore):
         assert messages[0].data.width == 2
         assert messages[0].data.fields[0].name == 'x'
         assert messages[0].data.fields[0].offset == 0
-        assert messages[0].data.fields[0].datatype == 5  # FLOAT32
+        assert messages[0].data.fields[0].datatype == 7  # FLOAT32
         assert messages[0].data.fields[0].count == 1
         assert messages[0].data.is_bigendian == False
         assert messages[0].data.point_step == 4
@@ -698,7 +698,7 @@ def test_point_field_rosbags(typestore: Typestore):
         assert messages[0].channel_id == channel_id
         assert messages[0].data.name == 'x'
         assert messages[0].data.offset == 0
-        assert messages[0].data.datatype == 5  # FLOAT32
+        assert messages[0].data.datatype == 7  # FLOAT32
         assert messages[0].data.count == 1
 
 

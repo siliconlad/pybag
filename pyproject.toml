@@ -3,21 +3,15 @@ name = "pybag"
 version = "0.1.0"
 description = "A Python library to work with bag files without ROS."
 readme = "README.md"
-authors = [
-    { name = "Angus Stewart", email = "siliconlad@protonmail.com" }
-]
+authors = [{ name = "Angus Stewart", email = "siliconlad@protonmail.com" }]
 requires-python = ">=3.10"
 
 [project.scripts]
 pybag = "pybag.cli.main:main"
 
 [project.optional-dependencies]
-zstd = [
-    "zstandard>=0.23.0",
-]
-lz4 = [
-    "lz4>=4.4.3",
-]
+zstd = ["zstandard>=0.23.0"]
+lz4 = ["lz4>=4.4.3"]
 
 [build-system]
 requires = ["hatchling"]
