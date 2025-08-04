@@ -95,26 +95,19 @@ class CdrDecoder:
         )[0]
         return value
 
-    class _NaNFloat(float):
-        def __eq__(self, other: object) -> bool:  # pragma: no cover - simple override
-            return isinstance(other, float) and math.isnan(self) and math.isnan(other)
-
-    def _maybe_nan(self, value: float) -> float:
-        return self._NaNFloat(value) if math.isnan(value) else value
-
     def float32(self) -> float:
         value = struct.unpack(
             '<f' if self._is_little_endian else '>f',
             self._data.align(4).read(4)
         )[0]
-        return self._maybe_nan(round(value, 6))
+        return value
 
     def float64(self) -> float:
         value = struct.unpack(
             '<d' if self._is_little_endian else '>d',
             self._data.align(8).read(8)
         )[0]
-        return self._maybe_nan(value)
+        return value
 
     def string(self) -> str:
         # Strings are null-terminated
