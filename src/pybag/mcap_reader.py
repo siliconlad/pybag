@@ -14,6 +14,7 @@ from pybag.mcap.records import MessageRecord, SchemaRecord
 from pybag.schema.ros2msg import (
     Array,
     Complex,
+    Constant,
     Primitive,
     Ros2MsgSchema,
     Schema,
@@ -50,7 +51,9 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
     def decode_field(schema: Schema, sub_schemas: dict[str, Schema]) -> type:
         field = {}
         for field_name, field_schema in schema.fields.items():
-            if isinstance(field_schema, Primitive):
+            if isinstance(field_schema, Constant):
+                field[field_name] = field_schema.value
+            elif isinstance(field_schema, Primitive):
                 field[field_name] = cdr.parse(field_schema.type)
             elif isinstance(field_schema, Array):
                 if Primitive.is_primitive(field_schema.type):
