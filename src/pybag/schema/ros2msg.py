@@ -68,7 +68,7 @@ class Complex(SchemaField):
 @dataclass
 class Constant(SchemaField):
     type: str
-    value: int | float | bool | str
+    value: int | float | bool | str | bytes
 
 
 @dataclass
@@ -112,17 +112,12 @@ class Ros2MsgSchema:
         return Complex(data_type)
 
     def _parse_constant_value(self, field_type: str, raw_value: str) -> int | float | bool | str:
+        logger.debug(f'Parsing constant value: {field_type} = {raw_value}')
         raw_value = raw_value.strip()
-        if field_type in {'string', 'wstring'}:
-            return raw_value.strip('"')
-        if field_type == 'char':
-            return raw_value.strip("'")
-        if field_type == 'bool':
-            return raw_value.lower() in {'true', '1'}
-        if field_type in {'float32', 'float64'}:
-            return float(raw_value)
         if field_type in PRIMITIVE_TYPE_MAP:
-            return int(raw_value, 0)
+            if PRIMITIVE_TYPE_MAP[field_type] == str:
+                return raw_value.strip('"').strip("'")
+            return PRIMITIVE_TYPE_MAP[field_type](raw_value)
         msg = f'Unknown constant type: {field_type}'
         raise Ros2MsgError(msg)
 
@@ -131,7 +126,7 @@ class Ros2MsgSchema:
         field = re.sub(r'#.*\n', '', field)
 
         # TODO: split() does not work for strings and arrays
-        field_raw_type, remainder = field.split(None, 1)
+        field_raw_type, remainder = field.split(maxsplit=1)
         field_raw_name = remainder.split()[0]
         if '=' in field_raw_name:
             field_name, raw_value = field_raw_name.split('=', 1)
