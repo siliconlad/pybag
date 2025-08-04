@@ -11,10 +11,10 @@ pybag = "pybag.cli.main:main"
 
 [project.optional-dependencies]
 zstd = [
-    "zstandard>=0.23.0"
+    "zstandard>=0.23.0",
 ]
 lz4 = [
-    "lz4>=4.4.3"
+    "lz4>=4.4.3",
 ]
 
 [build-system]
