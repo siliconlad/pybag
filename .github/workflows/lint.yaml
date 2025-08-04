@@ -30,6 +30,8 @@ jobs:
           filename: coverage.xml
           format: markdown
           output: file
+          hide_branch_rate: true
+          hide_complexity: true
           thresholds: '50 90'
       - run: |
           echo '### Pytest Coverage Summary' >> $GITHUB_STEP_SUMMARY
