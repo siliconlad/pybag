@@ -88,9 +88,11 @@ def test_battery_state_rosbags(typestore: Typestore):
         assert messages[0].data.power_supply_health == 1  # POWER_SUPPLY_HEALTH_GOOD
         assert messages[0].data.power_supply_technology == 2  # POWER_SUPPLY_TECHNOLOGY_LION
         assert messages[0].data.present is True
+        assert len(messages[0].data.cell_voltage) == 3
         assert messages[0].data.cell_voltage[0] == 3.5
         assert messages[0].data.cell_voltage[1] == 3.5
         assert math.isnan(messages[0].data.cell_voltage[2])
+        assert len(messages[0].data.cell_temperature) == 3
         assert messages[0].data.cell_temperature[0] == 30.0
         assert messages[0].data.cell_temperature[1] == 30.0
         assert math.isnan(messages[0].data.cell_temperature[2])
