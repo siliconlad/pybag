@@ -31,5 +31,5 @@ test = [
 multi_line_output = 3
 
 [tool.pytest.ini_options]
-addopts = "--cov=pybag"
+addopts = "--cov=pybag --benchmark-sort=mean"
 testpaths = ["tests"]
