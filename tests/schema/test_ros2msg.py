@@ -8,7 +8,8 @@ from pybag.schema.ros2msg import (
     Primitive,
     Ros2MsgError,
     Ros2MsgSchema,
-    Sequence
+    Sequence,
+    String
 )
 
 
@@ -139,13 +140,13 @@ def test_parse_string_with_length_limit():
     assert len(ros2_schema.fields) == 1
     assert "short_name" in ros2_schema.fields
     field = ros2_schema.fields["short_name"]
-    assert isinstance(field, Primitive)
+    assert isinstance(field, String)
     assert field.type == "string"
-    # TODO: Check the length limit
+    assert field.length == 10
 
 
 def test_parse_default_integer_value():
-    schema_text = "int32 count 5\n"
+    schema_text = "int32 count 100\n"
     schema = SchemaRecord(
         id=1,
         name="pkg/msg/DefaultValue",
@@ -160,7 +161,7 @@ def test_parse_default_integer_value():
     field = ros2_schema.fields["count"]
     assert isinstance(field, Primitive)
     assert field.type == "int32"
-    # TODO: Check the default value
+    assert field.default == 100
 
 
 def test_parse_bounded_string_array():
@@ -197,9 +198,9 @@ def test_parse_default_string_value_double_quotes():
     assert len(ros2_schema.fields) == 1
     assert "name" in ros2_schema.fields
     field = ros2_schema.fields["name"]
-    assert isinstance(field, Primitive)
+    assert isinstance(field, String)
     assert field.type == "string"
-    # TODO: Check the default value
+    assert field.default == "John"
 
 
 def test_parse_default_string_value_single_quotes():
@@ -216,9 +217,9 @@ def test_parse_default_string_value_single_quotes():
     assert len(ros2_schema.fields) == 1
     assert "nickname" in ros2_schema.fields
     field = ros2_schema.fields["nickname"]
-    assert isinstance(field, Primitive)
+    assert isinstance(field, String)
     assert field.type == "string"
-    # TODO: Check the default value
+    assert field.default == "Johnny"
 
 
 def test_parse_default_string_value_with_hash_double_quotes():
@@ -235,9 +236,9 @@ def test_parse_default_string_value_with_hash_double_quotes():
     assert len(ros2_schema.fields) == 1
     assert "tag" in ros2_schema.fields
     field = ros2_schema.fields["tag"]
-    assert isinstance(field, Primitive)
+    assert isinstance(field, String)
     assert field.type == "string"
-    # TODO: Check the default value
+    assert field.default == "hello#world"
 
 
 def test_parse_default_string_value_with_hash_single_quotes():
@@ -254,9 +255,9 @@ def test_parse_default_string_value_with_hash_single_quotes():
     assert len(ros2_schema.fields) == 1
     assert "tag" in ros2_schema.fields
     field = ros2_schema.fields["tag"]
-    assert isinstance(field, Primitive)
+    assert isinstance(field, String)
     assert field.type == "string"
-    # TODO: Check the default value
+    assert field.default == "hello#world"
 
 
 def test_parse_default_array_of_ints():
@@ -275,7 +276,7 @@ def test_parse_default_array_of_ints():
     field = ros2_schema.fields["samples"]
     assert isinstance(field, Sequence)
     assert field.type == "int32"
-    # TODO: Check the default value
+    assert field.default == [-200, -100, 0, 100, 200]
 
 
 def test_parse_constant_string_field_double_quotes():

@@ -18,7 +18,8 @@ from pybag.schema.ros2msg import (
     Primitive,
     Ros2MsgSchema,
     Schema,
-    Sequence
+    Sequence,
+    String
 )
 
 # GLOBAL TODOs:
@@ -53,7 +54,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
         for field_name, field_schema in schema.fields.items():
             if isinstance(field_schema, Constant):
                 field[field_name] = field_schema.value
-            elif isinstance(field_schema, Primitive):
+            elif isinstance(field_schema, (Primitive, String)):
                 field[field_name] = cdr.parse(field_schema.type)
             elif isinstance(field_schema, Array):
                 if Primitive.is_primitive(field_schema.type):
