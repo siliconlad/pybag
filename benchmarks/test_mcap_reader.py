@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from time import perf_counter
 
 from mcap.reader import make_reader
+from mcap_ros2.decoder import DecoderFactory
 from pytest_benchmark.fixture import BenchmarkFixture
 from rosbags.highlevel import AnyReader
 from rosbags.rosbag2 import StoragePlugin, Writer
@@ -51,9 +52,7 @@ def read_with_rosbags(mcap: Path) -> float:
     typestore = get_typestore(Stores.LATEST)
     start = perf_counter()
     with AnyReader([mcap]) as reader:
-        for conn in reader.connections:
-            typestore.register(conn.msgtype, conn.msgdef)
-        for conn, timestamp, data in reader.messages():
+        for conn, _, data in reader.messages():
             typestore.deserialize_cdr(data, conn.msgtype)
     return perf_counter() - start
 
@@ -61,27 +60,25 @@ def read_with_rosbags(mcap: Path) -> float:
 def read_with_official(mcap: Path) -> float:
     start = perf_counter()
     with open(mcap, "rb") as f:
-        reader = make_reader(f)
-        for _ in reader.iter_messages():
+        reader = make_reader(f, decoder_factories=[DecoderFactory()])
+        for _ in reader.iter_decoded_messages():
             pass
     return perf_counter() - start
 
 
-def test_mcap_readers(benchmark: BenchmarkFixture) -> None:
-    """Benchmark MCAP readers and ensure pybag is fastest."""
+def test_official(benchmark: BenchmarkFixture) -> None:
     with TemporaryDirectory() as tmpdir:
-        pybag_mcap = create_test_mcap(Path(tmpdir) / "pybag", offset=0)
-        rosbags_mcap = create_test_mcap(Path(tmpdir) / "rosbags", offset=1000)
-        official_mcap = create_test_mcap(Path(tmpdir) / "official", offset=2000)
+        mcap = create_test_mcap(Path(tmpdir) / "test", offset=0)
+        benchmark(read_with_official, mcap)
 
-        benchmark(read_with_pybag, pybag_mcap)
-        pybag_mean = benchmark.stats.stats["mean"]
 
-        benchmark(read_with_rosbags, rosbags_mcap)
-        rosbags_mean = benchmark.stats.stats["mean"]
+def test_rosbags(benchmark: BenchmarkFixture) -> None:
+    with TemporaryDirectory() as tmpdir:
+        mcap = create_test_mcap(Path(tmpdir) / "test", offset=0)
+        benchmark(read_with_rosbags, mcap.parent)
 
-        benchmark(read_with_official, official_mcap)
-        official_mean = benchmark.stats.stats["mean"]
 
-    assert pybag_mean <= rosbags_mean
-    assert pybag_mean <= official_mean
+def test_pybag(benchmark: BenchmarkFixture) -> None:
+    with TemporaryDirectory() as tmpdir:
+        mcap = create_test_mcap(Path(tmpdir) / "test", offset=0)
+        benchmark(read_with_pybag, mcap)

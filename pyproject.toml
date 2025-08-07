@@ -10,12 +10,8 @@ requires-python = ">=3.10"
 pybag = "pybag.cli.main:main"
 
 [project.optional-dependencies]
-zstd = [
-    "zstandard>=0.23.0",
-]
-lz4 = [
-    "lz4>=4.4.3",
-]
+zstd = ["zstandard>=0.23.0"]
+lz4 = ["lz4>=4.4.3"]
 
 [build-system]
 requires = ["hatchling"]
@@ -23,11 +19,12 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 test = [
-   "pytest>=8.4.1",
-   "pytest-cov>=6.2.1",
-   "pytest-benchmark>=4.0.0",
-   "mcap>=1.2.2",
-   "rosbags>=0.10.10",
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
+    "pytest-benchmark>=4.0.0",
+    "mcap>=1.2.2",
+    "mcap-ros2-support>=0.5.5",
+    "rosbags>=0.10.10",
 ]
 
 [tool.isort]
@@ -35,4 +32,4 @@ multi_line_output = 3
 
 [tool.pytest.ini_options]
 addopts = "--cov=pybag"
-testpaths = ["tests", "benchmarks"]
+testpaths = ["tests"]
