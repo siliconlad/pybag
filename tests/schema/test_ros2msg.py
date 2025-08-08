@@ -143,6 +143,7 @@ def test_parse_string_with_length_limit():
     assert isinstance(field, String)
     assert field.type == "string"
     assert field.length == 10
+    # TODO: Check the length limit
 
 
 def test_parse_default_integer_value():
@@ -162,6 +163,7 @@ def test_parse_default_integer_value():
     assert isinstance(field, Primitive)
     assert field.type == "int32"
     assert field.default == 100
+    assert isinstance(field.default, int)
 
 
 def test_parse_bounded_string_array():
@@ -201,6 +203,7 @@ def test_parse_default_string_value_double_quotes():
     assert isinstance(field, String)
     assert field.type == "string"
     assert field.default == "John"
+    assert isinstance(field.default, str)
 
 
 def test_parse_default_string_value_single_quotes():
@@ -220,6 +223,7 @@ def test_parse_default_string_value_single_quotes():
     assert isinstance(field, String)
     assert field.type == "string"
     assert field.default == "Johnny"
+    assert isinstance(field.default, str)
 
 
 def test_parse_default_string_value_with_hash_double_quotes():
@@ -239,6 +243,7 @@ def test_parse_default_string_value_with_hash_double_quotes():
     assert isinstance(field, String)
     assert field.type == "string"
     assert field.default == "hello#world"
+    assert isinstance(field.default, str)
 
 
 def test_parse_default_string_value_with_hash_single_quotes():
@@ -258,6 +263,7 @@ def test_parse_default_string_value_with_hash_single_quotes():
     assert isinstance(field, String)
     assert field.type == "string"
     assert field.default == "hello#world"
+    assert isinstance(field.default, str)
 
 
 def test_parse_default_array_of_ints():
@@ -296,6 +302,7 @@ def test_parse_constant_string_field_double_quotes():
     assert isinstance(field, Constant)
     assert field.type == "string"
     assert field.value == "hello#world"
+    assert isinstance(field.value, str)
 
 
 def test_parse_constant_string_field_single_quotes():
@@ -315,6 +322,7 @@ def test_parse_constant_string_field_single_quotes():
     assert isinstance(field, Constant)
     assert field.type == "string"
     assert field.value == "hello#world"
+    assert isinstance(field.value, str)
 
 
 def test_parse_sub_message_schema():
