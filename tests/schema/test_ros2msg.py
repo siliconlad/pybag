@@ -305,6 +305,71 @@ def test_parse_constant_string_field_double_quotes():
     assert isinstance(field.value, str)
 
 
+def test_parse_complex_array_field():
+    schema_text = (
+        "geometry_msgs/Point[] points\n"
+        + "=" * 80
+        + "\nMSG: geometry_msgs/Point\nfloat64 x\nfloat64 y\nfloat64 z\n"
+    )
+    schema = SchemaRecord(
+        id=1,
+        name="pkg/msg/ComplexArray",
+        encoding="ros2msg",
+        data=schema_text.encode("utf-8"),
+    )
+    ros2_schema, sub_schemas = Ros2MsgSchema().parse(schema)
+
+    assert ros2_schema.name == "pkg/msg/ComplexArray"
+    assert len(ros2_schema.fields) == 1
+    assert "points" in ros2_schema.fields
+    field = ros2_schema.fields["points"]
+    assert isinstance(field, Sequence)
+    assert field.type == "geometry_msgs/Point"
+
+    assert len(sub_schemas) == 1
+    assert "geometry_msgs/Point" in sub_schemas
+    point_schema = sub_schemas["geometry_msgs/Point"]
+    assert isinstance(point_schema.fields["x"], Primitive)
+    assert point_schema.fields["x"].type == "float64"
+    assert isinstance(point_schema.fields["y"], Primitive)
+    assert point_schema.fields["y"].type == "float64"
+    assert isinstance(point_schema.fields["z"], Primitive)
+    assert point_schema.fields["z"].type == "float64"
+
+
+def test_parse_complex_fixed_array_field():
+    schema_text = (
+        "geometry_msgs/Point[3] points\n"
+        + "=" * 80
+        + "\nMSG: geometry_msgs/Point\nfloat64 x\nfloat64 y\nfloat64 z\n"
+    )
+    schema = SchemaRecord(
+        id=1,
+        name="pkg/msg/ComplexFixedArray",
+        encoding="ros2msg",
+        data=schema_text.encode("utf-8"),
+    )
+    ros2_schema, sub_schemas = Ros2MsgSchema().parse(schema)
+
+    assert ros2_schema.name == "pkg/msg/ComplexFixedArray"
+    assert len(ros2_schema.fields) == 1
+    assert "points" in ros2_schema.fields
+    field = ros2_schema.fields["points"]
+    assert isinstance(field, Array)
+    assert field.type == "geometry_msgs/Point"
+    assert field.length == 3
+
+    assert len(sub_schemas) == 1
+    assert "geometry_msgs/Point" in sub_schemas
+    point_schema = sub_schemas["geometry_msgs/Point"]
+    assert isinstance(point_schema.fields["x"], Primitive)
+    assert point_schema.fields["x"].type == "float64"
+    assert isinstance(point_schema.fields["y"], Primitive)
+    assert point_schema.fields["y"].type == "float64"
+    assert isinstance(point_schema.fields["z"], Primitive)
+    assert point_schema.fields["z"].type == "float64"
+
+
 def test_parse_constant_string_field_single_quotes():
     schema_text = "string GREETING='hello#world'\n"
     schema = SchemaRecord(
