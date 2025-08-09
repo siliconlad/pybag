@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import is_dataclass
-from typing import Any, Annotated, get_args, get_origin, Tuple
+from typing import Annotated, Any, Tuple, get_args, get_origin
 
 from .cdr import CdrEncoder
 

@@ -1,6 +1,7 @@
-import pytest
 from dataclasses import dataclass
 from typing import Annotated, List
+
+import pytest
 
 from pybag.encoding.cdr import CdrDecoder
 from pybag.encoding.serializer import serialize
