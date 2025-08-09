@@ -214,7 +214,7 @@ class Ros2MsgSchema:
         return field_raw_name, SchemaField(schema_type, default_value)
 
 
-    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
+    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, SchemaEntry]]:
         assert schema.encoding == 'ros2msg'
         logger.debug(f'Parsing schema: {schema.name}')
 
