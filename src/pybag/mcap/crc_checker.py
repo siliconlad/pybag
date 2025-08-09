@@ -1,5 +1,7 @@
+import zlib
+
 from pybag.io.raw_reader import BaseReader
-from pybag.crc import McapInvalidCrcError, validate_crc
+from pybag.crc import McapInvalidCrcError, DEFAULT_CRC_CHUNK_SIZE, compute_crc_batched
 from pybag.mcap.record_parser import (
     McapRecordParser,
     MAGIC_BYTES_SIZE,
@@ -8,8 +10,8 @@ from pybag.mcap.record_parser import (
 )
 
 
-def validate_data_crc(reader: BaseReader) -> bool:
-    """Check the CRC of the data in the MCAP file."""
+def validate_data_crc(reader: BaseReader, chunk_size: int = DEFAULT_CRC_CHUNK_SIZE) -> bool:
+    """Check the CRC of the data in the MCAP file using batched reads."""
     original_position = reader.tell()
 
     reader.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
@@ -28,20 +30,20 @@ def validate_data_crc(reader: BaseReader) -> bool:
         return True
 
     reader.seek_from_start(0)
-    data = reader.read(bytes_to_read)
+    computed_crc = compute_crc_batched(reader, bytes_to_read, chunk_size)
 
     reader.seek_from_start(original_position)
-    return validate_crc(data, data_end.crc)
+    return computed_crc == data_end.crc
 
 
-def assert_data_crc(reader: BaseReader) -> None:
-    """Assert the CRC of the data in the MCAP file."""
-    if not validate_data_crc(reader):
+def assert_data_crc(reader: BaseReader, chunk_size: int = DEFAULT_CRC_CHUNK_SIZE) -> None:
+    """Assert the CRC of the data in the MCAP file using batched reads."""
+    if not validate_data_crc(reader, chunk_size=chunk_size):
         raise McapInvalidCrcError(f'Invalid CRC for data')
 
 
-def validate_summary_crc(reader: BaseReader) -> bool:
-    """Check the CRC of the summary in the MCAP file."""
+def validate_summary_crc(reader: BaseReader, chunk_size: int = DEFAULT_CRC_CHUNK_SIZE) -> bool:
+    """Check the CRC of the summary in the MCAP file using batched reads."""
     original_position = reader.tell()
     reader.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
     footer = McapRecordParser.parse_footer(reader)
@@ -53,13 +55,13 @@ def validate_summary_crc(reader: BaseReader) -> bool:
     bytes_to_read = reader.tell()
 
     reader.seek_from_start(0)
-    data = reader.read(bytes_to_read)
+    computed_crc = compute_crc_batched(reader, bytes_to_read, chunk_size)
 
     reader.seek_from_start(original_position)
-    return validate_crc(data, footer.summary_crc)
+    return computed_crc == footer.summary_crc
 
 
-def assert_summary_crc(reader: BaseReader) -> None:
-    """Assert the CRC of the summary in the MCAP file."""
-    if not validate_summary_crc(reader):
+def assert_summary_crc(reader: BaseReader, chunk_size: int = DEFAULT_CRC_CHUNK_SIZE) -> None:
+    """Assert the CRC of the summary in the MCAP file using batched reads."""
+    if not validate_summary_crc(reader, chunk_size=chunk_size):
         raise McapInvalidCrcError(f'Invalid CRC for summary')
