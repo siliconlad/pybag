@@ -1,9 +1,9 @@
+import ast
 import logging
 import re
 from abc import ABC
-from collections import defaultdict
 from dataclasses import dataclass
-from enum import Enum
+from typing import Any
 
 from pybag.mcap.records import SchemaRecord
 
@@ -25,8 +25,6 @@ PRIMITIVE_TYPE_MAP = {
     'uint32': int,
     'int64': int,
     'uint64': int,
-    'string': str,
-    'wstring': str,
 }
 
 
@@ -35,13 +33,15 @@ class Ros2MsgError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
 
+# Schema Field Types
 
-class SchemaField(ABC):
+@dataclass
+class SchemaFieldType(ABC):
     ...
 
 
 @dataclass
-class Primitive(SchemaField):
+class Primitive(SchemaFieldType):
     type: str
 
     @classmethod
@@ -50,104 +50,181 @@ class Primitive(SchemaField):
 
 
 @dataclass
-class Array(SchemaField):
-    type: str
+class String(SchemaFieldType):
+    type: str = 'string'
+    max_length: int | None = None
+
+
+@dataclass
+class Array(SchemaFieldType):
+    type: 'SchemaFieldType'
     length: int
+    is_bounded: bool = False  # False == fixed length
 
 
 @dataclass
-class Sequence(SchemaField):
-    type: str
+class Sequence(SchemaFieldType):
+    type: 'SchemaFieldType'
 
 
 @dataclass
-class Complex(SchemaField):
+class Complex(SchemaFieldType):
     type: str
+
+# Schema Entry (one line of a message)
+
+@dataclass
+class SchemaEntry(ABC):
+    ...
 
 
 @dataclass
-class Constant(SchemaField):
-    type: str
+class SchemaConstant(SchemaEntry):
+    type: SchemaFieldType
     value: int | float | bool | str | bytes
 
 
 @dataclass
+class SchemaField(SchemaEntry):
+    type: SchemaFieldType
+    default: Any = None
+
+# Schema (one entire message)
+
+@dataclass
 class Schema:
     name: str
-    fields: dict[str, SchemaField]
+    fields: dict[str, SchemaEntry]
 
 
 class Ros2MsgSchema:
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
 
-    def _parse_field_type(self, field_raw_type: str, package_name: str) -> SchemaField:
-        # Check if the field is a string with a length limit
-        string_length_match = re.match(r'string(.*)\[', field_raw_type)
+    def _remove_inline_comment(self, line: str) -> str:
+        in_single = False
+        in_double = False
+        for i, ch in enumerate(line):
+            if ch == "'" and not in_double:
+                in_single = not in_single
+            elif ch == '"' and not in_single:
+                in_double = not in_double
+            elif ch == '#' and not in_single and not in_double:
+                return line[:i].rstrip()
+        return line.strip()
 
-        # Handle arrays
-        if re.match(r'.*\[.*\]$', field_raw_type):
-            element_type = re.match(r'^(.*)\[', field_raw_type).group(1)
-            if match := re.match(r'.*\[(\d+)\]$', field_raw_type):
-                length = int(match.group(1))
-                return Array(element_type, length)
-            return Sequence(element_type)
+    def _parse_value(self, field_type: SchemaFieldType, raw_value: str) -> Any:
+        if isinstance(field_type, Primitive):
+            return PRIMITIVE_TYPE_MAP[field_type.type](raw_value)
 
-        # Handle strings with a length limit
-        if 'string' in field_raw_type and string_length_match:
-            # TODO: Do something with the limit
-            logger.debug(f'String is limited: {string_length_match.group(1)}')
-            return Primitive('string')
+        if isinstance(field_type, String):
+            if field_type.max_length is not None and len(raw_value) > field_type.max_length:
+                raise Ros2MsgError('String default exceeds length')
+            return raw_value.strip('"') if raw_value.startswith('"') else raw_value.strip("'")
+
+        if isinstance(field_type, (Array, Sequence)):
+            values = ast.literal_eval(raw_value.strip())
+            if not isinstance(values, list):
+                raise Ros2MsgError('Array default must be a list')
+            element_type = field_type.type
+            return [PRIMITIVE_TYPE_MAP[element_type.type](v) for v in values]
+
+        raise Ros2MsgError('Default values not supported for this field type')
+
+    def _parse_field_type(self, field_raw_type: str, package_name: str) -> SchemaFieldType:
+        # Handle array and sequence types
+        if array_match := re.match(r'(.*)\[(.*)\]$', field_raw_type):
+            element_raw, length_spec = array_match.groups()
+            element_field = self._parse_field_type(element_raw, package_name)
+
+            if length_spec == '':
+                return Sequence(element_field)
+
+            is_bounded = length_spec.startswith('<=')
+            length = int(length_spec[2:]) if is_bounded else int(length_spec)
+            return Array(element_field, length, is_bounded)
+
+        # Handle string types
+        if field_raw_type.startswith('string'):
+            if not (match := re.match(r'string(?:<=(\d+))?$', field_raw_type)):
+                raise Ros2MsgError(f'Invalid string field: {field_raw_type}')
+            length = int(match.group(1)) if match.group(1) else None
+            return String('string', max_length=length)
+        if field_raw_type.startswith('wstring'):
+            if not (match := re.match(r'wstring(?:<=(\d+))?$', field_raw_type)):
+                raise Ros2MsgError(f'Invalid wstring field: {field_raw_type}')
+            length = int(match.group(1)) if match.group(1) else None
+            return String('wstring', max_length=length)
 
         # Handle primitive types
         if field_raw_type in PRIMITIVE_TYPE_MAP:
             return Primitive(field_raw_type)
 
         # Handle complex types
-        data_type = field_raw_type
         if field_raw_type == 'Header':
-            data_type = 'std_msgs/Header'
+            field_raw_type = 'std_msgs/Header'
         elif '/' not in field_raw_type:
-            data_type = f'{package_name}/{field_raw_type}'
-        return Complex(data_type)
+            field_raw_type = f'{package_name}/{field_raw_type}'
+        return Complex(field_raw_type)
 
-    def _parse_constant_value(self, field_type: str, raw_value: str) -> int | float | bool | str:
-        logger.debug(f'Parsing constant value: {field_type} = {raw_value}')
-        raw_value = raw_value.strip()
-        if field_type in PRIMITIVE_TYPE_MAP:
-            if PRIMITIVE_TYPE_MAP[field_type] == str:
-                return raw_value.strip('"').strip("'")
-            return PRIMITIVE_TYPE_MAP[field_type](raw_value)
-        msg = f'Unknown constant type: {field_type}'
-        raise Ros2MsgError(msg)
+    def _parse_field(self, field: str, package_name: str) -> tuple[str, SchemaEntry]:
+        # Extract the field type, name and optional default value
+        if not (match := re.match(r'(\S+)\s+(\S+)(?:\s+(.+))?$', field)):
+            raise Ros2MsgError(f'Invalid field definition: {field}')
+        field_raw_type, field_raw_name, raw_default = match.groups()
 
-    def _parse_field(self, field: str, package_name: str) -> tuple[str, SchemaField]:
-        # Remove inline comments
-        field = re.sub(r'#.*\n', '', field)
+        if not field_raw_type:
+            raise Ros2MsgError('Field type cannot be empty')
+        if not field_raw_name:
+            raise Ros2MsgError('Field name cannot be empty')
 
-        # TODO: split() does not work for strings and arrays
-        field_raw_type, remainder = field.split(maxsplit=1)
-        field_raw_name = remainder.split()[0]
-        if '=' in field_raw_name:
-            field_name, raw_value = field_raw_name.split('=', 1)
-            value = self._parse_constant_value(field_raw_type, raw_value)
-            return field_name, Constant(field_raw_type, value)
+        if is_constant := '=' in field_raw_name:
+            field_raw_name, raw_default = field_raw_name.split('=', 1)
+            if not field_raw_name.isupper():
+                raise Ros2MsgError('Constant name must be uppercase')
+            if not raw_default:
+                raise Ros2MsgError('Constant value cannot be empty')
+        else:
+            if not re.match(r'[a-z][a-z0-9_]*$', field_raw_name):
+                raise Ros2MsgError('Field name must be lowercase, alphanumeric or _')
 
-        field_name = field_raw_name
-        schema_field = self._parse_field_type(field_raw_type, package_name)
+        # Check the field name is valid
+        if '__' in field_raw_name:
+            raise Ros2MsgError('Field name cannot contain double underscore "__"')
+        if field_raw_name.endswith('_'):
+            raise Ros2MsgError('Field name cannot end with "_"')
 
-        return field_name, schema_field
+        # Parse the field type
+        schema_type = self._parse_field_type(field_raw_type, package_name)
 
-    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
+        # Parse the default value if it exists
+        default_value = None
+        if raw_default is not None:
+            # Certain field types cannot have default values
+            if isinstance(schema_type, Complex):
+                raise Ros2MsgError('Complex fields cannot have default values')
+            if isinstance(schema_type, Array) and isinstance(schema_type.type, String):
+                raise Ros2MsgError('Array of strings cannot have default values')
+            if isinstance(schema_type, Sequence) and isinstance(schema_type.type, String):
+                raise Ros2MsgError('Sequence of strings cannot have default values')
+            default_value = self._parse_value(schema_type, raw_default)
+
+        if is_constant:
+            return field_raw_name, SchemaConstant(schema_type, default_value)
+        return field_raw_name, SchemaField(schema_type, default_value)
+
+
+    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, SchemaEntry]]:
         assert schema.encoding == 'ros2msg'
         logger.debug(f'Parsing schema: {schema.name}')
+
         package_name = schema.name.split('/')[0]
         msg = schema.data.decode('utf-8')
 
-        # Tidy up the message schema
-        msg = '\n'.join([line.strip() for line in msg.split('\n')])  # Remove blank space
-        msg = re.sub(r'#.*\n', '', msg, flags=re.MULTILINE)  # Remove line comments
-        msg = re.sub(r'\n\n', '\n', msg, flags=re.MULTILINE)  # Remove empty lines
+        # Remove comments and empty lines
+        lines = [self._remove_inline_comment(line) for line in msg.split('\n')]
+        lines = [line for line in lines if line]
+        msg = '\n'.join(lines)
 
         # Split along '=' delimiter
         msg = [m.strip() for m in msg.split('=' * 80)]
@@ -205,8 +282,3 @@ if __name__ == "__main__":
         encoding='ros2msg',
         data=b'byte OK=0\nbyte WARN=1\nbyte ERROR=2\nbyte STALE=3\nbyte level\nstring name\nstring message\nstring hardware_id\ndiagnostic_msgs/KeyValue[] values\n================================================================================\nMSG: diagnostic_msgs/KeyValue\nstring key\nstring value\n'
     )
-    print(parse_ros2msg(pose_schema))
-    # parse_ros2msg(point_schema)
-    # parse_ros2msg(header_schema)
-    # parse_ros2msg(pose_with_covariance_schema)
-    # parse_ros2msg(diagnostic_status_schema)
