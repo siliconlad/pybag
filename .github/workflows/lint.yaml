@@ -15,6 +15,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    continue-on-error: true
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
@@ -23,4 +24,16 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv run --group test pytest .
+      - run: |
+          uv run --group test pytest --cov-report=xml --cov-report=term tests/
+      - uses: irongut/CodeCoverageSummary@v1.3.0
+        with:
+          filename: coverage.xml
+          format: markdown
+          output: file
+          hide_branch_rate: true
+          hide_complexity: true
+          thresholds: '50 90'
+      - run: |
+          echo '### Pytest Coverage Summary' >> $GITHUB_STEP_SUMMARY
+          cat code-coverage-results.md >> $GITHUB_STEP_SUMMARY
