@@ -4,6 +4,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Generator
 
+from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.error import (
     McapNoStatisticsError,
@@ -28,8 +29,6 @@ from pybag.mcap.records import (
     SchemaRecord,
     StatisticsRecord
 )
-from pybag.crc import assert_crc
-
 
 logger = logging.getLogger(__name__)
 

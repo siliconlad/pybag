@@ -1,12 +1,16 @@
 import zlib
 
+from pybag.crc import (
+    DEFAULT_CRC_CHUNK_SIZE,
+    McapInvalidCrcError,
+    compute_crc_batched
+)
 from pybag.io.raw_reader import BaseReader
-from pybag.crc import McapInvalidCrcError, DEFAULT_CRC_CHUNK_SIZE, compute_crc_batched
 from pybag.mcap.record_parser import (
-    McapRecordParser,
-    MAGIC_BYTES_SIZE,
+    DATA_END_SIZE,
     FOOTER_SIZE,
-    DATA_END_SIZE
+    MAGIC_BYTES_SIZE,
+    McapRecordParser
 )
 
 
