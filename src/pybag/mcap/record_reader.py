@@ -4,6 +4,7 @@ from collections import namedtuple
 from pathlib import Path
 from typing import Generator
 
+from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.error import (
     McapNoStatisticsError,
@@ -32,19 +33,24 @@ from pybag.mcap.records import (
 logger = logging.getLogger(__name__)
 
 
-def decompress_chunk(chunk: ChunkRecord) -> bytes:
+def decompress_chunk(chunk: ChunkRecord, *, check_crc: bool = False) -> bytes:
     """Decompress the records field of a chunk."""
     if chunk.compression == 'zstd':
         import zstandard as zstd
-        return zstd.ZstdDecompressor().decompress(chunk.records)
+        chunk_data = zstd.ZstdDecompressor().decompress(chunk.records)
     elif chunk.compression == 'lz4':
         import lz4.frame
-        return lz4.frame.decompress(chunk.records)
+        chunk_data = lz4.frame.decompress(chunk.records)
     elif chunk.compression == '':
-        return chunk.records
+        chunk_data = chunk.records
     else:
         error_msg = f'Unknown compression type: {chunk.compression}'
         raise McapUnknownCompressionError(error_msg)
+
+    # Validate the CRC if requested
+    if check_crc and chunk.uncompressed_crc != 0:
+        assert_crc(chunk_data, chunk.uncompressed_crc)
+    return chunk_data
 
 
 # TODO: Is this the minimal set of methods needed?
@@ -154,8 +160,9 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         file: The file to read from.
     """
 
-    def __init__(self, file: BaseReader):
+    def __init__(self, file: BaseReader, *, check_crc: bool = False):
         self._file = file
+        self._check_crc = check_crc
 
         self._version = McapRecordParser.parse_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
@@ -414,7 +421,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
                 # Read data from chunk
                 chunk = self.get_chunk(chunk_index)
-                reader = BytesReader(decompress_chunk(chunk))
+                reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
                 reader.seek_from_start(offset)
                 return McapRecordParser.parse_message(reader)
         return None
@@ -453,7 +460,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
             # Read all messages in the chunk
             chunk = self.get_chunk(chunk_index)
-            reader = BytesReader(decompress_chunk(chunk))
+            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
             for timestamp, offset in sorted(message_index.records, key=lambda x: x[0]):
                 # Skip messages that do not match the timestamp range
                 if start_timestamp is not None and timestamp < start_timestamp:
