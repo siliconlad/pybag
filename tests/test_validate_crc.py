@@ -1,6 +1,6 @@
+import zlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import zlib
 
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
