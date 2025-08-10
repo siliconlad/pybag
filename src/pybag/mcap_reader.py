@@ -41,7 +41,7 @@ class DecodedMessage:
     data: Any  # TODO: Figure out how to type this
 
 
-def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
+def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
     """Decode a message using a schema."""
     # TODO: Support other encodings (e.g. ROS 1)
     if schema.encoding != 'ros2msg':
