@@ -15,7 +15,7 @@ from pybag.schema.ros2msg import (
     Array,
     Complex,
     Primitive,
-    Ros2MsgSchema,
+    Ros2MsgSchemaDecoder,
     Schema,
     SchemaConstant,
     SchemaEntry,
@@ -49,7 +49,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> dict:
         raise McapUnknownEncodingError(error_msg)
 
     cdr = CdrDecoder(message.data)
-    msg_schema, schema_msgs = Ros2MsgSchema().parse(schema)  # TODO: Store more permanently
+    msg_schema, schema_msgs = Ros2MsgSchemaDecoder().parse(schema)  # TODO: Store more permanently
 
     def decode_field(schema: SchemaEntry, sub_schemas: dict[str, SchemaEntry]) -> type:
         field = {}

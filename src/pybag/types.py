@@ -1,42 +1,41 @@
 from typing import Annotated, TypeVar
 
-Int8 = Annotated[int, ("int", 8, True)]
-Int16 = Annotated[int, ("int", 16, True)]
-Int32 = Annotated[int, ("int", 32, True)]
-Int64 = Annotated[int, ("int", 64, True)]
+int8 = Annotated[int, ("int8",)]
+int16 = Annotated[int, ("int16",)]
+int32 = Annotated[int, ("int32",)]
+int64 = Annotated[int, ("int64",)]
 
-UInt8 = Annotated[int, ("int", 8, False)]
-UInt16 = Annotated[int, ("int", 16, False)]
-UInt32 = Annotated[int, ("int", 32, False)]
-UInt64 = Annotated[int, ("int", 64, False)]
+uint8 = Annotated[int, ("uint8",)]
+uint16 = Annotated[int, ("uint16",)]
+uint32 = Annotated[int, ("uint32",)]
+uint64 = Annotated[int, ("uint64",)]
 
-Float32 = Annotated[float, ("float", 32)]
-Float64 = Annotated[float, ("float", 64)]
+float32 = Annotated[float, ("float32",)]
+float64 = Annotated[float, ("float64",)]
 
-String = Annotated[str, ("string",)]
+bool = Annotated[bool, ("bool",)]
+string = Annotated[str, ("string",)]
+wstring = Annotated[str, ("wstring",)]
 
 T = TypeVar("T")
 
 
-def Sequence(type_: type[T]) -> type[list[T]]:
-    return Annotated[list[type_], ("sequence", type_)]
+def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
+    return Annotated[list[type_], ("array", type_, length)]
 
-
-def Array(type_: type[T], length: int, *, bounded: bool = False) -> type[list[T]]:
-    return Annotated[list[type_], ("array", type_, length, bounded)]
 
 __all__ = [
-    "Int8",
-    "Int16",
-    "Int32",
-    "Int64",
-    "UInt8",
-    "UInt16",
-    "UInt32",
-    "UInt64",
-    "Float32",
-    "Float64",
-    "String",
+    "int8",
+    "int16",
+    "int32",
+    "int64",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "float32",
+    "float64",
+    "string",
     "Sequence",
     "Array",
 ]

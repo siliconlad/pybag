@@ -1,9 +1,10 @@
 import ast
+import dataclasses
 import logging
 import re
 from abc import ABC
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, fields, is_dataclass
+from typing import Annotated, Any, Tuple, get_args, get_origin
 
 from pybag.mcap.records import SchemaRecord
 
@@ -25,6 +26,10 @@ PRIMITIVE_TYPE_MAP = {
     'uint32': int,
     'int64': int,
     'uint64': int,
+}
+STRING_TYPE_MAP = {
+    'string': str,
+    'wstring': str,
 }
 
 
@@ -97,7 +102,7 @@ class Schema:
     fields: dict[str, SchemaEntry]
 
 
-class Ros2MsgSchema:
+class Ros2MsgSchemaDecoder:
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
 
@@ -248,6 +253,53 @@ class Ros2MsgSchema:
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
         return Schema(schema.name, msg_schema), sub_msg_schemas
+
+
+class Ros2MsgSchemaEncoder:
+    def __init__(self):
+        self._cache = None  # TODO: Cache messages we come across
+
+    def _parse_annotation(self, annotation_type: Any) -> SchemaFieldType:
+        annotation_args = get_args(annotation_type)
+        if len(annotation_args) < 2:
+            raise Ros2MsgError(f"Field is not correctly annotated.")
+
+        field_type = annotation_args[1]
+        if field_type[0] in PRIMITIVE_TYPE_MAP:
+            return Primitive(field_type[0])
+
+        if field_type[0] in STRING_TYPE_MAP:
+            return String(field_type[0])
+
+        if field_type[0] == 'array':
+            sub_type = self._parse_annotation(field_type[1])
+            if (length := field_type[2]) is None:
+                return Sequence(sub_type)
+            return Array(sub_type, length=length, is_bounded=False)
+
+        return Complex(field_type[0])
+
+    def _parse_default_value(self, annotation: dataclasses.Field) -> Any:
+        if annotation.default is not dataclasses.MISSING:
+            return annotation.default
+        if annotation.default_factory is not dataclasses.MISSING:
+            return annotation.default_factory()
+        return None
+
+    def encode(self, message: type) -> Schema:
+        if not is_dataclass(message):
+            raise TypeError("Expected a dataclass instance")
+
+        schema = Schema(message.__name__, {})
+        for field in fields(message):
+            if get_origin(field.type) is not Annotated:
+                raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
+            print(field)
+            field_type = self._parse_annotation(field.type)
+            field_default = self._parse_default_value(field)
+            schema.fields[field.name] = SchemaField(field_type, field_default)
+
+        return schema
 
 
 if __name__ == "__main__":
