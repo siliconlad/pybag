@@ -2,20 +2,18 @@ import logging
 from dataclasses import fields
 from typing import Any
 
-from pybag.schema.ros2msg import (
-    Ros2MsgSchemaEncoder,
-    SchemaConstant,
-    Primitive,
-    String,
-    Array,
-    Sequence,
-    Complex,
-    SchemaField,
-    SchemaFieldType,
-    Schema,
-)
 from pybag.encoding.cdr import CdrEncoder
-
+from pybag.schema.ros2msg import (
+    Array,
+    Complex,
+    Primitive,
+    Ros2MsgSchemaEncoder,
+    Schema,
+    SchemaConstant,
+    SchemaField,
+    Sequence,
+    String
+)
 
 logger = logging.getLogger(__name__)
 

@@ -1,15 +1,16 @@
 from dataclasses import dataclass, field
 
 import pytest
+
 import pybag.types
 from pybag.schema.ros2msg import (
-    Primitive,
-    Sequence,
-    String,
     Array,
-    SchemaField,
+    Primitive,
     Ros2MsgError,
     Ros2MsgSchemaEncoder,
+    SchemaField,
+    Sequence,
+    String
 )
 
 

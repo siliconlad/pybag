@@ -16,10 +16,8 @@ from pybag.schema.ros2msg import (
     Complex,
     Primitive,
     Ros2MsgSchemaDecoder,
-    Schema,
     SchemaConstant,
     SchemaEntry,
-    SchemaField,
     Sequence,
     String
 )
