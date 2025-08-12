@@ -277,7 +277,10 @@ class Ros2MsgSchemaEncoder:
                 return Sequence(sub_type)
             return Array(sub_type, length=length, is_bounded=False)
 
-        return Complex(field_type[0])
+        if field_type[0] == 'complex':
+            return Complex(field_type[1])
+
+        raise Ros2MsgError(f"Unknown field type: {field_type}")
 
     def _parse_default_value(self, annotation: dataclasses.Field) -> Any:
         if annotation.default is not dataclasses.MISSING:
@@ -286,20 +289,26 @@ class Ros2MsgSchemaEncoder:
             return annotation.default_factory()
         return None
 
-    def encode(self, message: type) -> Schema:
+    def encode(self, message: Any) -> Schema:
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
-        schema = Schema(message.__name__, {})
+        class_name = message.__name__ if isinstance(message, type) else type(message).__name__
+
+        schema = Schema(class_name, {})
+        sub_schemas: dict[str, Schema] = {}
         for field in fields(message):
             if get_origin(field.type) is not Annotated:
                 raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
-            print(field)
             field_type = self._parse_annotation(field.type)
             field_default = self._parse_default_value(field)
             schema.fields[field.name] = SchemaField(field_type, field_default)
+            if isinstance(field_type, Complex):
+                sub_schema, sub_sub_schemas = self.encode(getattr(message, field.name))
+                sub_schemas[sub_schema.name] = sub_schema
+                sub_schemas.update(sub_sub_schemas)
 
-        return schema
+        return schema, sub_schemas
 
 
 if __name__ == "__main__":
