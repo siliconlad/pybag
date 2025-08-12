@@ -39,7 +39,9 @@ __all__ = [
     "uint64",
     "float32",
     "float64",
+    "bool",
     "string",
+    "wstring",
     "Array",
     "Complex",
 ]
