@@ -24,6 +24,10 @@ def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
     return Annotated[list[type_], ("array", type_, length)]
 
 
+def Complex(type_: type[T]) -> type[T]:
+    return Annotated[T, ("complex", type_.__name__)]
+
+
 __all__ = [
     "int8",
     "int16",
@@ -36,6 +40,6 @@ __all__ = [
     "float32",
     "float64",
     "string",
-    "Sequence",
     "Array",
+    "Complex",
 ]
