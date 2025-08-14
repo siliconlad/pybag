@@ -1,3 +1,4 @@
+import zlib
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -8,6 +9,11 @@ class BaseWriter(ABC):
     @abstractmethod
     def write(self, data: bytes) -> int:
         """Write bytes."""
+        ...
+
+    @abstractmethod
+    def tell(self) -> int:
+        """Get the current position in the writer."""
         ...
 
     @abstractmethod
@@ -22,9 +28,14 @@ class FileWriter(BaseWriter):
     def __init__(self, file_path: Path | str, mode: str = "wb"):
         self._file_path = Path(file_path).absolute()
         self._file = open(self._file_path, mode)
+        self._bytes_written = 0
 
     def write(self, data: bytes) -> int:
+        self._bytes_written += len(data)
         return self._file.write(data)
+
+    def tell(self) -> int:
+        return self._bytes_written
 
     def close(self) -> None:
         self._file.close()
@@ -40,6 +51,9 @@ class BytesWriter(BaseWriter):
         self._buffer.extend(data)
         return len(data)
 
+    def tell(self) -> int:
+        return len(self._buffer)
+
     def align(self, size: int) -> None:
         current_length = len(self._buffer)
         if current_length % size > 0:
@@ -54,3 +68,27 @@ class BytesWriter(BaseWriter):
 
     def close(self) -> None:
         self._buffer.clear()
+
+
+class CrcWriter(BaseWriter):
+    """Write binary data and track CRC32."""
+
+    def __init__(self, writer: BaseWriter):
+        self._writer = writer
+        self._crc = 0
+
+    def write(self, data: bytes) -> int:
+        self._crc = zlib.crc32(data, self._crc)
+        return self._writer.write(data)
+
+    def tell(self) -> int:
+        return self._writer.tell()
+
+    def get_crc(self) -> int:
+        return self._crc
+
+    def clear_crc(self) -> None:
+        self._crc = 0
+
+    def close(self) -> None:
+        self._writer.close()

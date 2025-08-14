@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
-import zlib
-from dataclasses import fields, is_dataclass
-from typing import Annotated, Any, get_args, get_origin
+import math
+from dataclasses import is_dataclass
+from pathlib import Path
+from typing import Any
 
+from pybag import __version__
 from pybag.encoding.cdr import CdrEncoder
-from pybag.io.raw_writer import BaseWriter, FileWriter
+from pybag.io.raw_writer import BaseWriter, CrcWriter, FileWriter
 from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     ChannelRecord,
@@ -22,29 +24,18 @@ from pybag.mcap.records import (
     SummaryOffsetRecord
 )
 from pybag.schema.ros2msg import (
+    Array,
+    Complex,
+    Primitive,
     Ros2MsgSchemaEncoder,
     Schema,
-    SchemaField,
     SchemaConstant,
-    Primitive, String, Array, Sequence, Complex
+    SchemaField,
+    Sequence,
+    String
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _annotation_to_ros_type(annotation: Any) -> tuple[str, tuple[Any, ...]]:
-    """Extract the ROS type string from an ``Annotated`` field annotation."""
-
-    # ``types.Array`` returns ``Annotated[list[T], ("array", ...)]``.  The
-    # metadata lives on the ``Annotated`` instance, so unwrap the ``list`` first.
-    if get_origin(annotation) is list:
-        annotation = get_args(annotation)[0]
-
-    if get_origin(annotation) is not Annotated:
-        raise TypeError("Fields must use pybag.types annotations")
-
-    args = get_args(annotation)[1]
-    return args[0], args
 
 
 def serialize_message(message: Any, little_endian: bool = True) -> bytes:
@@ -108,128 +99,130 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
     return encoder.save()
 
 
-class _CRCWriter(BaseWriter):
-    """Writer wrapper that tracks position and CRC32."""
-
-    def __init__(self, writer: BaseWriter):
-        self._writer = writer
-        self.crc = 0
-        self.position = 0
-
-    def write(self, data: bytes) -> int:  # pragma: no cover - thin wrapper
-        self.crc = zlib.crc32(data, self.crc)
-        self.position += len(data)
-        return self._writer.write(data)
-
-    def close(self) -> None:  # pragma: no cover - thin wrapper
-        self._writer.close()
-
-
 class McapFileWriter:
     """High level writer for producing MCAP files."""
 
     def __init__(self, writer: BaseWriter) -> None:
-        self._writer = _CRCWriter(writer)
-        self._next_schema_id = 1
+        self._writer = CrcWriter(writer)
+
+        self._next_schema_id = 1  # Schema ID must be non-zero
         self._next_channel_id = 1
-        self._schemas: dict[type, int] = {}
+
+        self._topics: dict[str, int] = {}    # topic -> channel_id
+        self._schemas: dict[type, int] = {}  # type -> schema_id
         self._schema_records: list[SchemaRecord] = []
         self._channel_records: list[ChannelRecord] = []
         self._sequences: dict[int, int] = {}
+
         self._message_count = 0
-        self._message_start_time: int | None = None
-        self._message_end_time: int | None = None
+        self._message_start_time: int = math.inf
+        self._message_end_time: int = -math.inf
         self._channel_message_counts: dict[int, int] = {}
 
+        # Write the start of the file
         McapRecordWriter.write_magic_bytes(self._writer)
-        header = HeaderRecord(profile="ros2", library="pybag")
+        header = HeaderRecord(profile="ros2", library=f"pybag {__version__}")
         McapRecordWriter.write_header(self._writer, header)
 
     @classmethod
-    def open(cls, file_path: str | bytes | Any) -> "McapFileWriter":
+    def to_file(cls, file_path: str | Path) -> "McapFileWriter":
         """Create a writer backed by a file on disk."""
 
         return cls(FileWriter(file_path))
 
     def add_channel(self, topic: str, channel_type: type) -> int:
         """Add a channel to the MCAP output.
-        A corresponding :class:`SchemaRecord` and :class:`ChannelRecord` are
-        written to the underlying writer.
+
+        Args:
+            topic: The topic name.
+            channel_type: The type of the messages to be written to the channel.
+
+        Returns:
+            The channel ID.
         """
+        if (channel_id := self._topics.get(topic)) is None:
+            # Register the schema if it's not already registered
+            if (schema_id := self._schemas.get(channel_type)) is None:
+                schema_id = self._next_schema_id
+                self._next_schema_id += 1
 
-        if channel_type not in self._schemas:
-            schema_id = self._next_schema_id
-            self._next_schema_id += 1
+                schema_record = SchemaRecord(
+                    id=schema_id,
+                    name=channel_type.__name__,
+                    encoding="ros2msg",
+                    data=Ros2MsgSchemaEncoder().encode(channel_type),
+                )
 
-            schema_record = SchemaRecord(
-                id=schema_id,
-                name=channel_type.__name__,
-                encoding="ros2msg",
-                data=b"",
+                McapRecordWriter.write_schema(self._writer, schema_record)
+                self._schemas[channel_type] = schema_id
+                self._schema_records.append(schema_record)
+
+            # Register the channel if it's not already registered
+            channel_id = self._next_channel_id
+            self._next_channel_id += 1
+            channel_record = ChannelRecord(
+                id=channel_id,
+                schema_id=schema_id,
+                topic=topic,
+                message_encoding="cdr",
+                metadata={},
             )
-            McapRecordWriter.write_schema(self._writer, schema_record)
-            self._schemas[channel_type] = schema_id
-            self._schema_records.append(schema_record)
-        else:
-            schema_id = self._schemas[channel_type]
+            McapRecordWriter.write_channel(self._writer, channel_record)
+            self._topics[topic] = channel_id
+            self._channel_records.append(channel_record)
+            self._sequences[channel_id] = 0
+            self._channel_message_counts[channel_id] = 0
 
-        channel_id = self._next_channel_id
-        self._next_channel_id += 1
-        channel_record = ChannelRecord(
-            id=channel_id,
-            schema_id=schema_id,
-            topic=topic,
-            message_encoding="cdr",
-            metadata={},
-        )
-        McapRecordWriter.write_channel(self._writer, channel_record)
-        self._channel_records.append(channel_record)
-        self._sequences[channel_id] = 0
-        self._channel_message_counts[channel_id] = 0
         return channel_id
 
-    def write_message(self, channel_id: int, timestamp: int, message: Any) -> None:
-        """Write ``message`` to ``channel_id`` at ``timestamp``."""
+    def write_message(self, topic: str, timestamp: int, message: Any) -> None:
+        """Write a message to a topic at a given timestamp.
 
-        data = serialize_message(message)
+        Args:
+            topic: The topic name.
+            timestamp: The timestamp of the message.
+            message: The message to write.
+        """
+
+        channel_id = self.add_channel(topic, type(message))
         sequence = self._sequences[channel_id]
+        self._sequences[channel_id] = sequence + 1
+
         record = MessageRecord(
             channel_id=channel_id,
             sequence=sequence,
             log_time=timestamp,
             publish_time=timestamp,
-            data=data,
+            data=serialize_message(message),
         )
         McapRecordWriter.write_message(self._writer, record)
-        self._sequences[channel_id] = sequence + 1
+
         self._message_count += 1
         self._channel_message_counts[channel_id] += 1
-        if self._message_start_time is None or timestamp < self._message_start_time:
-            self._message_start_time = timestamp
-        if self._message_end_time is None or timestamp > self._message_end_time:
-            self._message_end_time = timestamp
+        self._message_start_time = min(self._message_start_time or timestamp, timestamp)
+        self._message_end_time = max(self._message_end_time or timestamp, timestamp)
 
     def close(self) -> None:
-        # Data end -------------------------------------------------------
-        data_end = DataEndRecord(data_section_crc=0)
+        # Data end record
+        data_end = DataEndRecord(data_section_crc=self._writer.get_crc())
         McapRecordWriter.write_data_end(self._writer, data_end)
 
-        summary_start = self._writer.position
+        summary_start = self._writer.tell()
 
-        # Schema group ---------------------------------------------------
-        schema_group_start = self._writer.position
+        # Schema records
+        schema_group_start = summary_start
         for record in self._schema_records:
             McapRecordWriter.write_schema(self._writer, record)
-        schema_group_length = self._writer.position - schema_group_start
+        schema_group_length = self._writer.tell() - schema_group_start
 
-        # Channel group --------------------------------------------------
-        channel_group_start = self._writer.position
+        # Channel records
+        channel_group_start = self._writer.tell()
         for record in self._channel_records:
             McapRecordWriter.write_channel(self._writer, record)
-        channel_group_length = self._writer.position - channel_group_start
+        channel_group_length = self._writer.tell() - channel_group_start
 
-        # Statistics group ----------------------------------------------
-        statistics_group_start = self._writer.position
+        # Statistics record
+        statistics_group_start = self._writer.tell()
         stats = StatisticsRecord(
             message_count=self._message_count,
             schema_count=len(self._schema_records),
@@ -242,10 +235,10 @@ class McapFileWriter:
             channel_message_counts=self._channel_message_counts,
         )
         McapRecordWriter.write_statistics(self._writer, stats)
-        statistics_group_length = self._writer.position - statistics_group_start
+        statistics_group_length = self._writer.tell() - statistics_group_start
 
-        summary_offset_start = self._writer.position
-
+        # Summary offsets
+        summary_offset_start = self._writer.tell()
         if schema_group_length > 0:
             McapRecordWriter.write_summary_offset(
                 self._writer,
@@ -273,7 +266,8 @@ class McapFileWriter:
             ),
         )
 
-        summary_crc = self._writer.crc
+        # Footer record
+        summary_crc = self._writer.get_crc()
         footer = FooterRecord(
             summary_start=summary_start,
             summary_offset_start=summary_offset_start,
@@ -281,11 +275,12 @@ class McapFileWriter:
         )
         McapRecordWriter.write_footer(self._writer, footer)
         McapRecordWriter.write_magic_bytes(self._writer)
+
+        # Close the file
         self._writer.close()
 
-    # Context manager support -------------------------------------------
-    def __enter__(self) -> "McapFileWriter":  # pragma: no cover - thin wrapper
+    def __enter__(self) -> "McapFileWriter":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - thin wrapper
+    def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
