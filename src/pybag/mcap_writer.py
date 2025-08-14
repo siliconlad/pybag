@@ -125,7 +125,7 @@ class McapFileWriter:
         McapRecordWriter.write_header(self._writer, header)
 
     @classmethod
-    def to_file(cls, file_path: str | Path) -> "McapFileWriter":
+    def open(cls, file_path: str | Path) -> "McapFileWriter":
         """Create a writer backed by a file on disk."""
 
         return cls(FileWriter(file_path))
