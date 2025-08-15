@@ -1,7 +1,7 @@
-from collections import defaultdict
-from enum import Enum
 import logging
 import re
+from collections import defaultdict
+from enum import Enum
 
 from pybag.mcap.records import SchemaRecord
 
