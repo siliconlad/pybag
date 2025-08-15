@@ -24,6 +24,21 @@ class Ros1Decoder:
     def uint8(self) -> int:
         return struct.unpack("<B", self._data.read(1))[0]
 
+    # Aliases
+    def char(self) -> int:
+        """Alias for :meth:`int8`.
+
+        In ROS1 the ``char`` type is represented as a signed byte.
+        """
+        return self.int8()
+
+    def byte(self) -> int:
+        """Alias for :meth:`uint8`.
+
+        The ``byte`` type is an unsigned 8-bit integer in ROS1.
+        """
+        return self.uint8()
+
     def int16(self) -> int:
         return struct.unpack("<h", self._data.read(2))[0]
 
@@ -91,6 +106,15 @@ class Ros1Encoder:
 
     def uint8(self, value: int) -> None:
         self._payload.write(struct.pack("<B", value))
+
+    # Aliases
+    def char(self, value: int) -> None:
+        """Alias for :meth:`int8`."""
+        self.int8(value)
+
+    def byte(self, value: int) -> None:
+        """Alias for :meth:`uint8`."""
+        self.uint8(value)
 
     def int16(self, value: int) -> None:
         self._payload.write(struct.pack("<h", value))

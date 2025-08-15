@@ -46,7 +46,8 @@ def parse_ros1msg_type(field_raw_type: str, package_name: str) -> dict:
     string_length_match = re.match(r"string(.*)\[", field_raw_type)
 
     if re.match(r".*\[.*\]$", field_raw_type):
-        if match := re.match(r".*\[(\d*)\]$", field_raw_type):
+        match = re.match(r".*\[(\d*)\]$", field_raw_type)
+        if match and match.group(1):
             field_type = Ros1MsgFieldType.ARRAY
             length = int(match.group(1))
         else:
