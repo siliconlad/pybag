@@ -1,3 +1,4 @@
+import zlib
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from pathlib import Path
@@ -110,3 +111,38 @@ class BytesReader(BaseReader):
 
     def close(self) -> None:
         pass
+
+
+class CrcReader(BaseReader):
+    def __init__(self, reader: BaseReader):
+        self._reader = reader
+        self._crc = 0
+
+    def peek(self, size: int) -> bytes:
+        return self._reader.peek(size)
+
+    def read(self, size: int | None = None) -> bytes:
+        data = self._reader.read(size)
+        self._crc = zlib.crc32(data, self._crc)
+        return data
+
+    def seek_from_start(self, offset: int) -> int:
+        return self._reader.seek_from_start(offset)
+
+    def seek_from_end(self, offset: int) -> int:
+        return self._reader.seek_from_end(offset)
+
+    def seek_from_current(self, offset: int) -> int:
+        return self._reader.seek_from_current(offset)
+
+    def tell(self) -> int:
+        return self._reader.tell()
+
+    def close(self) -> None:
+        self._reader.close()
+
+    def get_crc(self) -> int:
+        return self._crc
+
+    def clear_crc(self) -> None:
+        self._crc = 0

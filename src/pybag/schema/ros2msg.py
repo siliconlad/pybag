@@ -6,6 +6,7 @@ from abc import ABC
 from dataclasses import dataclass, fields, is_dataclass
 from typing import Annotated, Any, Tuple, get_args, get_origin
 
+from pybag.io.raw_writer import BytesWriter
 from pybag.mcap.records import SchemaRecord
 
 logger = logging.getLogger(__name__)
@@ -289,7 +290,7 @@ class Ros2MsgSchemaEncoder:
             return annotation.default_factory()
         return None
 
-    def encode(self, message: Any) -> Schema:
+    def _parse_message(self, message: Any) -> Schema:
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
@@ -304,11 +305,66 @@ class Ros2MsgSchemaEncoder:
             field_default = self._parse_default_value(field)
             schema.fields[field.name] = SchemaField(field_type, field_default)
             if isinstance(field_type, Complex):
-                sub_schema, sub_sub_schemas = self.encode(getattr(message, field.name))
+                sub_schema, sub_sub_schemas = self._parse_message(getattr(message, field.name))
                 sub_schemas[sub_schema.name] = sub_schema
                 sub_schemas.update(sub_sub_schemas)
 
         return schema, sub_schemas
+
+    def _type_str(self, field_type: SchemaFieldType) -> str:
+        if isinstance(field_type, Primitive):
+            return field_type.type
+        if isinstance(field_type, String):
+            if field_type.max_length is None:
+                return field_type.type
+            return f'{field_type.type}<={field_type.max_length}'
+        if isinstance(field_type, Array):
+            if field_type.is_bounded:
+                return f'{field_type.type}[<={field_type.length}]'
+            return f'{field_type.type}[{field_type.length}]'
+        if isinstance(field_type, Sequence):
+            return f'{field_type.type}[]'
+        if isinstance(field_type, Complex):
+            return field_type.type
+        raise Ros2MsgError(f'Unknown field type: {field_type}')
+
+    def _value_str(self, value: Any) -> str:
+        if isinstance(value, bool):
+            return 'true' if value else 'false'
+        if isinstance(value, (int, float, str, bytes)):
+            return str(value)
+        if isinstance(value, list):
+            return f'[{", ".join(self._value_str(v) for v in value)}]'
+        raise Ros2MsgError(f'Unknown value type: {type(value)}')
+
+    def _encode_constant(self, writer: BytesWriter, field_name: str, field: SchemaConstant) -> None:
+        encoded_type = self._encode_type(field.type)
+        encoded_name = field_name.upper()
+        encoded_value = self._encode_value(field.type, field.value)
+        writer.write(f'{encoded_type} {encoded_name}={encoded_value}\n'.encode('utf-8'))
+
+    def _encode_field(self, writer: BytesWriter, field_name: str, field: SchemaField) -> None:
+        encoded_type = self._type_str(field.type)
+        if field.default is not None:
+            encoded_value = self._value_str(field.default)
+            writer.write(f'{encoded_type} {field_name} {encoded_value}\n'.encode('utf-8'))
+        else:
+            writer.write(f'{encoded_type} {field_name}\n'.encode('utf-8'))
+
+    def encode(self, message: Any) -> bytes:
+        schema, sub_schemas = self._parse_message(message)
+
+        writer = BytesWriter()
+        for field_name, field in schema.fields.items():
+            if isinstance(field, SchemaConstant):
+                self._encode_constant(writer, field_name, field)
+            elif isinstance(field, SchemaField):
+                self._encode_field(writer, field_name, field)
+
+        return writer.as_bytes()
+
+    def parse_schema(self, message: Any) -> tuple[Schema, dict[str, Schema]]:
+        return self._parse_message(message)
 
 
 if __name__ == "__main__":
