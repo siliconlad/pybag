@@ -45,7 +45,7 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
         raise TypeError("Expected a dataclass instance")
 
     encoder = CdrEncoder(little_endian=little_endian)
-    schema, sub_schemas = Ros2MsgSchemaEncoder().encode(message)
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(message)
 
     def _encode_field(message: Any, schema_field: SchemaField, sub_schemas: dict[str, Schema]) -> None:
         if isinstance(schema_field.type, Primitive):
@@ -208,6 +208,7 @@ class McapFileWriter:
         McapRecordWriter.write_data_end(self._writer, data_end)
 
         summary_start = self._writer.tell()
+        self._writer.clear_crc()
 
         # Schema records
         schema_group_start = summary_start
@@ -266,14 +267,14 @@ class McapFileWriter:
             ),
         )
 
-        # Footer record
-        summary_crc = self._writer.get_crc()
-        footer = FooterRecord(
-            summary_start=summary_start,
-            summary_offset_start=summary_offset_start,
-            summary_crc=summary_crc,
-        )
-        McapRecordWriter.write_footer(self._writer, footer)
+        # Write footer record manually for CRC calculation
+        self._writer.write(McapRecordWriter._encode_record_type(RecordType.FOOTER))
+        self._writer.write(McapRecordWriter._encode_uint64(20))
+        self._writer.write(McapRecordWriter._encode_uint64(summary_start))
+        self._writer.write(McapRecordWriter._encode_uint64(summary_offset_start))
+        self._writer.write(McapRecordWriter._encode_uint32(self._writer.get_crc()))
+
+        # Write the magic bytes again
         McapRecordWriter.write_magic_bytes(self._writer)
 
         # Close the file

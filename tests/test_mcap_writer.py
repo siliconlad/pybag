@@ -6,8 +6,9 @@ import pytest
 
 import pybag
 import pybag.types as t
+from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
-from pybag.io.raw_reader import BytesReader
+from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.records import RecordType
 from pybag.mcap_writer import McapFileWriter, serialize_message
@@ -81,7 +82,7 @@ def test_add_channel_and_write_message() -> None:
         with McapFileWriter.open(file_path) as mcap:
             channel_id = mcap.add_channel("/example", Example)
             mcap.write_message("/example", 1, Example(5))
-        reader = BytesReader(file_path.read_bytes())
+        reader = CrcReader(BytesReader(file_path.read_bytes()))
 
     # Check the magic bytes
     version = McapRecordParser.parse_magic_bytes(reader)
@@ -89,14 +90,14 @@ def test_add_channel_and_write_message() -> None:
 
     # Check the header
     header = McapRecordParser.parse_header(reader)
-    assert header.library == "pybag"
+    assert header.library == f"pybag {__version__}"
     assert header.profile == "ros2"
 
     # Check the schema
     data_schema = McapRecordParser.parse_schema(reader)
     assert data_schema.name == "Example"
-    assert data_schema.encoding == "cdr"
-    assert data_schema.data == serialize_message(Example(5))
+    assert data_schema.encoding == "ros2msg"
+    assert data_schema.data == "int32 value\n".encode("utf-8")
 
     # Check the channel
     data_channel = McapRecordParser.parse_channel(reader)
@@ -114,12 +115,15 @@ def test_add_channel_and_write_message() -> None:
     assert data_message.publish_time == 1
     assert data_message.data == serialize_message(Example(5))
 
+    crc_data_end = reader.get_crc()
+    reader.clear_crc()
+
     # Check the data end
     data_end = McapRecordParser.parse_data_end(reader)
-    assert data_end.data_section_crc == 0  # TODO: Test the actual crc value
-    assert data_end.data_section_length == 0
+    assert data_end.data_section_crc == crc_data_end
 
     summary_start = reader.tell()
+    reader.clear_crc()
 
     # Check the summary schema
     summary_schema_start = reader.tell()
@@ -164,11 +168,21 @@ def test_add_channel_and_write_message() -> None:
     assert offset_stats.group_start == summary_stats_start
     # TODO: Test the group length
 
+    # Get the crc value without reading the summary_crc
+    footer_start = reader.tell()
+    _ = McapRecordParser._parse_uint8(reader)   # record_type
+    _ = McapRecordParser._parse_uint64(reader)  # length
+    _ = McapRecordParser._parse_uint64(reader)  # summary_start
+    _ = McapRecordParser._parse_uint64(reader)  # summary_offset_start
+    crc_footer = reader.get_crc()
+    reader.seek_from_start(footer_start)
+
     # Check the footer
     footer = McapRecordParser.parse_footer(reader)
     assert footer.summary_start == summary_start
     assert footer.summary_offset_start == summary_offset_start
-    # TODO: Test the summary crc
+    assert footer.summary_crc == crc_footer
 
+    # Check the summary magic bytes
     summary_version = McapRecordParser.parse_magic_bytes(reader)
     assert summary_version == version
