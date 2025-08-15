@@ -22,7 +22,7 @@ def test_serialize_dataclass_primitives() -> None:
         flag: pybag.bool
 
     obj = Example(42, "hi", True)
-    schema, sub_schemas = Ros2MsgSchemaEncoder().encode(Example)
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
 
     assert schema.name == 'Example'
     assert len(schema.fields) == 3
@@ -39,7 +39,8 @@ def test_serialize_dataclass_primitives_with_default() -> None:
         name: pybag.string = "hi"
         flag: pybag.bool = True
 
-    schema, sub_schemas = Ros2MsgSchemaEncoder().encode(ExampleDefault)
+    obj = ExampleDefault()
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
     assert schema.name == 'ExampleDefault'
     assert len(schema.fields) == 3
     assert schema.fields['integer'] == SchemaField(Primitive('int32'), default=42)
@@ -52,7 +53,8 @@ def test_serialize_array() -> None:
     @dataclass
     class ArrayExample:
         numbers: pybag.Array(pybag.int32)
-    schema, sub_schemas = Ros2MsgSchemaEncoder().encode(ArrayExample)
+    obj = ArrayExample(numbers=[1, 2, 3])
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
 
     assert schema.name == 'ArrayExample'
     assert len(schema.fields) == 1
@@ -64,7 +66,8 @@ def test_serialize_array_with_length() -> None:
     @dataclass
     class ArrayExample:
         numbers: pybag.Array(pybag.int32, 3)
-    schema, sub_schemas = Ros2MsgSchemaEncoder().encode(ArrayExample)
+    obj = ArrayExample(numbers=[1, 2, 3])
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
 
     assert schema.name == 'ArrayExample'
     assert len(schema.fields) == 1
@@ -76,7 +79,8 @@ def test_serialize_array_with_default() -> None:
     @dataclass
     class ArrayExample:
         numbers: pybag.Array(pybag.int32) = field(default_factory=lambda: [1, 2, 3])
-    schema, sub_schemas = Ros2MsgSchemaEncoder().encode(ArrayExample)
+    obj = ArrayExample()
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
 
     assert schema.name == 'ArrayExample'
     assert len(schema.fields) == 1
@@ -90,7 +94,7 @@ def test_serialize_python_types_int() -> None:
         value: int
 
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaEncoder().encode(Missing)
+        Ros2MsgSchemaEncoder().parse_schema(Missing)
 
 
 def test_serialize_python_types_str() -> None:
@@ -99,7 +103,7 @@ def test_serialize_python_types_str() -> None:
         value: str
 
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaEncoder().encode(Unsupported)
+        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
 
 
 def test_serialize_python_types_float() -> None:
@@ -108,7 +112,7 @@ def test_serialize_python_types_float() -> None:
         value: float
 
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaEncoder().encode(Unsupported)
+        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
 
 
 def test_serialize_python_types_bool() -> None:
@@ -117,4 +121,4 @@ def test_serialize_python_types_bool() -> None:
         value: bool
 
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaEncoder().encode(Unsupported)
+        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
