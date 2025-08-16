@@ -27,7 +27,7 @@ def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
 
 
 def Complex(type_: type[T]) -> type[T]:
-    return Annotated[T, ("complex", type_.__name__)]
+    return Annotated[T, ("complex", type_.__msg_name__)]
 
 
 __all__ = [
