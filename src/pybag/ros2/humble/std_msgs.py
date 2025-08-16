@@ -15,14 +15,14 @@ class Bool:
 class Byte:
     __msg_name__ = 'std_msgs/msg/Byte'
 
-    data: t.int8
+    data: t.byte
 
 
 @dataclass
 class Char:
     __msg_name__ = 'std_msgs/msg/Char'
 
-    data: t.uint8
+    data: t.char
 
 
 @dataclass
@@ -39,6 +39,7 @@ class ColorRGBA:
 class Empty:
     __msg_name__ = 'std_msgs/msg/Empty'
 
+    # TODO: Can this be removed?
     structure_needs_at_least_one_member: t.uint8
 
 
@@ -149,7 +150,7 @@ class ByteMultiArray:
     __msg_name__ = 'std_msgs/msg/ByteMultiArray'
 
     layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.int8)
+    data: t.Array(t.byte)
 
 
 @dataclass

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import pybag.types as t
-from .std_msgs import *
+import pybag.ros2.humble.std_msgs as std_msgs
 
 
 @dataclass
@@ -23,6 +23,71 @@ class Point32:
 
 
 @dataclass
+class PointStamped:
+    __msg_name__ = 'geometry_msgs/msg/PointStamped'
+
+    header: t.Complex(std_msgs.Header)
+    point: t.Complex(Point)
+
+
+@dataclass
+class Polygon:
+    __msg_name__ = 'geometry_msgs/msg/Polygon'
+
+    points: t.Array(t.Complex(Point32))
+
+
+@dataclass
+class PolygonInstance:
+    __msg_name__ = 'geometry_msgs/msg/PolygonInstance'
+
+    polygon: t.Complex(Polygon)
+    id: t.int64
+
+
+@dataclass
+class PolygonInstanceStamped:
+    __msg_name__ = 'geometry_msgs/msg/PolygonInstanceStamped'
+
+    header: t.Complex(std_msgs.Header)
+    polygon: t.Complex(PolygonInstance)
+
+
+@dataclass
+class PolygonStamped:
+    __msg_name__ = 'geometry_msgs/msg/PolygonStamped'
+
+    header: t.Complex(std_msgs.Header)
+    polygon: t.Complex(Polygon)
+
+
+@dataclass
+class Quaternion:
+    __msg_name__ = 'geometry_msgs/msg/Quaternion'
+
+    x: t.float64 = 0
+    y: t.float64 = 0
+    z: t.float64 = 0
+    w: t.float64 = 1
+
+
+@dataclass
+class QuaternionStamped:
+    __msg_name__ = 'geometry_msgs/msg/QuaternionStamped'
+
+    header: t.Complex(std_msgs.Header)
+    quaternion: t.Complex(Quaternion)
+
+
+@dataclass
+class Pose:
+    __msg_name__ = 'geometry_msgs/msg/Pose'
+
+    position: t.Complex(Point)
+    orientation: t.Complex(Quaternion)
+
+
+@dataclass
 class Pose2D:
     __msg_name__ = 'geometry_msgs/msg/Pose2D'
 
@@ -32,13 +97,35 @@ class Pose2D:
 
 
 @dataclass
-class Quaternion:
-    __msg_name__ = 'geometry_msgs/msg/Quaternion'
+class PoseArray:
+    __msg_name__ = 'geometry_msgs/msg/PoseArray'
 
-    x: t.float64
-    y: t.float64
-    z: t.float64
-    w: t.float64
+    header: t.Complex(std_msgs.Header)
+    poses: t.Array(t.Complex(Pose))
+
+
+@dataclass
+class PoseStamped:
+    __msg_name__ = 'geometry_msgs/msg/PoseStamped'
+
+    header: t.Complex(std_msgs.Header)
+    pose: t.Complex(Pose)
+
+
+@dataclass
+class PoseWithCovariance:
+    __msg_name__ = 'geometry_msgs/msg/PoseWithCovariance'
+
+    pose: t.Complex(Pose)
+    covariance: t.Array(t.float64, 36)
+
+
+@dataclass
+class PoseWithCovarianceStamped:
+    __msg_name__ = 'geometry_msgs/msg/PoseWithCovarianceStamped'
+
+    header: t.Complex(std_msgs.Header)
+    pose: t.Complex(PoseWithCovariance)
 
 
 @dataclass
@@ -51,34 +138,11 @@ class Vector3:
 
 
 @dataclass
-class PointStamped:
-    __msg_name__ = 'geometry_msgs/msg/PointStamped'
+class Vector3Stamped:
+    __msg_name__ = 'geometry_msgs/msg/Vector3Stamped'
 
-    header: t.Complex(Header)
-    point: t.Complex(Point)
-
-
-@dataclass
-class Polygon:
-    __msg_name__ = 'geometry_msgs/msg/Polygon'
-
-    points: t.Array(t.Complex(Point32))
-
-
-@dataclass
-class Pose:
-    __msg_name__ = 'geometry_msgs/msg/Pose'
-
-    position: t.Complex(Point)
-    orientation: t.Complex(Quaternion)
-
-
-@dataclass
-class QuaternionStamped:
-    __msg_name__ = 'geometry_msgs/msg/QuaternionStamped'
-
-    header: t.Complex(Header)
-    quaternion: t.Complex(Quaternion)
+    header: t.Complex(std_msgs.Header)
+    vector: t.Complex(Vector3)
 
 
 @dataclass
@@ -87,6 +151,30 @@ class Accel:
 
     linear: t.Complex(Vector3)
     angular: t.Complex(Vector3)
+
+
+@dataclass
+class AccelStamped:
+    __msg_name__ = 'geometry_msgs/msg/AccelStamped'
+
+    header: t.Complex(std_msgs.Header)
+    accel: t.Complex(Accel)
+
+
+@dataclass
+class AccelWithCovariance:
+    __msg_name__ = 'geometry_msgs/msg/AccelWithCovariance'
+
+    accel: t.Complex(Accel)
+    covariance: t.Array(t.float64, 36)
+
+
+@dataclass
+class AccelWithCovarianceStamped:
+    __msg_name__ = 'geometry_msgs/msg/AccelWithCovarianceStamped'
+
+    header: t.Complex(std_msgs.Header)
+    accel: t.Complex(AccelWithCovariance)
 
 
 @dataclass
@@ -104,11 +192,28 @@ class Inertia:
 
 
 @dataclass
+class InertiaStamped:
+    __msg_name__ = 'geometry_msgs/msg/InertiaStamped'
+
+    header: t.Complex(std_msgs.Header)
+    inertia: t.Complex(Inertia)
+
+
+@dataclass
 class Transform:
     __msg_name__ = 'geometry_msgs/msg/Transform'
 
     translation: t.Complex(Vector3)
     rotation: t.Complex(Quaternion)
+
+
+@dataclass
+class TransformStamped:
+    __msg_name__ = 'geometry_msgs/msg/TransformStamped'
+
+    header: t.Complex(std_msgs.Header)
+    child_frame_id: t.string
+    transform: t.Complex(Transform)
 
 
 @dataclass
@@ -120,91 +225,10 @@ class Twist:
 
 
 @dataclass
-class Vector3Stamped:
-    __msg_name__ = 'geometry_msgs/msg/Vector3Stamped'
-
-    header: t.Complex(Header)
-    vector: t.Complex(Vector3)
-
-
-@dataclass
-class Wrench:
-    __msg_name__ = 'geometry_msgs/msg/Wrench'
-
-    force: t.Complex(Vector3)
-    torque: t.Complex(Vector3)
-
-
-@dataclass
-class PolygonStamped:
-    __msg_name__ = 'geometry_msgs/msg/PolygonStamped'
-
-    header: t.Complex(Header)
-    polygon: t.Complex(Polygon)
-
-
-@dataclass
-class PoseArray:
-    __msg_name__ = 'geometry_msgs/msg/PoseArray'
-
-    header: t.Complex(Header)
-    poses: t.Array(t.Complex(Pose))
-
-
-@dataclass
-class PoseStamped:
-    __msg_name__ = 'geometry_msgs/msg/PoseStamped'
-
-    header: t.Complex(Header)
-    pose: t.Complex(Pose)
-
-
-@dataclass
-class PoseWithCovariance:
-    __msg_name__ = 'geometry_msgs/msg/PoseWithCovariance'
-
-    pose: t.Complex(Pose)
-    covariance: t.Array(t.float64, 36)
-
-
-@dataclass
-class AccelStamped:
-    __msg_name__ = 'geometry_msgs/msg/AccelStamped'
-
-    header: t.Complex(Header)
-    accel: t.Complex(Accel)
-
-
-@dataclass
-class AccelWithCovariance:
-    __msg_name__ = 'geometry_msgs/msg/AccelWithCovariance'
-
-    accel: t.Complex(Accel)
-    covariance: t.Array(t.float64, 36)
-
-
-@dataclass
-class InertiaStamped:
-    __msg_name__ = 'geometry_msgs/msg/InertiaStamped'
-
-    header: t.Complex(Header)
-    inertia: t.Complex(Inertia)
-
-
-@dataclass
-class TransformStamped:
-    __msg_name__ = 'geometry_msgs/msg/TransformStamped'
-
-    header: t.Complex(Header)
-    child_frame_id: t.string
-    transform: t.Complex(Transform)
-
-
-@dataclass
 class TwistStamped:
     __msg_name__ = 'geometry_msgs/msg/TwistStamped'
 
-    header: t.Complex(Header)
+    header: t.Complex(std_msgs.Header)
     twist: t.Complex(Twist)
 
 
@@ -217,32 +241,34 @@ class TwistWithCovariance:
 
 
 @dataclass
-class WrenchStamped:
-    __msg_name__ = 'geometry_msgs/msg/WrenchStamped'
-
-    header: t.Complex(Header)
-    wrench: t.Complex(Wrench)
-
-
-@dataclass
-class PoseWithCovarianceStamped:
-    __msg_name__ = 'geometry_msgs/msg/PoseWithCovarianceStamped'
-
-    header: t.Complex(Header)
-    pose: t.Complex(PoseWithCovariance)
-
-
-@dataclass
-class AccelWithCovarianceStamped:
-    __msg_name__ = 'geometry_msgs/msg/AccelWithCovarianceStamped'
-
-    header: t.Complex(Header)
-    accel: t.Complex(AccelWithCovariance)
-
-
-@dataclass
 class TwistWithCovarianceStamped:
     __msg_name__ = 'geometry_msgs/msg/TwistWithCovarianceStamped'
 
-    header: t.Complex(Header)
+    header: t.Complex(std_msgs.Header)
     twist: t.Complex(TwistWithCovariance)
+
+
+@dataclass
+class VelocityStamped:
+    __msg_name__ = 'geometry_msgs/msg/VelocityStamped'
+
+    header: t.Complex(std_msgs.Header)
+    body_frame_id: t.string
+    reference_frame_id: t.string
+    velocity: t.Complex(Twist)
+
+
+@dataclass
+class Wrench:
+    __msg_name__ = 'geometry_msgs/msg/Wrench'
+
+    force: t.Complex(Vector3)
+    torque: t.Complex(Vector3)
+
+
+@dataclass
+class WrenchStamped:
+    __msg_name__ = 'geometry_msgs/msg/WrenchStamped'
+
+    header: t.Complex(std_msgs.Header)
+    wrench: t.Complex(Wrench)

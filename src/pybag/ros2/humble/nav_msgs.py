@@ -1,54 +1,62 @@
 from dataclasses import dataclass
 
 import pybag.types as t
-from .builtin_interfaces import *
-from .std_msgs import *
-from .geometry_msgs import *
+import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
+import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.ros2.humble.geometry_msgs as geometry_msgs
+
+
+@dataclass
+class Goals:
+    __msg_name__ = 'nav_msgs/msg/Goals'
+
+    header: t.Complex(std_msgs.Header)
+    goals: t.Array(t.Complex(geometry_msgs.PoseStamped))
 
 
 @dataclass
 class GridCells:
     __msg_name__ = 'nav_msgs/msg/GridCells'
 
-    header: t.Complex(Header)
+    header: t.Complex(std_msgs.Header)
     cell_width: t.float32
     cell_height: t.float32
-    cells: t.Array(t.Complex(Point))
+    cells: t.Array(t.Complex(geometry_msgs.Point))
 
 
 @dataclass
 class MapMetaData:
     __msg_name__ = 'nav_msgs/msg/MapMetaData'
 
-    map_load_time: t.Complex(Time)
+    map_load_time: t.Complex(builtin_interfaces.Time)
     resolution: t.float32
     width: t.uint32
     height: t.uint32
-    origin: t.Complex(Pose)
-
-
-@dataclass
-class Odometry:
-    __msg_name__ = 'nav_msgs/msg/Odometry'
-
-    header: t.Complex(Header)
-    child_frame_id: t.string
-    pose: t.Complex(PoseWithCovariance)
-    twist: t.Complex(TwistWithCovariance)
-
-
-@dataclass
-class Path:
-    __msg_name__ = 'nav_msgs/msg/Path'
-
-    header: t.Complex(Header)
-    poses: t.Array(t.Complex(PoseStamped))
+    origin: t.Complex(geometry_msgs.Pose)
 
 
 @dataclass
 class OccupancyGrid:
     __msg_name__ = 'nav_msgs/msg/OccupancyGrid'
 
-    header: t.Complex(Header)
+    header: t.Complex(std_msgs.Header)
     info: t.Complex(MapMetaData)
     data: t.Array(t.int8)
+
+
+@dataclass
+class Odometry:
+    __msg_name__ = 'nav_msgs/msg/Odometry'
+
+    header: t.Complex(std_msgs.Header)
+    child_frame_id: t.string
+    pose: t.Complex(geometry_msgs.PoseWithCovariance)
+    twist: t.Complex(geometry_msgs.TwistWithCovariance)
+
+
+@dataclass
+class Path:
+    __msg_name__ = 'nav_msgs/msg/Path'
+
+    header: t.Complex(std_msgs.Header)
+    poses: t.Array(t.Complex(geometry_msgs.PoseStamped))
