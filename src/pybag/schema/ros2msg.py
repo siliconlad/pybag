@@ -305,7 +305,8 @@ class Ros2MsgSchemaEncoder:
             field_default = self._parse_default_value(field)
             schema.fields[field.name] = SchemaField(field_type, field_default)
             if isinstance(field_type, Complex):
-                sub_schema, sub_sub_schemas = self._parse_message(getattr(message, field.name))
+                complex_type = get_args(field.type)[0]
+                sub_schema, sub_sub_schemas = self._parse_message(complex_type)
                 sub_schemas[sub_schema.name] = sub_schema
                 sub_schemas.update(sub_sub_schemas)
 
