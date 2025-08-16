@@ -14,6 +14,8 @@ float32 = Annotated[float, ("float32",)]
 float64 = Annotated[float, ("float64",)]
 
 bool = Annotated[bool, ("bool",)]
+byte = Annotated[bytes, ("byte",)]
+char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
@@ -25,7 +27,7 @@ def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
 
 
 def Complex(type_: type[T]) -> type[T]:
-    return Annotated[T, ("complex", type_.__name__)]
+    return Annotated[T, ("complex", type_.__msg_name__)]
 
 
 __all__ = [

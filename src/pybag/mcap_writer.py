@@ -148,7 +148,7 @@ class McapFileWriter:
 
                 schema_record = SchemaRecord(
                     id=schema_id,
-                    name=channel_type.__name__,
+                    name=channel_type.__msg_name__,
                     encoding="ros2msg",
                     data=Ros2MsgSchemaEncoder().encode(channel_type),
                 )
