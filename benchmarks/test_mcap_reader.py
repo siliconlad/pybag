@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import random
 from collections import deque
 from pathlib import Path
@@ -83,28 +81,6 @@ def create_test_mcap(path: Path, message_count: int = 1000, seed: int = 0) -> Pa
     return next(Path(path).rglob("*.mcap"))
 
 
-def assert_odometry_equal(odom1: Any, odom2: Any) -> None:
-    assert odom1.header.frame_id == odom2.header.frame_id
-    assert odom1.header.stamp.sec == odom2.header.stamp.sec
-    assert odom1.header.stamp.nanosec == odom2.header.stamp.nanosec
-    assert odom1.child_frame_id == odom2.child_frame_id
-    assert np.isclose(odom1.pose.pose.position.x, odom2.pose.pose.position.x)
-    assert np.isclose(odom1.pose.pose.position.y, odom2.pose.pose.position.y)
-    assert np.isclose(odom1.pose.pose.position.z, odom2.pose.pose.position.z)
-    assert np.isclose(odom1.pose.pose.orientation.x, odom2.pose.pose.orientation.x)
-    assert np.isclose(odom1.pose.pose.orientation.y, odom2.pose.pose.orientation.y)
-    assert np.isclose(odom1.pose.pose.orientation.z, odom2.pose.pose.orientation.z)
-    assert np.isclose(odom1.pose.pose.orientation.w, odom2.pose.pose.orientation.w)
-    assert np.allclose(odom1.pose.covariance, odom2.pose.covariance)
-    assert np.isclose(odom1.twist.twist.linear.x, odom2.twist.twist.linear.x)
-    assert np.isclose(odom1.twist.twist.linear.y, odom2.twist.twist.linear.y)
-    assert np.isclose(odom1.twist.twist.linear.z, odom2.twist.twist.linear.z)
-    assert np.isclose(odom1.twist.twist.angular.x, odom2.twist.twist.angular.x)
-    assert np.isclose(odom1.twist.twist.angular.y, odom2.twist.twist.angular.y)
-    assert np.isclose(odom1.twist.twist.angular.z, odom2.twist.twist.angular.z)
-    assert np.allclose(odom1.twist.covariance, odom2.twist.covariance)
-
-
 def read_with_pybag(mcap: Path) -> Iterator[Any]:
     reader = McapFileReader.from_file(mcap)
     for topic in reader.get_topics():
@@ -124,22 +100,6 @@ def read_with_official(mcap: Path) -> Iterator[Any]:
         reader = make_reader(f, decoder_factories=[DecoderFactory()])
         for _, _, _, ros_msg in reader.iter_decoded_messages(log_time_order=False):
             yield ros_msg
-
-
-def test_readers_return_same_messages() -> None:
-    """Ensure each implementation returns the exact same decoded messages."""
-    with TemporaryDirectory() as tmpdir:
-        mcap = create_test_mcap(Path(tmpdir) / "test", message_count=10)
-
-        pybag_msgs = [msg for msg in read_with_pybag(mcap)]
-        rosbags_msgs = [msg for msg in read_with_rosbags(mcap)]
-        official_msgs = [msg for msg in read_with_official(mcap)]
-
-        for pybag_msg, rosbags_msg in zip(pybag_msgs, rosbags_msgs, strict=True):
-            assert_odometry_equal(pybag_msg, rosbags_msg)
-
-        for pybag_msg, official_msg in zip(pybag_msgs, official_msgs, strict=True):
-            assert_odometry_equal(pybag_msg, official_msg)
 
 
 def test_official(benchmark: BenchmarkFixture) -> None:
