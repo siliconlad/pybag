@@ -294,7 +294,7 @@ class Ros2MsgSchemaEncoder:
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
-        class_name = message.__name__ if isinstance(message, type) else type(message).__name__
+        class_name = message.__msg_name__ if isinstance(message, type) else type(message).__msg_name__
 
         schema = Schema(class_name, {})
         sub_schemas: dict[str, Schema] = {}

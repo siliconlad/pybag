@@ -16,11 +16,13 @@ from pybag.mcap_writer import McapFileWriter, serialize_message
 
 @dataclass
 class SubMessage:
+    __msg_name__ = 'tests/msgs/SubMessage'
     value: pybag.int32
 
 
 @dataclass
 class ExampleMessage:
+    __msg_name__ = 'tests/msgs/ExampleMessage'
     integer: pybag.int32
     text: pybag.string
     fixed: pybag.Array(pybag.int32, length=3)
@@ -75,6 +77,7 @@ def test_serialize_message_endianness_diff() -> None:
 def test_add_channel_and_write_message() -> None:
     @dataclass
     class Example:
+        __msg_name__ = "tests/msgs/Example"
         value: t.int32
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -95,7 +98,7 @@ def test_add_channel_and_write_message() -> None:
 
     # Check the schema
     data_schema = McapRecordParser.parse_schema(reader)
-    assert data_schema.name == "Example"
+    assert data_schema.name == "tests/msgs/Example"
     assert data_schema.encoding == "ros2msg"
     assert data_schema.data == "int32 value\n".encode("utf-8")
 
