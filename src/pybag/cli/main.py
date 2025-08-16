@@ -1,5 +1,7 @@
 import argparse
 
+from .info import add_parser as add_info_parser
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -11,7 +13,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # In the future subcommands will be added here.
+    add_info_parser(subparsers)
 
     parser.set_defaults(func=lambda args: parser.print_help())
     return parser
