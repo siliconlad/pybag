@@ -5,7 +5,6 @@ description = "A Python library to work with bag files without ROS."
 readme = "README.md"
 authors = [{ name = "Angus Stewart", email = "siliconlad@protonmail.com" }]
 requires-python = ">=3.10"
-dependencies = ["rich>=13.7.0"]
 
 [project.scripts]
 pybag = "pybag.cli.main:main"
@@ -13,6 +12,7 @@ pybag = "pybag.cli.main:main"
 [project.optional-dependencies]
 zstd = ["zstandard>=0.23.0"]
 lz4 = ["lz4>=4.4.3"]
+cli = ["rich>=13.7.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,6 +26,7 @@ test = [
     "mcap>=1.2.2",
     "mcap-ros2-support>=0.5.5",
     "rosbags>=0.10.10",
+    "pybag[cli]",
 ]
 
 [tool.isort]

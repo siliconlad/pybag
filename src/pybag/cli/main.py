@@ -11,11 +11,11 @@ def build_parser() -> argparse.ArgumentParser:
             "MCAP and bag files."
         ),
     )
+    parser.set_defaults(func=lambda args: parser.print_help())
     subparsers = parser.add_subparsers(dest="command")
 
     add_info_parser(subparsers)
 
-    parser.set_defaults(func=lambda args: parser.print_help())
     return parser
 
 
