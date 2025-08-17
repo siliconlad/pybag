@@ -2,12 +2,13 @@ from dataclasses import dataclass, field
 
 import pytest
 
-import pybag.types
+import pybag
 from pybag.schema.ros2msg import (
     Array,
     Primitive,
     Ros2MsgError,
     Ros2MsgSchemaEncoder,
+    SchemaConstant,
     SchemaField,
     Sequence,
     String
@@ -116,6 +117,25 @@ def test_serialize_python_types_str() -> None:
 
     with pytest.raises(Ros2MsgError):
         Ros2MsgSchemaEncoder().parse_schema(Unsupported)
+
+
+def test_serialize_constants() -> None:
+    @dataclass(kw_only=True)
+    class Example:
+        __msg_name__ = 'tests/msgs/ExampleConst'
+        FOO: pybag.Constant(pybag.int32) = 1
+        bar: pybag.int32
+
+    obj = Example(bar=42)
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
+
+    assert schema.name == 'tests/msgs/ExampleConst'
+    assert schema.fields['FOO'] == SchemaConstant(Primitive('int32'), value=1)
+    assert schema.fields['bar'] == SchemaField(Primitive('int32'), default=None)
+    assert len(sub_schemas) == 0
+
+    encoded = Ros2MsgSchemaEncoder().encode(obj)
+    assert encoded == b'int32 FOO=1\nint32 bar\n'
 
 
 def test_serialize_python_types_float() -> None:

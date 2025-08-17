@@ -22,6 +22,10 @@ wstring = Annotated[str, ("wstring",)]
 T = TypeVar("T")
 
 
+def Constant(type_: type[T]) -> type[T]:
+    return Annotated[type_, ("constant", type_)]
+
+
 def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
     return Annotated[list[type_], ("array", type_, length)]
 
@@ -46,4 +50,5 @@ __all__ = [
     "wstring",
     "Array",
     "Complex",
+    "Constant",
 ]
