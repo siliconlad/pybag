@@ -27,7 +27,7 @@ def Constant(type_: type[T]) -> type[T]:
 
 
 def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
-    return Annotated[list[type_], ("array", type_, length)]
+    return Annotated[type_, ("array", type_, length)]
 
 
 def Complex(type_: type[T]) -> type[T]:

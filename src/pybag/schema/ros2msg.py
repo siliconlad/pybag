@@ -320,8 +320,22 @@ class Ros2MsgSchemaEncoder:
             if get_args(field.type)[-1][0] == 'constant':
                 schema.fields[field.name] = SchemaConstant(field_type, field_default)
                 continue
-
             schema.fields[field.name] = SchemaField(field_type, field_default)
+
+            if isinstance(field_type, Sequence):
+                if isinstance(field_type.type, Complex):
+                    complex_type = get_args(field.type)[0]
+                    sub_schema, sub_sub_schemas = self._parse_message(complex_type)
+                    sub_schemas[sub_schema.name] = sub_schema
+                    sub_schemas.update(sub_sub_schemas)
+
+            if isinstance(field_type, Array):
+                if isinstance(field_type.type, Complex):
+                    complex_type = get_args(field.type)[0]
+                    sub_schema, sub_sub_schemas = self._parse_message(complex_type)
+                    sub_schemas[sub_schema.name] = sub_schema
+                    sub_schemas.update(sub_sub_schemas)
+
             if isinstance(field_type, Complex):
                 complex_type = get_args(field.type)[0]
                 sub_schema, sub_sub_schemas = self._parse_message(complex_type)
@@ -338,13 +352,14 @@ class Ros2MsgSchemaEncoder:
                 return field_type.type
             return f'{field_type.type}<={field_type.max_length}'
         if isinstance(field_type, Array):
+            sub_type = self._type_str(field_type.type)
             if field_type.is_bounded:
-                return f'{field_type.type}[<={field_type.length}]'
-            return f'{field_type.type}[{field_type.length}]'
+                return f'{sub_type}[<={field_type.length}]'
+            return f'{sub_type}[{field_type.length}]'
         if isinstance(field_type, Sequence):
-            return f'{field_type.type}[]'
+            return f'{self._type_str(field_type.type)}[]'
         if isinstance(field_type, Complex):
-            return field_type.type
+            return field_type.type.replace('/msg/', '/')
         raise Ros2MsgError(f'Unknown field type: {field_type}')
 
     def _value_str(self, value: Any) -> str:
@@ -379,6 +394,15 @@ class Ros2MsgSchemaEncoder:
                 self._encode_constant(writer, field_name, field)
             elif isinstance(field, SchemaField):
                 self._encode_field(writer, field_name, field)
+
+        for sub_schema in sub_schemas.values():
+            writer.write(('=' * 80 + '\n').encode('utf-8'))
+            writer.write(f'MSG: {sub_schema.name.replace("/msg/", "/")}\n'.encode('utf-8'))
+            for field_name, field in sub_schema.fields.items():
+                if isinstance(field, SchemaConstant):
+                    self._encode_constant(writer, field_name, field)
+                elif isinstance(field, SchemaField):
+                    self._encode_field(writer, field_name, field)
 
         return writer.as_bytes()
 
