@@ -115,8 +115,8 @@ class McapFileWriter:
         self._sequences: dict[int, int] = {}
 
         self._message_count = 0
-        self._message_start_time: int = math.inf
-        self._message_end_time: int = -math.inf
+        self._message_start_time: int | None = None
+        self._message_end_time: int | None = None
         self._channel_message_counts: dict[int, int] = {}
 
         # Write the start of the file

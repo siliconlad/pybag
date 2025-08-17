@@ -5,10 +5,10 @@ from tempfile import TemporaryDirectory
 from mcap.reader import make_reader
 from mcap_ros2.decoder import DecoderFactory
 
+import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
+import pybag.ros2.humble.geometry_msgs as geometry_msgs
 import pybag.ros2.humble.sensor_msgs as sensor_msgs
 import pybag.ros2.humble.std_msgs as std_msgs
-import pybag.ros2.humble.geometry_msgs as geometry_msgs
-import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
 from pybag.mcap_writer import McapFileWriter
 
 
@@ -50,7 +50,7 @@ def test_battery_state_pybag() -> None:
         power_supply_health=sensor_msgs.BatteryState.POWER_SUPPLY_HEALTH_GOOD,
         power_supply_technology=sensor_msgs.BatteryState.POWER_SUPPLY_TECHNOLOGY_LION,
         present=True,
-        cell_voltage=[3.7, 3.7, 3.7],
+        cell_voltage=[3.0, 3.0, 3.0],
         cell_temperature=[25.0, 25.0, 25.0],
         location='main_battery',
         serial_number='BAT001'
@@ -72,7 +72,7 @@ def test_battery_state_pybag() -> None:
     assert decoded_msgs[0].power_supply_health == 1      # POWER_SUPPLY_HEALTH_GOOD
     assert decoded_msgs[0].power_supply_technology == 2  # POWER_SUPPLY_TECHNOLOGY_LION
     assert decoded_msgs[0].present is True
-    assert decoded_msgs[0].cell_voltage == [3.7, 3.7, 3.7]
+    assert decoded_msgs[0].cell_voltage == [3.0, 3.0, 3.0]
     assert decoded_msgs[0].cell_temperature == [25.0, 25.0, 25.0]
     assert decoded_msgs[0].location == 'main_battery'
     assert decoded_msgs[0].serial_number == 'BAT001'
@@ -163,7 +163,7 @@ def test_compressed_image_pybag() -> None:
     assert decoded_msgs[0].header.stamp.sec == 1
     assert decoded_msgs[0].header.stamp.nanosec == 2
     assert decoded_msgs[0].format == 'jpeg'
-    assert decoded_msgs[0].data == [255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1]
+    assert decoded_msgs[0].data == bytes([255, 216, 255, 224, 0, 16, 74, 70, 73, 70, 0, 1])
 
 
 def test_fluid_pressure_pybag() -> None:
@@ -219,7 +219,7 @@ def test_image_pybag() -> None:
     assert decoded_msgs[0].encoding == 'rgb8'
     assert decoded_msgs[0].is_bigendian == 0
     assert decoded_msgs[0].step == 1920
-    assert decoded_msgs[0].data == [255, 0, 0]
+    assert decoded_msgs[0].data == bytes([255, 0, 0])
 
 
 def test_imu_pybag() -> None:
@@ -279,7 +279,7 @@ def test_joint_state_pybag() -> None:
 def test_joy_pybag() -> None:
     msg = sensor_msgs.Joy(
         header=_make_header(),
-        axes=[0.5, -0.3, 0.0, 1.0, 0.0, 0.0],
+        axes=[0.5, -0.5, 0.0, 1.0, 0.0, 0.0],
         buttons=[0, 1, 0, 0, 1, 0, 0, 0]
     )
     decoded_msgs = _roundtrip_write(msg)
@@ -288,7 +288,7 @@ def test_joy_pybag() -> None:
     assert decoded_msgs[0].header.frame_id == 'frame'
     assert decoded_msgs[0].header.stamp.sec == 1
     assert decoded_msgs[0].header.stamp.nanosec == 2
-    assert decoded_msgs[0].axes == [0.5, -0.3, 0.0, 1.0, 0.0, 0.0]
+    assert decoded_msgs[0].axes == [0.5, -0.5, 0.0, 1.0, 0.0, 0.0]
     assert decoded_msgs[0].buttons == [0, 1, 0, 0, 1, 0, 0, 0]
 
 
@@ -296,21 +296,21 @@ def test_joy_feedback_pybag() -> None:
     msg = sensor_msgs.JoyFeedback(
         type=sensor_msgs.JoyFeedback.TYPE_LED,
         id=1,
-        intensity=0.8
+        intensity=0.5
     )
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'JoyFeedback'
     assert decoded_msgs[0].type == 0  # TYPE_LED
     assert decoded_msgs[0].id == 1
-    assert decoded_msgs[0].intensity == 0.8
+    assert decoded_msgs[0].intensity == 0.5
 
 
 def test_joy_feedback_array_pybag() -> None:
     feedback1 = sensor_msgs.JoyFeedback(
         type=sensor_msgs.JoyFeedback.TYPE_LED,
         id=1,
-        intensity=0.8
+        intensity=0.5
     )
     feedback2 = sensor_msgs.JoyFeedback(
         type=sensor_msgs.JoyFeedback.TYPE_RUMBLE,
@@ -326,7 +326,7 @@ def test_joy_feedback_array_pybag() -> None:
     assert len(decoded_msgs[0].array) == 2
     assert decoded_msgs[0].array[0].type == 0  # TYPE_LED
     assert decoded_msgs[0].array[0].id == 1
-    assert decoded_msgs[0].array[0].intensity == 0.8
+    assert decoded_msgs[0].array[0].intensity == 0.5
     assert decoded_msgs[0].array[1].type == 1  # TYPE_RUMBLE
     assert decoded_msgs[0].array[1].id == 2
     assert decoded_msgs[0].array[1].intensity == 0.5
@@ -334,25 +334,25 @@ def test_joy_feedback_array_pybag() -> None:
 
 def test_laser_echo_pybag() -> None:
     msg = sensor_msgs.LaserEcho(
-        echoes=[1.5, 2.0, 3.5, 4.2]
+        echoes=[1.5, 2.0, 3.5, 4.0]
     )
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'LaserEcho'
-    assert decoded_msgs[0].echoes == [1.5, 2.0, 3.5, 4.2]
+    assert decoded_msgs[0].echoes == [1.5, 2.0, 3.5, 4.0]
 
 
 def test_laser_scan_pybag() -> None:
     msg = sensor_msgs.LaserScan(
         header=_make_header(),
-        angle_min=-1.57,
-        angle_max=1.57,
-        angle_increment=0.1,
-        time_increment=0.01,
-        scan_time=0.1,
-        range_min=0.1,
+        angle_min=-1.5,
+        angle_max=1.5,
+        angle_increment=0.5,
+        time_increment=0.25,
+        scan_time=0.5,
+        range_min=0.5,
         range_max=10.0,
-        ranges=[1.0, 1.1, 1.2, 1.3, 1.4],
+        ranges=[1.0, 1.0, 1.0, 1.0, 1.0],
         intensities=[100.0, 110.0, 120.0, 130.0, 140.0]
     )
     decoded_msgs = _roundtrip_write(msg)
@@ -361,14 +361,14 @@ def test_laser_scan_pybag() -> None:
     assert decoded_msgs[0].header.frame_id == 'frame'
     assert decoded_msgs[0].header.stamp.sec == 1
     assert decoded_msgs[0].header.stamp.nanosec == 2
-    assert decoded_msgs[0].angle_min == -1.57
-    assert decoded_msgs[0].angle_max == 1.57
-    assert decoded_msgs[0].angle_increment == 0.1
-    assert decoded_msgs[0].time_increment == 0.01
-    assert decoded_msgs[0].scan_time == 0.1
-    assert decoded_msgs[0].range_min == 0.1
+    assert decoded_msgs[0].angle_min == -1.5
+    assert decoded_msgs[0].angle_max == 1.5
+    assert decoded_msgs[0].angle_increment == 0.5
+    assert decoded_msgs[0].time_increment == 0.25
+    assert decoded_msgs[0].scan_time == 0.5
+    assert decoded_msgs[0].range_min == 0.5
     assert decoded_msgs[0].range_max == 10.0
-    assert decoded_msgs[0].ranges == [1.0, 1.1, 1.2, 1.3, 1.4]
+    assert decoded_msgs[0].ranges == [1.0, 1.0, 1.0, 1.0, 1.0]
     assert decoded_msgs[0].intensities == [100.0, 110.0, 120.0, 130.0, 140.0]
 
 
@@ -454,16 +454,16 @@ def test_multi_dof_joint_state_pybag() -> None:
 
 
 def test_multi_echo_laser_scan_pybag() -> None:
-    echo1 = sensor_msgs.LaserEcho(echoes=[1.0, 1.1])
-    echo2 = sensor_msgs.LaserEcho(echoes=[2.0, 2.1])
+    echo1 = sensor_msgs.LaserEcho(echoes=[1.0, 1.5])
+    echo2 = sensor_msgs.LaserEcho(echoes=[2.0, 2.5])
     msg = sensor_msgs.MultiEchoLaserScan(
         header=_make_header(),
-        angle_min=-1.57,
-        angle_max=1.57,
-        angle_increment=0.1,
-        time_increment=0.01,
-        scan_time=0.1,
-        range_min=0.1,
+        angle_min=-1.50,
+        angle_max=1.50,
+        angle_increment=0.5,
+        time_increment=0.25,
+        scan_time=0.5,
+        range_min=0.5,
         range_max=10.0,
         ranges=[echo1, echo2],
         intensities=[echo1, echo2]
@@ -474,16 +474,16 @@ def test_multi_echo_laser_scan_pybag() -> None:
     assert decoded_msgs[0].header.frame_id == 'frame'
     assert decoded_msgs[0].header.stamp.sec == 1
     assert decoded_msgs[0].header.stamp.nanosec == 2
-    assert decoded_msgs[0].angle_min == -1.57
-    assert decoded_msgs[0].angle_max == 1.57
-    assert decoded_msgs[0].angle_increment == 0.1
-    assert decoded_msgs[0].time_increment == 0.01
-    assert decoded_msgs[0].scan_time == 0.1
-    assert decoded_msgs[0].range_min == 0.1
+    assert decoded_msgs[0].angle_min == -1.5
+    assert decoded_msgs[0].angle_max == 1.5
+    assert decoded_msgs[0].angle_increment == 0.5
+    assert decoded_msgs[0].time_increment == 0.25
+    assert decoded_msgs[0].scan_time == 0.5
+    assert decoded_msgs[0].range_min == 0.5
     assert decoded_msgs[0].range_max == 10.0
     assert len(decoded_msgs[0].ranges) == 2
-    assert decoded_msgs[0].ranges[0].echoes == [1.0, 1.1]
-    assert decoded_msgs[0].ranges[1].echoes == [2.0, 2.1]
+    assert decoded_msgs[0].ranges[0].echoes == [1.0, 1.5]
+    assert decoded_msgs[0].ranges[1].echoes == [2.0, 2.5]
 
 
 def test_nav_sat_status_pybag() -> None:
@@ -614,7 +614,7 @@ def test_point_cloud2_pybag() -> None:
     assert decoded_msgs[0].is_bigendian == False
     assert decoded_msgs[0].point_step == 8
     assert decoded_msgs[0].row_step == 16
-    assert decoded_msgs[0].data == [0, 0, 128, 63, 0, 0, 0, 64, 0, 0, 64, 64, 0, 0, 128, 64]
+    assert decoded_msgs[0].data == bytes([0, 0, 128, 63, 0, 0, 0, 64, 0, 0, 64, 64, 0, 0, 128, 64])
     assert decoded_msgs[0].is_dense == True
 
 
@@ -623,7 +623,7 @@ def test_range_pybag() -> None:
         header=_make_header(),
         radiation_type=sensor_msgs.Range.ULTRASOUND,
         field_of_view=0.5,
-        min_range=0.1,
+        min_range=0.25,
         max_range=10.0,
         range=2.5
     )
@@ -635,7 +635,7 @@ def test_range_pybag() -> None:
     assert decoded_msgs[0].header.stamp.nanosec == 2
     assert decoded_msgs[0].radiation_type == 0  # ULTRASOUND
     assert decoded_msgs[0].field_of_view == 0.5
-    assert decoded_msgs[0].min_range == 0.1
+    assert decoded_msgs[0].min_range == 0.25
     assert decoded_msgs[0].max_range == 10.0
     assert decoded_msgs[0].range == 2.5
 

@@ -35,19 +35,19 @@ def test_bool_pybag() -> None:
 
 
 def test_byte_pybag() -> None:
-    msg = std_msgs.Byte(data=42)
+    msg = std_msgs.Byte(data=b'\x04')
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'Byte'
-    assert decoded_msgs[0].data == 42
+    assert decoded_msgs[0].data == 4  # b'\x04'
 
 
 def test_char_pybag() -> None:
-    msg = std_msgs.Char(data=65)  # ASCII 'A'
+    msg = std_msgs.Char(data='A')
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'Char'
-    assert decoded_msgs[0].data == 65
+    assert decoded_msgs[0].data == 65  # ASCII 'A'
 
 
 def test_color_rgba_pybag() -> None:
@@ -199,7 +199,7 @@ def test_multi_array_layout_pybag() -> None:
 def test_byte_multi_array_pybag() -> None:
     # No dim
     layout = std_msgs.MultiArrayLayout(dim=[], data_offset=0)
-    msg = std_msgs.ByteMultiArray(layout=layout, data=[1, 2, 3, 4])
+    msg = std_msgs.ByteMultiArray(layout=layout, data=[b'\x01', b'\x02', b'\x03', b'\x04'])
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'ByteMultiArray'
@@ -210,7 +210,7 @@ def test_byte_multi_array_pybag() -> None:
 
     dim = std_msgs.MultiArrayDimension(label='test', size=10, stride=5)
     layout = std_msgs.MultiArrayLayout(dim=[dim, dim], data_offset=0)
-    msg = std_msgs.ByteMultiArray(layout=layout, data=[1, 2, 3, 4])
+    msg = std_msgs.ByteMultiArray(layout=layout, data=[b'\x01', b'\x02', b'\x03', b'\x04'])
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'ByteMultiArray'
@@ -229,7 +229,7 @@ def test_byte_multi_array_pybag() -> None:
 def test_float32_multi_array_pybag() -> None:
     dim = std_msgs.MultiArrayDimension(label='test', size=10, stride=5)
     layout = std_msgs.MultiArrayLayout(dim=[dim, dim], data_offset=0)
-    msg = std_msgs.Float32MultiArray(layout=layout, data=[1.1, 2.2, 3.3])
+    msg = std_msgs.Float32MultiArray(layout=layout, data=[1.0, 2.0, 3.0])
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'Float32MultiArray'
@@ -242,7 +242,7 @@ def test_float32_multi_array_pybag() -> None:
     assert decoded_msgs[0].layout.dim[1].stride == 5
     assert decoded_msgs[0].layout.data_offset == 0
     assert len(decoded_msgs[0].data) == 3
-    assert list(decoded_msgs[0].data) == [1.1, 2.2, 3.3]
+    assert list(decoded_msgs[0].data) == [1.0, 2.0, 3.0]
 
 
 def test_float64_multi_array_pybag() -> None:

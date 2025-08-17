@@ -178,7 +178,7 @@ class CdrEncoder:
     def char(self, value: str) -> None:
         self._payload.align(1)
         fmt = "<c" if self._is_little_endian else ">c"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(fmt, value.encode()))
 
     def int16(self, value: int) -> None:
         self._payload.align(2)
