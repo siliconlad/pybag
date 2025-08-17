@@ -272,7 +272,7 @@ class Ros2MsgSchemaEncoder:
         if len(annotation_args) < 2:
             raise Ros2MsgError(f"Field is not correctly annotated.")
 
-        field_type = annotation_args[1]
+        field_type = annotation_args[-1]
         if field_type[0] in PRIMITIVE_TYPE_MAP:
             return Primitive(field_type[0])
 
@@ -287,6 +287,9 @@ class Ros2MsgSchemaEncoder:
 
         if field_type[0] == 'complex':
             return Complex(field_type[1])
+
+        if field_type[0] == 'constant':
+            return self._parse_annotation(field_type[1])
 
         raise Ros2MsgError(f"Unknown field type: {field_type}")
 
@@ -307,34 +310,23 @@ class Ros2MsgSchemaEncoder:
         sub_schemas: dict[str, Schema] = {}
 
         cls = message if isinstance(message, type) else type(message)
-        dataclass_fields = {f.name: f for f in fields(message)}
-        annotations = get_type_hints(cls, include_extras=True)
+        for field in fields(cls):
+            if get_origin(field.type) is not Annotated:
+                raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
 
-        for name, annotation in annotations.items():
-            if name in dataclass_fields:
-                field = dataclass_fields[name]
-                if get_origin(field.type) is not Annotated:
-                    raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
-                field_type = self._parse_annotation(field.type)
-                field_default = self._parse_default_value(field)
-                schema.fields[name] = SchemaField(field_type, field_default)
-                if isinstance(field_type, Complex):
-                    complex_type = get_args(field.type)[0]
-                    sub_schema, sub_sub_schemas = self._parse_message(complex_type)
-                    sub_schemas[sub_schema.name] = sub_schema
-                    sub_schemas.update(sub_sub_schemas)
-            else:
-                if get_origin(annotation) is ClassVar:
-                    annotation = get_args(annotation)[0]
-                if get_origin(annotation) is not Annotated:
-                    raise Ros2MsgError(f"Constant '{name}' is not correctly annotated.")
-                args = get_args(annotation)
-                metadata = [m for m in args[1:] if not (isinstance(m, tuple) and len(m) > 0 and m[0] == 'constant')]
-                if len(metadata) != 1:
-                    raise Ros2MsgError(f"Constant '{name}' is not correctly annotated.")
-                inner_annotation = Annotated[args[0], metadata[0]]
-                field_type = self._parse_annotation(inner_annotation)
-                schema.fields[name] = SchemaConstant(field_type, getattr(message, name))
+            field_type = self._parse_annotation(field.type)
+            field_default = self._parse_default_value(field)
+
+            if get_args(field.type)[-1][0] == 'constant':
+                schema.fields[field.name] = SchemaConstant(field_type, field_default)
+                continue
+
+            schema.fields[field.name] = SchemaField(field_type, field_default)
+            if isinstance(field_type, Complex):
+                complex_type = get_args(field.type)[0]
+                sub_schema, sub_sub_schemas = self._parse_message(complex_type)
+                sub_schemas[sub_schema.name] = sub_schema
+                sub_schemas.update(sub_sub_schemas)
 
         return schema, sub_schemas
 

@@ -1,4 +1,4 @@
-from typing import Annotated, ClassVar, TypeVar, get_args, get_origin
+from typing import Annotated, TypeVar
 
 int8 = Annotated[int, ("int8",)]
 int16 = Annotated[int, ("int16",)]
@@ -23,12 +23,7 @@ T = TypeVar("T")
 
 
 def Constant(type_: type[T]) -> type[T]:
-    if get_origin(type_) is Annotated:
-        base_type, *meta = get_args(type_)
-    else:
-        base_type, meta = type_, []
-    annotated = Annotated.__class_getitem__((base_type, *meta, ("constant",)))
-    return ClassVar[annotated]
+    return Annotated[type_, ("constant", type_)]
 
 
 def Array(type_: type[T], length: int | None = None) -> type[list[T]]:

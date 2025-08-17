@@ -120,14 +120,13 @@ def test_serialize_python_types_str() -> None:
 
 
 def test_serialize_constants() -> None:
-    @dataclass
+    @dataclass(kw_only=True)
     class Example:
         __msg_name__ = 'tests/msgs/ExampleConst'
-
         FOO: pybag.Constant(pybag.int32) = 1
         bar: pybag.int32
 
-    obj = Example(42)
+    obj = Example(bar=42)
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
 
     assert schema.name == 'tests/msgs/ExampleConst'
