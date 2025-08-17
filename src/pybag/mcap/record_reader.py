@@ -191,6 +191,10 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             record = McapRecordParser.parse_summary_offset(self._file)
             self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
+        # Cached schema and channel dictionaries populated on first access
+        self._schemas: dict[int, SchemaRecord] | None = None
+        self._channels: dict[int, ChannelRecord] | None = None
+
     # Helpful Constructors
 
     @staticmethod
@@ -236,14 +240,16 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping schema IDs to SchemaInfo objects.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
-        schemas = {}
-        while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
-            schema = McapRecordParser.parse_schema(self._file)
-            if schema is None:  # Invalid schema, should be ignored
-                continue
-            schemas[schema.id] = schema
-        return schemas
+        if self._schemas is None:
+            self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
+            schemas: dict[int, SchemaRecord] = {}
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+                schema = McapRecordParser.parse_schema(self._file)
+                if schema is None:  # Invalid schema, should be ignored
+                    continue
+                schemas[schema.id] = schema
+            self._schemas = schemas
+        return self._schemas
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """
@@ -296,12 +302,14 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping channel IDs to channel information.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
-        channels = {}
-        while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
-            channel = McapRecordParser.parse_channel(self._file)
-            channels[channel.id] = channel
-        return channels
+        if self._channels is None:
+            self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
+            channels: dict[int, ChannelRecord] = {}
+            while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+                channel = McapRecordParser.parse_channel(self._file)
+                channels[channel.id] = channel
+            self._channels = channels
+        return self._channels
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """
