@@ -4,28 +4,28 @@ import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
 import pybag.types as t
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Bool:
     __msg_name__ = 'std_msgs/msg/Bool'
 
     data: t.bool
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Byte:
     __msg_name__ = 'std_msgs/msg/Byte'
 
     data: t.byte
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Char:
     __msg_name__ = 'std_msgs/msg/Char'
 
     data: t.char
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ColorRGBA:
     __msg_name__ = 'std_msgs/msg/ColorRGBA'
 
@@ -35,7 +35,7 @@ class ColorRGBA:
     a: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Empty:
     __msg_name__ = 'std_msgs/msg/Empty'
 
@@ -43,21 +43,21 @@ class Empty:
     structure_needs_at_least_one_member: t.uint8
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Float32:
     __msg_name__ = 'std_msgs/msg/Float32'
 
     data: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Float64:
     __msg_name__ = 'std_msgs/msg/Float64'
 
     data: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Header:
     __msg_name__ = 'std_msgs/msg/Header'
 
@@ -65,35 +65,35 @@ class Header:
     frame_id: t.string
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int16:
     __msg_name__ = 'std_msgs/msg/Int16'
 
     data: t.int16
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int32:
     __msg_name__ = 'std_msgs/msg/Int32'
 
     data: t.int32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int64:
     __msg_name__ = 'std_msgs/msg/Int64'
 
     data: t.int64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int8:
     __msg_name__ = 'std_msgs/msg/Int8'
 
     data: t.int8
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MultiArrayDimension:
     __msg_name__ = 'std_msgs/msg/MultiArrayDimension'
 
@@ -102,42 +102,42 @@ class MultiArrayDimension:
     stride: t.uint32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class String:
     __msg_name__ = 'std_msgs/msg/String'
 
     data: t.string
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt16:
     __msg_name__ = 'std_msgs/msg/UInt16'
 
     data: t.uint16
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt32:
     __msg_name__ = 'std_msgs/msg/UInt32'
 
     data: t.uint32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt64:
     __msg_name__ = 'std_msgs/msg/UInt64'
 
     data: t.uint64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt8:
     __msg_name__ = 'std_msgs/msg/UInt8'
 
     data: t.uint8
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MultiArrayLayout:
     __msg_name__ = 'std_msgs/msg/MultiArrayLayout'
 
@@ -145,7 +145,7 @@ class MultiArrayLayout:
     data_offset: t.uint32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ByteMultiArray:
     __msg_name__ = 'std_msgs/msg/ByteMultiArray'
 
@@ -153,7 +153,7 @@ class ByteMultiArray:
     data: t.Array(t.byte)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Float32MultiArray:
     __msg_name__ = 'std_msgs/msg/Float32MultiArray'
 
@@ -161,7 +161,7 @@ class Float32MultiArray:
     data: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Float64MultiArray:
     __msg_name__ = 'std_msgs/msg/Float64MultiArray'
 
@@ -169,7 +169,7 @@ class Float64MultiArray:
     data: t.Array(t.float64)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int16MultiArray:
     __msg_name__ = 'std_msgs/msg/Int16MultiArray'
 
@@ -177,7 +177,7 @@ class Int16MultiArray:
     data: t.Array(t.int16)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int32MultiArray:
     __msg_name__ = 'std_msgs/msg/Int32MultiArray'
 
@@ -185,7 +185,7 @@ class Int32MultiArray:
     data: t.Array(t.int32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int64MultiArray:
     __msg_name__ = 'std_msgs/msg/Int64MultiArray'
 
@@ -193,7 +193,7 @@ class Int64MultiArray:
     data: t.Array(t.int64)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Int8MultiArray:
     __msg_name__ = 'std_msgs/msg/Int8MultiArray'
 
@@ -201,7 +201,7 @@ class Int8MultiArray:
     data: t.Array(t.int8)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt16MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt16MultiArray'
 
@@ -209,7 +209,7 @@ class UInt16MultiArray:
     data: t.Array(t.uint16)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt32MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt32MultiArray'
 
@@ -217,7 +217,7 @@ class UInt32MultiArray:
     data: t.Array(t.uint32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt64MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt64MultiArray'
 
@@ -225,7 +225,7 @@ class UInt64MultiArray:
     data: t.Array(t.uint64)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UInt8MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt8MultiArray'
 

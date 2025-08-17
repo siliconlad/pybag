@@ -6,7 +6,7 @@ import pybag.ros2.humble.std_msgs as std_msgs
 import pybag.types as t
 
 
-@dataclass
+@dataclass(kw_only=True)
 class BatteryState:
     __msg_name__ = 'sensor_msgs/msg/BatteryState'
 
@@ -52,7 +52,7 @@ class BatteryState:
     serial_number: t.string
 
 
-@dataclass
+@dataclass(kw_only=True)
 class RegionOfInterest:
     __msg_name__ = 'sensor_msgs/msg/RegionOfInterest'
 
@@ -63,7 +63,7 @@ class RegionOfInterest:
     do_rectify: t.bool
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CameraInfo:
     __msg_name__ = 'sensor_msgs/msg/CameraInfo'
 
@@ -80,7 +80,7 @@ class CameraInfo:
     roi: t.Complex(RegionOfInterest)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ChannelFloat32:
     __msg_name__ = 'sensor_msgs/msg/ChannelFloat32'
 
@@ -88,7 +88,7 @@ class ChannelFloat32:
     values: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CompressedImage:
     __msg_name__ = 'sensor_msgs/msg/CompressedImage'
 
@@ -97,7 +97,7 @@ class CompressedImage:
     data: t.Array(t.uint8)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class FluidPressure:
     __msg_name__ = 'sensor_msgs/msg/FluidPressure'
 
@@ -106,7 +106,7 @@ class FluidPressure:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Illuminance:
     __msg_name__ = 'sensor_msgs/msg/Illuminance'
 
@@ -115,7 +115,7 @@ class Illuminance:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Image:
     __msg_name__ = 'sensor_msgs/msg/Image'
 
@@ -128,7 +128,7 @@ class Image:
     data: t.Array(t.uint8)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Imu:
     __msg_name__ = 'sensor_msgs/msg/Imu'
 
@@ -141,7 +141,7 @@ class Imu:
     linear_acceleration_covariance: t.Array(t.float64, 9)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class JointState:
     __msg_name__ = 'sensor_msgs/msg/JointState'
 
@@ -152,7 +152,7 @@ class JointState:
     effort: t.Array(t.float64)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Joy:
     __msg_name__ = 'sensor_msgs/msg/Joy'
 
@@ -161,7 +161,7 @@ class Joy:
     buttons: t.Array(t.int32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class JoyFeedback:
     __msg_name__ = 'sensor_msgs/msg/JoyFeedback'
 
@@ -174,21 +174,21 @@ class JoyFeedback:
     intensity: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class JoyFeedbackArray:
     __msg_name__ = 'sensor_msgs/msg/JoyFeedbackArray'
 
     array: t.Array(t.Complex(JoyFeedback))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LaserEcho:
     __msg_name__ = 'sensor_msgs/msg/LaserEcho'
 
     echoes: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LaserScan:
     __msg_name__ = 'sensor_msgs/msg/LaserScan'
 
@@ -204,7 +204,7 @@ class LaserScan:
     intensities: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MagneticField:
     __msg_name__ = 'sensor_msgs/msg/MagneticField'
 
@@ -213,7 +213,7 @@ class MagneticField:
     magnetic_field_covariance: t.Array(t.float64, 9)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MultiDOFJointState:
     __msg_name__ = 'sensor_msgs/msg/MultiDOFJointState'
 
@@ -224,7 +224,7 @@ class MultiDOFJointState:
     wrench: t.Array(t.Complex(geometry_msgs.Wrench))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MultiEchoLaserScan:
     __msg_name__ = 'sensor_msgs/msg/MultiEchoLaserScan'
 
@@ -240,7 +240,7 @@ class MultiEchoLaserScan:
     intensities: t.Array(t.Complex(LaserEcho))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NavSatStatus:
     __msg_name__ = 'sensor_msgs/msg/NavSatStatus'
 
@@ -258,7 +258,7 @@ class NavSatStatus:
     service: t.uint16
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NavSatFix:
     __msg_name__ = 'sensor_msgs/msg/NavSatFix'
 
@@ -276,7 +276,7 @@ class NavSatFix:
     position_covariance_type: t.uint8
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointField:
     __msg_name__ = 'sensor_msgs/msg/PointField'
 
@@ -295,7 +295,7 @@ class PointField:
     count: t.uint32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointCloud:
     __msg_name__ = 'sensor_msgs/msg/PointCloud'
 
@@ -304,7 +304,7 @@ class PointCloud:
     channels: t.Array(t.Complex(ChannelFloat32))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointCloud2:
     __msg_name__ = 'sensor_msgs/msg/PointCloud2'
 
@@ -319,7 +319,7 @@ class PointCloud2:
     is_dense: t.bool
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Range:
     __msg_name__ = 'sensor_msgs/msg/Range'
 
@@ -334,7 +334,7 @@ class Range:
     range: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class RelativeHumidity:
     __msg_name__ = 'sensor_msgs/msg/RelativeHumidity'
 
@@ -343,7 +343,7 @@ class RelativeHumidity:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Temperature:
     __msg_name__ = 'sensor_msgs/msg/Temperature'
 
@@ -352,7 +352,7 @@ class Temperature:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TimeReference:
     __msg_name__ = 'sensor_msgs/msg/TimeReference'
 
