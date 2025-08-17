@@ -191,6 +191,13 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             record = McapRecordParser.parse_summary_offset(self._file)
             self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
+        # Caches for chunk and message indexes
+        self._chunk_indexes: list[ChunkIndexRecord] | None = None
+        self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
+
+        # Load all chunk indexes eagerly so subsequent calls can reuse them
+        self._load_chunk_indexes()
+
     # Helpful Constructors
 
     @staticmethod
@@ -334,10 +341,16 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A list of MessageIndexRecord objects.
         """
-        message_index = {}
+        key = chunk_index.chunk_start_offset
+        if key in self._message_indexes:
+            return self._message_indexes[key]
+
+        message_index: dict[int, MessageIndexRecord] = {}
         for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
             self._file.seek_from_start(message_index_offset)
             message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
+
+        self._message_indexes[key] = message_index
         return message_index
 
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
@@ -355,6 +368,15 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     # Chunk Management
 
+    def _load_chunk_indexes(self) -> None:
+        if self._chunk_indexes is not None:
+            return
+        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
+        self._chunk_indexes = []
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+            chunk_index = McapRecordParser.parse_chunk_index(self._file)
+            self._chunk_indexes.append(chunk_index)
+
     def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
         """
         Get all chunk indexes from the MCAP file.
@@ -365,13 +387,11 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A list of ChunkIndexRecord objects.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
-        chunk_indexes = []
-        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
-            chunk_index = McapRecordParser.parse_chunk_index(self._file)
-            if channel_id is None or channel_id in chunk_index.message_index_offsets:
-                chunk_indexes.append(chunk_index)
-        return chunk_indexes
+        self._load_chunk_indexes()
+        assert self._chunk_indexes is not None
+        if channel_id is None:
+            return list(self._chunk_indexes)
+        return [ci for ci in self._chunk_indexes if channel_id in ci.message_index_offsets]
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
         """
