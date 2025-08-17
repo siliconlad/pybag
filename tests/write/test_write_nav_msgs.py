@@ -59,7 +59,13 @@ def test_goals_pybag() -> None:
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'Goals'
+    assert decoded_msgs[0].header.frame_id == 'frame'
+    assert decoded_msgs[0].header.stamp.sec == 1
+    assert decoded_msgs[0].header.stamp.nanosec == 2
     assert len(decoded_msgs[0].goals) == 2
+    assert decoded_msgs[0].goals[0].header.frame_id == 'frame'
+    assert decoded_msgs[0].goals[0].header.stamp.sec == 1
+    assert decoded_msgs[0].goals[0].header.stamp.nanosec == 2
     assert decoded_msgs[0].goals[0].pose.position.x == 1.0
     assert decoded_msgs[0].goals[0].pose.position.y == 2.0
     assert decoded_msgs[0].goals[0].pose.position.z == 3.0
@@ -67,6 +73,9 @@ def test_goals_pybag() -> None:
     assert decoded_msgs[0].goals[0].pose.orientation.y == 0.0
     assert decoded_msgs[0].goals[0].pose.orientation.z == 0.0
     assert decoded_msgs[0].goals[0].pose.orientation.w == 1.0
+    assert decoded_msgs[0].goals[1].header.frame_id == 'frame'
+    assert decoded_msgs[0].goals[1].header.stamp.sec == 1
+    assert decoded_msgs[0].goals[1].header.stamp.nanosec == 2
     assert decoded_msgs[0].goals[1].pose.position.x == 4.0
     assert decoded_msgs[0].goals[1].pose.position.y == 5.0
     assert decoded_msgs[0].goals[1].pose.position.z == 6.0
@@ -89,6 +98,9 @@ def test_grid_cells_pybag() -> None:
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'GridCells'
+    assert decoded_msgs[0].header.frame_id == 'frame'
+    assert decoded_msgs[0].header.stamp.sec == 1
+    assert decoded_msgs[0].header.stamp.nanosec == 2
     assert decoded_msgs[0].cell_width == 0.5
     assert decoded_msgs[0].cell_height == 0.5
     assert len(decoded_msgs[0].cells) == 2
