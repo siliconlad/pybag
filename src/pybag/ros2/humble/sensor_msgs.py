@@ -6,33 +6,33 @@ import pybag.ros2.humble.std_msgs as std_msgs
 import pybag.types as t
 
 
-@dataclass
+@dataclass(kw_only=True)
 class BatteryState:
     __msg_name__ = 'sensor_msgs/msg/BatteryState'
 
-    POWER_SUPPLY_STATUS_UNKNOWN: t.uint8 = 0
-    POWER_SUPPLY_STATUS_CHARGING: t.uint8 = 1
-    POWER_SUPPLY_STATUS_DISCHARGING: t.uint8 = 2
-    POWER_SUPPLY_STATUS_NOT_CHARGING: t.uint8 = 3
-    POWER_SUPPLY_STATUS_FULL: t.uint8 = 4
+    POWER_SUPPLY_STATUS_UNKNOWN: t.Constant(t.uint8) = 0
+    POWER_SUPPLY_STATUS_CHARGING: t.Constant(t.uint8) = 1
+    POWER_SUPPLY_STATUS_DISCHARGING: t.Constant(t.uint8) = 2
+    POWER_SUPPLY_STATUS_NOT_CHARGING: t.Constant(t.uint8) = 3
+    POWER_SUPPLY_STATUS_FULL: t.Constant(t.uint8) = 4
 
-    POWER_SUPPLY_HEALTH_UNKNOWN: t.uint8 = 0
-    POWER_SUPPLY_HEALTH_GOOD: t.uint8 = 1
-    POWER_SUPPLY_HEALTH_OVERHEAT: t.uint8 = 2
-    POWER_SUPPLY_HEALTH_DEAD: t.uint8 = 3
-    POWER_SUPPLY_HEALTH_OVERVOLTAGE: t.uint8 = 4
-    POWER_SUPPLY_HEALTH_UNSPEC_FAILURE: t.uint8 = 5
-    POWER_SUPPLY_HEALTH_COLD: t.uint8 = 6
-    POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE: t.uint8 = 7
-    POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE: t.uint8 = 8
+    POWER_SUPPLY_HEALTH_UNKNOWN: t.Constant(t.uint8) = 0
+    POWER_SUPPLY_HEALTH_GOOD: t.Constant(t.uint8) = 1
+    POWER_SUPPLY_HEALTH_OVERHEAT: t.Constant(t.uint8) = 2
+    POWER_SUPPLY_HEALTH_DEAD: t.Constant(t.uint8) = 3
+    POWER_SUPPLY_HEALTH_OVERVOLTAGE: t.Constant(t.uint8) = 4
+    POWER_SUPPLY_HEALTH_UNSPEC_FAILURE: t.Constant(t.uint8) = 5
+    POWER_SUPPLY_HEALTH_COLD: t.Constant(t.uint8) = 6
+    POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE: t.Constant(t.uint8) = 7
+    POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE: t.Constant(t.uint8) = 8
 
-    POWER_SUPPLY_TECHNOLOGY_UNKNOWN: t.uint8 = 0
-    POWER_SUPPLY_TECHNOLOGY_NIMH: t.uint8 = 1
-    POWER_SUPPLY_TECHNOLOGY_LION: t.uint8 = 2
-    POWER_SUPPLY_TECHNOLOGY_LIPO: t.uint8 = 3
-    POWER_SUPPLY_TECHNOLOGY_LIFE: t.uint8 = 4
-    POWER_SUPPLY_TECHNOLOGY_NICD: t.uint8 = 5
-    POWER_SUPPLY_TECHNOLOGY_LIMN: t.uint8 = 6
+    POWER_SUPPLY_TECHNOLOGY_UNKNOWN: t.Constant(t.uint8) = 0
+    POWER_SUPPLY_TECHNOLOGY_NIMH: t.Constant(t.uint8) = 1
+    POWER_SUPPLY_TECHNOLOGY_LION: t.Constant(t.uint8) = 2
+    POWER_SUPPLY_TECHNOLOGY_LIPO: t.Constant(t.uint8) = 3
+    POWER_SUPPLY_TECHNOLOGY_LIFE: t.Constant(t.uint8) = 4
+    POWER_SUPPLY_TECHNOLOGY_NICD: t.Constant(t.uint8) = 5
+    POWER_SUPPLY_TECHNOLOGY_LIMN: t.Constant(t.uint8) = 6
 
     header: t.Complex(std_msgs.Header)
     voltage: t.float32
@@ -52,7 +52,7 @@ class BatteryState:
     serial_number: t.string
 
 
-@dataclass
+@dataclass(kw_only=True)
 class RegionOfInterest:
     __msg_name__ = 'sensor_msgs/msg/RegionOfInterest'
 
@@ -63,7 +63,7 @@ class RegionOfInterest:
     do_rectify: t.bool
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CameraInfo:
     __msg_name__ = 'sensor_msgs/msg/CameraInfo'
 
@@ -80,7 +80,7 @@ class CameraInfo:
     roi: t.Complex(RegionOfInterest)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ChannelFloat32:
     __msg_name__ = 'sensor_msgs/msg/ChannelFloat32'
 
@@ -88,7 +88,7 @@ class ChannelFloat32:
     values: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class CompressedImage:
     __msg_name__ = 'sensor_msgs/msg/CompressedImage'
 
@@ -97,7 +97,7 @@ class CompressedImage:
     data: t.Array(t.uint8)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class FluidPressure:
     __msg_name__ = 'sensor_msgs/msg/FluidPressure'
 
@@ -106,7 +106,7 @@ class FluidPressure:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Illuminance:
     __msg_name__ = 'sensor_msgs/msg/Illuminance'
 
@@ -115,7 +115,7 @@ class Illuminance:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Image:
     __msg_name__ = 'sensor_msgs/msg/Image'
 
@@ -128,7 +128,7 @@ class Image:
     data: t.Array(t.uint8)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Imu:
     __msg_name__ = 'sensor_msgs/msg/Imu'
 
@@ -141,7 +141,7 @@ class Imu:
     linear_acceleration_covariance: t.Array(t.float64, 9)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class JointState:
     __msg_name__ = 'sensor_msgs/msg/JointState'
 
@@ -152,7 +152,7 @@ class JointState:
     effort: t.Array(t.float64)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Joy:
     __msg_name__ = 'sensor_msgs/msg/Joy'
 
@@ -161,34 +161,34 @@ class Joy:
     buttons: t.Array(t.int32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class JoyFeedback:
     __msg_name__ = 'sensor_msgs/msg/JoyFeedback'
 
-    TYPE_LED: t.uint8 = 0
-    TYPE_RUMBLE: t.uint8 = 1
-    TYPE_BUZZER: t.uint8 = 2
+    TYPE_LED: t.Constant(t.uint8) = 0
+    TYPE_RUMBLE: t.Constant(t.uint8) = 1
+    TYPE_BUZZER: t.Constant(t.uint8) = 2
 
     type: t.uint8
     id: t.uint8
     intensity: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class JoyFeedbackArray:
     __msg_name__ = 'sensor_msgs/msg/JoyFeedbackArray'
 
     array: t.Array(t.Complex(JoyFeedback))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LaserEcho:
     __msg_name__ = 'sensor_msgs/msg/LaserEcho'
 
     echoes: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class LaserScan:
     __msg_name__ = 'sensor_msgs/msg/LaserScan'
 
@@ -204,7 +204,7 @@ class LaserScan:
     intensities: t.Array(t.float32)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MagneticField:
     __msg_name__ = 'sensor_msgs/msg/MagneticField'
 
@@ -213,7 +213,7 @@ class MagneticField:
     magnetic_field_covariance: t.Array(t.float64, 9)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MultiDOFJointState:
     __msg_name__ = 'sensor_msgs/msg/MultiDOFJointState'
 
@@ -224,7 +224,7 @@ class MultiDOFJointState:
     wrench: t.Array(t.Complex(geometry_msgs.Wrench))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MultiEchoLaserScan:
     __msg_name__ = 'sensor_msgs/msg/MultiEchoLaserScan'
 
@@ -240,32 +240,32 @@ class MultiEchoLaserScan:
     intensities: t.Array(t.Complex(LaserEcho))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NavSatStatus:
     __msg_name__ = 'sensor_msgs/msg/NavSatStatus'
 
-    STATUS_NO_FIX: t.int8 = -1
-    STATUS_FIX: t.int8 = 0
-    STATUS_SBAS_FIX: t.int8 = 1
-    STATUS_GBAS_FIX: t.int8 = 2
+    STATUS_NO_FIX: t.Constant(t.int8) = -1
+    STATUS_FIX: t.Constant(t.int8) = 0
+    STATUS_SBAS_FIX: t.Constant(t.int8) = 1
+    STATUS_GBAS_FIX: t.Constant(t.int8) = 2
 
-    SERVICE_GPS: t.uint16 = 1
-    SERVICE_GLONASS: t.uint16 = 2
-    SERVICE_COMPASS: t.uint16 = 4
-    SERVICE_GALILEO: t.uint16 = 8
+    SERVICE_GPS: t.Constant(t.uint16) = 1
+    SERVICE_GLONASS: t.Constant(t.uint16) = 2
+    SERVICE_COMPASS: t.Constant(t.uint16) = 4
+    SERVICE_GALILEO: t.Constant(t.uint16) = 8
 
     status: t.int8
     service: t.uint16
 
 
-@dataclass
+@dataclass(kw_only=True)
 class NavSatFix:
     __msg_name__ = 'sensor_msgs/msg/NavSatFix'
 
-    COVARIANCE_TYPE_UNKNOWN: t.uint8 = 0
-    COVARIANCE_TYPE_APPROXIMATED: t.uint8 = 1
-    COVARIANCE_TYPE_DIAGONAL_KNOWN: t.uint8 = 2
-    COVARIANCE_TYPE_KNOWN: t.uint8 = 3
+    COVARIANCE_TYPE_UNKNOWN: t.Constant(t.uint8) = 0
+    COVARIANCE_TYPE_APPROXIMATED: t.Constant(t.uint8) = 1
+    COVARIANCE_TYPE_DIAGONAL_KNOWN: t.Constant(t.uint8) = 2
+    COVARIANCE_TYPE_KNOWN: t.Constant(t.uint8) = 3
 
     header: t.Complex(std_msgs.Header)
     status: t.Complex(NavSatStatus)
@@ -276,18 +276,18 @@ class NavSatFix:
     position_covariance_type: t.uint8
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointField:
     __msg_name__ = 'sensor_msgs/msg/PointField'
 
-    INT8: t.uint8 = 1
-    UINT8: t.uint8 = 2
-    INT16: t.uint8 = 3
-    UINT16: t.uint8 = 4
-    INT32: t.uint8 = 5
-    UINT32: t.uint8 = 6
-    FLOAT32: t.uint8 = 7
-    FLOAT64: t.uint8 = 8
+    INT8: t.Constant(t.uint8) = 1
+    UINT8: t.Constant(t.uint8) = 2
+    INT16: t.Constant(t.uint8) = 3
+    UINT16: t.Constant(t.uint8) = 4
+    INT32: t.Constant(t.uint8) = 5
+    UINT32: t.Constant(t.uint8) = 6
+    FLOAT32: t.Constant(t.uint8) = 7
+    FLOAT64: t.Constant(t.uint8) = 8
 
     name: t.string
     offset: t.uint32
@@ -295,7 +295,7 @@ class PointField:
     count: t.uint32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointCloud:
     __msg_name__ = 'sensor_msgs/msg/PointCloud'
 
@@ -304,7 +304,7 @@ class PointCloud:
     channels: t.Array(t.Complex(ChannelFloat32))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointCloud2:
     __msg_name__ = 'sensor_msgs/msg/PointCloud2'
 
@@ -319,12 +319,12 @@ class PointCloud2:
     is_dense: t.bool
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Range:
     __msg_name__ = 'sensor_msgs/msg/Range'
 
-    ULTRASOUND: t.uint8 = 0
-    INFRARED: t.uint8 = 1
+    ULTRASOUND: t.Constant(t.uint8) = 0
+    INFRARED: t.Constant(t.uint8) = 1
 
     header: t.Complex(std_msgs.Header)
     radiation_type: t.uint8
@@ -334,7 +334,7 @@ class Range:
     range: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class RelativeHumidity:
     __msg_name__ = 'sensor_msgs/msg/RelativeHumidity'
 
@@ -343,7 +343,7 @@ class RelativeHumidity:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Temperature:
     __msg_name__ = 'sensor_msgs/msg/Temperature'
 
@@ -352,7 +352,7 @@ class Temperature:
     variance: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TimeReference:
     __msg_name__ = 'sensor_msgs/msg/TimeReference'
 

@@ -6,7 +6,7 @@ import pybag.ros2.humble.std_msgs as std_msgs
 import pybag.types as t
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Goals:
     __msg_name__ = 'nav_msgs/msg/Goals'
 
@@ -14,7 +14,7 @@ class Goals:
     goals: t.Array(t.Complex(geometry_msgs.PoseStamped))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class GridCells:
     __msg_name__ = 'nav_msgs/msg/GridCells'
 
@@ -24,7 +24,7 @@ class GridCells:
     cells: t.Array(t.Complex(geometry_msgs.Point))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class MapMetaData:
     __msg_name__ = 'nav_msgs/msg/MapMetaData'
 
@@ -35,7 +35,7 @@ class MapMetaData:
     origin: t.Complex(geometry_msgs.Pose)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class OccupancyGrid:
     __msg_name__ = 'nav_msgs/msg/OccupancyGrid'
 
@@ -44,7 +44,7 @@ class OccupancyGrid:
     data: t.Array(t.int8)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Odometry:
     __msg_name__ = 'nav_msgs/msg/Odometry'
 
@@ -54,7 +54,7 @@ class Odometry:
     twist: t.Complex(geometry_msgs.TwistWithCovariance)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Path:
     __msg_name__ = 'nav_msgs/msg/Path'
 

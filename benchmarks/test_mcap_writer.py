@@ -15,7 +15,7 @@ from rosbags.typesys import Stores, get_typestore
 from pybag.mcap_writer import McapFileWriter
 
 
-def test_pybag(benchmark: BenchmarkFixture) -> None:
+def test_pybag_write(benchmark: BenchmarkFixture) -> None:
     from pybag.ros2.humble.builtin_interfaces import Time
     from pybag.ros2.humble.geometry_msgs import (
         Point,
@@ -95,7 +95,7 @@ def test_pybag(benchmark: BenchmarkFixture) -> None:
         benchmark(lambda: _write_with_pybag(path, messages))
 
 
-def test_official(benchmark: BenchmarkFixture) -> None:
+def test_official_write(benchmark: BenchmarkFixture) -> None:
     schema_name = "nav_msgs/msg/Odometry"
     schema_text = dedent("""
         std_msgs/Header header
@@ -216,7 +216,7 @@ def test_official(benchmark: BenchmarkFixture) -> None:
         benchmark(lambda: _write_with_official(path, messages))
 
 
-def test_rosbags(benchmark: BenchmarkFixture) -> None:
+def test_rosbags_write(benchmark: BenchmarkFixture) -> None:
     # Get releveant message types
     typestore = get_typestore(Stores.ROS2_HUMBLE)
     Odometry = typestore.types["nav_msgs/msg/Odometry"]

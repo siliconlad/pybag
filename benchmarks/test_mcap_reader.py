@@ -102,19 +102,19 @@ def read_with_official(mcap: Path) -> Iterator[Any]:
             yield ros_msg
 
 
-def test_official(benchmark: BenchmarkFixture) -> None:
+def test_official_read(benchmark: BenchmarkFixture) -> None:
     with TemporaryDirectory() as tmpdir:
         mcap = create_test_mcap(Path(tmpdir) / "test")
         benchmark(lambda: deque(read_with_official(mcap), maxlen=0))
 
 
-def test_rosbags(benchmark: BenchmarkFixture) -> None:
+def test_rosbags_read(benchmark: BenchmarkFixture) -> None:
     with TemporaryDirectory() as tmpdir:
         mcap = create_test_mcap(Path(tmpdir) / "test")
         benchmark(lambda: deque(read_with_rosbags(mcap), maxlen=0))
 
 
-def test_pybag(benchmark: BenchmarkFixture) -> None:
+def test_pybag_read(benchmark: BenchmarkFixture) -> None:
     with TemporaryDirectory() as tmpdir:
         mcap = create_test_mcap(Path(tmpdir) / "test")
         benchmark(lambda: deque(read_with_pybag(mcap), maxlen=0))

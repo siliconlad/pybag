@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import pybag.types as t
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Duration:
     __msg_name__ = 'builtin_interfaces/msg/Duration'
 
@@ -11,7 +11,7 @@ class Duration:
     nanosec: t.uint32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Time:
     __msg_name__ = 'builtin_interfaces/msg/Time'
 

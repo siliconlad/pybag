@@ -4,7 +4,7 @@ import pybag.ros2.humble.std_msgs as std_msgs
 import pybag.types as t
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Point:
     __msg_name__ = 'geometry_msgs/msg/Point'
 
@@ -13,7 +13,7 @@ class Point:
     z: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Point32:
     __msg_name__ = 'geometry_msgs/msg/Point32'
 
@@ -22,7 +22,7 @@ class Point32:
     z: t.float32
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PointStamped:
     __msg_name__ = 'geometry_msgs/msg/PointStamped'
 
@@ -30,14 +30,14 @@ class PointStamped:
     point: t.Complex(Point)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Polygon:
     __msg_name__ = 'geometry_msgs/msg/Polygon'
 
     points: t.Array(t.Complex(Point32))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PolygonInstance:
     __msg_name__ = 'geometry_msgs/msg/PolygonInstance'
 
@@ -45,7 +45,7 @@ class PolygonInstance:
     id: t.int64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PolygonInstanceStamped:
     __msg_name__ = 'geometry_msgs/msg/PolygonInstanceStamped'
 
@@ -53,7 +53,7 @@ class PolygonInstanceStamped:
     polygon: t.Complex(PolygonInstance)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PolygonStamped:
     __msg_name__ = 'geometry_msgs/msg/PolygonStamped'
 
@@ -61,7 +61,7 @@ class PolygonStamped:
     polygon: t.Complex(Polygon)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Quaternion:
     __msg_name__ = 'geometry_msgs/msg/Quaternion'
 
@@ -71,7 +71,7 @@ class Quaternion:
     w: t.float64 = 1
 
 
-@dataclass
+@dataclass(kw_only=True)
 class QuaternionStamped:
     __msg_name__ = 'geometry_msgs/msg/QuaternionStamped'
 
@@ -79,7 +79,7 @@ class QuaternionStamped:
     quaternion: t.Complex(Quaternion)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Pose:
     __msg_name__ = 'geometry_msgs/msg/Pose'
 
@@ -87,7 +87,7 @@ class Pose:
     orientation: t.Complex(Quaternion)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Pose2D:
     __msg_name__ = 'geometry_msgs/msg/Pose2D'
 
@@ -96,7 +96,7 @@ class Pose2D:
     theta: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PoseArray:
     __msg_name__ = 'geometry_msgs/msg/PoseArray'
 
@@ -104,7 +104,7 @@ class PoseArray:
     poses: t.Array(t.Complex(Pose))
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PoseStamped:
     __msg_name__ = 'geometry_msgs/msg/PoseStamped'
 
@@ -112,7 +112,7 @@ class PoseStamped:
     pose: t.Complex(Pose)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PoseWithCovariance:
     __msg_name__ = 'geometry_msgs/msg/PoseWithCovariance'
 
@@ -120,7 +120,7 @@ class PoseWithCovariance:
     covariance: t.Array(t.float64, 36)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class PoseWithCovarianceStamped:
     __msg_name__ = 'geometry_msgs/msg/PoseWithCovarianceStamped'
 
@@ -128,7 +128,7 @@ class PoseWithCovarianceStamped:
     pose: t.Complex(PoseWithCovariance)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Vector3:
     __msg_name__ = 'geometry_msgs/msg/Vector3'
 
@@ -137,7 +137,7 @@ class Vector3:
     z: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Vector3Stamped:
     __msg_name__ = 'geometry_msgs/msg/Vector3Stamped'
 
@@ -145,7 +145,7 @@ class Vector3Stamped:
     vector: t.Complex(Vector3)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Accel:
     __msg_name__ = 'geometry_msgs/msg/Accel'
 
@@ -153,7 +153,7 @@ class Accel:
     angular: t.Complex(Vector3)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AccelStamped:
     __msg_name__ = 'geometry_msgs/msg/AccelStamped'
 
@@ -161,7 +161,7 @@ class AccelStamped:
     accel: t.Complex(Accel)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AccelWithCovariance:
     __msg_name__ = 'geometry_msgs/msg/AccelWithCovariance'
 
@@ -169,7 +169,7 @@ class AccelWithCovariance:
     covariance: t.Array(t.float64, 36)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class AccelWithCovarianceStamped:
     __msg_name__ = 'geometry_msgs/msg/AccelWithCovarianceStamped'
 
@@ -177,7 +177,7 @@ class AccelWithCovarianceStamped:
     accel: t.Complex(AccelWithCovariance)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Inertia:
     __msg_name__ = 'geometry_msgs/msg/Inertia'
 
@@ -191,7 +191,7 @@ class Inertia:
     izz: t.float64
 
 
-@dataclass
+@dataclass(kw_only=True)
 class InertiaStamped:
     __msg_name__ = 'geometry_msgs/msg/InertiaStamped'
 
@@ -199,7 +199,7 @@ class InertiaStamped:
     inertia: t.Complex(Inertia)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Transform:
     __msg_name__ = 'geometry_msgs/msg/Transform'
 
@@ -207,7 +207,7 @@ class Transform:
     rotation: t.Complex(Quaternion)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TransformStamped:
     __msg_name__ = 'geometry_msgs/msg/TransformStamped'
 
@@ -216,7 +216,7 @@ class TransformStamped:
     transform: t.Complex(Transform)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Twist:
     __msg_name__ = 'geometry_msgs/msg/Twist'
 
@@ -224,7 +224,7 @@ class Twist:
     angular: t.Complex(Vector3)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TwistStamped:
     __msg_name__ = 'geometry_msgs/msg/TwistStamped'
 
@@ -232,7 +232,7 @@ class TwistStamped:
     twist: t.Complex(Twist)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TwistWithCovariance:
     __msg_name__ = 'geometry_msgs/msg/TwistWithCovariance'
 
@@ -240,7 +240,7 @@ class TwistWithCovariance:
     covariance: t.Array(t.float64, 36)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TwistWithCovarianceStamped:
     __msg_name__ = 'geometry_msgs/msg/TwistWithCovarianceStamped'
 
@@ -248,7 +248,7 @@ class TwistWithCovarianceStamped:
     twist: t.Complex(TwistWithCovariance)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class VelocityStamped:
     __msg_name__ = 'geometry_msgs/msg/VelocityStamped'
 
@@ -258,7 +258,7 @@ class VelocityStamped:
     velocity: t.Complex(Twist)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Wrench:
     __msg_name__ = 'geometry_msgs/msg/Wrench'
 
@@ -266,7 +266,7 @@ class Wrench:
     torque: t.Complex(Vector3)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class WrenchStamped:
     __msg_name__ = 'geometry_msgs/msg/WrenchStamped'
 
