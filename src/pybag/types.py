@@ -14,18 +14,24 @@ float32 = Annotated[float, ("float32",)]
 float64 = Annotated[float, ("float64",)]
 
 bool = Annotated[bool, ("bool",)]
+byte = Annotated[bytes, ("byte",)]
+char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
 T = TypeVar("T")
 
 
+def Constant(type_: type[T]) -> type[T]:
+    return Annotated[type_, ("constant", type_)]
+
+
 def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
-    return Annotated[list[type_], ("array", type_, length)]
+    return Annotated[type_, ("array", type_, length)]
 
 
 def Complex(type_: type[T]) -> type[T]:
-    return Annotated[T, ("complex", type_.__name__)]
+    return Annotated[type_, ("complex", type_.__msg_name__)]
 
 
 __all__ = [
@@ -44,4 +50,5 @@ __all__ = [
     "wstring",
     "Array",
     "Complex",
+    "Constant",
 ]
