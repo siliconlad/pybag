@@ -1,11 +1,11 @@
 import tempfile
 from dataclasses import dataclass
+from typing import Literal
 from pathlib import Path
 
 import pytest
 
 import pybag
-import pybag.types as t
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader
@@ -25,10 +25,10 @@ class ExampleMessage:
     __msg_name__ = 'tests/msgs/ExampleMessage'
     integer: pybag.int32
     text: pybag.string
-    fixed: pybag.Array(pybag.int32, length=3)
-    dynamic: pybag.Array(pybag.int32, length=None)
-    sub: pybag.Complex(SubMessage)
-    sub_array: pybag.Array(pybag.Complex(SubMessage), length=3)
+    fixed: pybag.Array[pybag.int32, Literal[3]]
+    dynamic: pybag.Array[pybag.int32]
+    sub: pybag.Complex[SubMessage]
+    sub_array: pybag.Array[pybag.Complex[SubMessage], Literal[3]]
 
 
 @pytest.mark.parametrize("little_endian", [True, False])
@@ -78,7 +78,7 @@ def test_add_channel_and_write_message() -> None:
     @dataclass
     class Example:
         __msg_name__ = "tests/msgs/Example"
-        value: t.int32
+        value: pybag.int32
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
@@ -98,6 +98,7 @@ def test_add_channel_and_write_message() -> None:
 
     # Check the schema
     data_schema = McapRecordParser.parse_schema(reader)
+    assert data_schema is not None
     assert data_schema.name == "tests/msgs/Example"
     assert data_schema.encoding == "ros2msg"
     assert data_schema.data == "int32 value\n".encode("utf-8")
@@ -131,6 +132,7 @@ def test_add_channel_and_write_message() -> None:
     # Check the summary schema
     summary_schema_start = reader.tell()
     summary_schema = McapRecordParser.parse_schema(reader)
+    assert summary_schema is not None
     assert summary_schema == data_schema
 
     # Check the summary channel

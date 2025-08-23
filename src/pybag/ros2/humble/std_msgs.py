@@ -61,7 +61,7 @@ class Float64:
 class Header:
     __msg_name__ = 'std_msgs/msg/Header'
 
-    stamp: t.Complex(builtin_interfaces.Time)
+    stamp: t.Complex[builtin_interfaces.Time]
     frame_id: t.string
 
 
@@ -141,7 +141,7 @@ class UInt8:
 class MultiArrayLayout:
     __msg_name__ = 'std_msgs/msg/MultiArrayLayout'
 
-    dim: t.Array(t.Complex(MultiArrayDimension))
+    dim: t.Array[t.Complex[MultiArrayDimension]]
     data_offset: t.uint32
 
 
@@ -149,85 +149,85 @@ class MultiArrayLayout:
 class ByteMultiArray:
     __msg_name__ = 'std_msgs/msg/ByteMultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.byte)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.byte]
 
 
 @dataclass(kw_only=True)
 class Float32MultiArray:
     __msg_name__ = 'std_msgs/msg/Float32MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.float32)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.float32]
 
 
 @dataclass(kw_only=True)
 class Float64MultiArray:
     __msg_name__ = 'std_msgs/msg/Float64MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.float64)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.float64]
 
 
 @dataclass(kw_only=True)
 class Int16MultiArray:
     __msg_name__ = 'std_msgs/msg/Int16MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.int16)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.int16]
 
 
 @dataclass(kw_only=True)
 class Int32MultiArray:
     __msg_name__ = 'std_msgs/msg/Int32MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.int32)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.int32]
 
 
 @dataclass(kw_only=True)
 class Int64MultiArray:
     __msg_name__ = 'std_msgs/msg/Int64MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.int64)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.int64]
 
 
 @dataclass(kw_only=True)
 class Int8MultiArray:
     __msg_name__ = 'std_msgs/msg/Int8MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.int8)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.int8]
 
 
 @dataclass(kw_only=True)
 class UInt16MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt16MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.uint16)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.uint16]
 
 
 @dataclass(kw_only=True)
 class UInt32MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt32MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.uint32)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.uint32]
 
 
 @dataclass(kw_only=True)
 class UInt64MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt64MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.uint64)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.uint64]
 
 
 @dataclass(kw_only=True)
 class UInt8MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt8MultiArray'
 
-    layout: t.Complex(MultiArrayLayout)
-    data: t.Array(t.uint8)
+    layout: t.Complex[MultiArrayLayout]
+    data: t.Array[t.uint8]

@@ -720,7 +720,7 @@ def test_range_rosbags(typestore: Typestore):
         max_range=10.0,
         range=5.0,
     )
-    if 'variance' in Range.__dataclass_fields__:  # Was added after ROS2 Humble
+    if hasattr(Range, '__dataclass_fields__') and 'variance' in getattr(Range, '__dataclass_fields__', {}):  # Was added after ROS2 Humble
         kwargs['variance'] = 0.5
     msg = Range(**kwargs)
     with TemporaryDirectory() as temp_dir:
@@ -738,7 +738,7 @@ def test_range_rosbags(typestore: Typestore):
         assert messages[0].data.header.frame_id == 'frame'
         assert messages[0].data.radiation_type == 0  # ULTRASOUND
         assert messages[0].data.range == 5.0
-        if 'variance' in Range.__dataclass_fields__:
+        if hasattr(Range, '__dataclass_fields__') and 'variance' in getattr(Range, '__dataclass_fields__', {}):
             assert messages[0].data.variance == 0.5
 
 

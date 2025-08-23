@@ -16,8 +16,9 @@ from pybag.schema.ros2msg import (
     Complex,
     Primitive,
     Ros2MsgSchemaDecoder,
+    Schema,
     SchemaConstant,
-    SchemaEntry,
+    SchemaField,
     Sequence,
     String
 )
@@ -49,7 +50,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
     cdr = CdrDecoder(message.data)
     msg_schema, schema_msgs = Ros2MsgSchemaDecoder().parse(schema)  # TODO: Store more permanently
 
-    def decode_field(schema: SchemaEntry, sub_schemas: dict[str, SchemaEntry]) -> type:
+    def decode_field(schema: Schema, sub_schemas: dict[str, Schema]) -> type:
         field = {}
         for field_name, field_schema in schema.fields.items():
             # Handle constants
@@ -57,11 +58,11 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
                 field[field_name] = field_schema.value
 
             # Handle primitive and string types
-            elif isinstance(field_schema.type, (Primitive, String)):
+            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, (Primitive, String)):
                 field[field_name] = cdr.parse(field_schema.type.type)
 
             # Handle arrays
-            elif isinstance(field_schema.type, Array):
+            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, Array):
                 array_type = field_schema.type
                 if isinstance(array_type.type, (Primitive, String)):
                     length = array_type.length
@@ -80,7 +81,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
                     raise ValueError(f'Unknown field type: {array_type.type}')
 
             # Handle sequences
-            elif isinstance(field_schema.type, Sequence):
+            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, Sequence):
                 sequence_type = field_schema.type
                 if isinstance(sequence_type.type, (Primitive, String)):
                     primitive_type = sequence_type.type
@@ -98,7 +99,7 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
                     raise ValueError(f'Unknown field type: {field_schema}')
 
             # Handle complex types
-            elif isinstance(field_schema.type, Complex):
+            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, Complex):
                 complex_type = field_schema.type
                 if complex_type.type in sub_schemas:
                     sub_schema = sub_schemas[complex_type.type]
