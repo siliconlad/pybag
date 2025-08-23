@@ -28,7 +28,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uvx ty check
+      - run: uv sync --all-groups --all-extras
+      - run: uvx ty check .
 
   test:
     runs-on: ubuntu-latest
