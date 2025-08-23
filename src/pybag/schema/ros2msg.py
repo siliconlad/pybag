@@ -273,13 +273,18 @@ class Ros2MsgSchemaEncoder:
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
 
-    def _extract_literal_value(self, literal_type: Any) -> Any:
+    def _extract_literal_int(self, literal_type: Any) -> int:
         """Extract the value from a Literal type annotation."""
-        if hasattr(literal_type, '__origin__') and getattr(literal_type, '__origin__', None) is Literal:
-            literal_args = get_args(literal_type)
-            if literal_args:
-                return literal_args[0]  # Return the first (and typically only) literal value
-        return literal_type  # If not a Literal, return as-is
+        if hasattr(literal_type, '__origin__') and literal_type.__origin__ is Literal:
+            if literal_args := get_args(literal_type):
+                return int(literal_args[0])
+            else:
+                raise Ros2MsgError(f"Unknown literal type: {literal_type}")
+        if isinstance(literal_type, str) and literal_type.isdigit():
+            return int(literal_type)
+        if isinstance(literal_type, int):
+            return literal_type
+        raise Ros2MsgError(f"Unknown literal type: {literal_type}")
 
     def _parse_annotation(self, annotation_type: Any) -> SchemaFieldType:
         annotation_args = get_args(annotation_type)
@@ -298,7 +303,7 @@ class Ros2MsgSchemaEncoder:
             if (length := field_type[2]) is None:
                 return Sequence(sub_type)
             # Extract the actual integer value from Literal types
-            actual_length = self._extract_literal_value(length)
+            actual_length = self._extract_literal_int(length)
             return Array(sub_type, length=actual_length, is_bounded=False)
 
         if field_type[0] == 'complex':
@@ -327,30 +332,14 @@ class Ros2MsgSchemaEncoder:
 
         cls = message if isinstance(message, type) else type(message)
 
-        # Get module for resolving string annotations
-        import sys
-        module = sys.modules.get(cls.__module__) if hasattr(cls, '__module__') else None
-
         for field in fields(cls):
-            # Resolve string annotations manually if needed
-            if isinstance(field.type, str):
-                if module:
-                    try:
-                        resolved_type = eval(field.type, module.__dict__)
-                    except Exception:
-                        resolved_type = field.type
-                else:
-                    resolved_type = field.type
-            else:
-                resolved_type = field.type
-
-            if get_origin(resolved_type) is not Annotated:
+            if get_origin(field.type) is not Annotated:
                 raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
 
-            field_type = self._parse_annotation(resolved_type)
+            field_type = self._parse_annotation(field.type)
             field_default = self._parse_default_value(field)
 
-            if get_args(resolved_type)[-1][0] == 'constant':
+            if get_args(field.type)[-1][0] == 'constant':
                 schema.fields[field.name] = SchemaConstant(field_type, field_default)
                 continue
             schema.fields[field.name] = SchemaField(field_type, field_default)
@@ -358,7 +347,7 @@ class Ros2MsgSchemaEncoder:
             if isinstance(field_type, Sequence):
                 if isinstance(field_type.type, Complex):
                     # For Sequence[Complex[Class]], extract the Class from the annotation
-                    list_type = get_args(resolved_type)[0]  # list[Annotated[Class, ...]]
+                    list_type = get_args(field.type)[0]  # list[Annotated[Class, ...]]
                     if get_origin(list_type) is list and get_args(list_type):
                         complex_annotation = get_args(list_type)[0]  # Annotated[Class, ...]
                         if get_origin(complex_annotation) is Annotated:
@@ -370,7 +359,7 @@ class Ros2MsgSchemaEncoder:
             if isinstance(field_type, Array):
                 if isinstance(field_type.type, Complex):
                     # For Array[Complex[Class]], extract the Class from the annotation
-                    list_type = get_args(resolved_type)[0]  # list[Annotated[Class, ...]]
+                    list_type = get_args(field.type)[0]  # list[Annotated[Class, ...]]
                     if get_origin(list_type) is list and get_args(list_type):
                         complex_annotation = get_args(list_type)[0]  # Annotated[Class, ...]
                         if get_origin(complex_annotation) is Annotated:
@@ -380,7 +369,7 @@ class Ros2MsgSchemaEncoder:
                             sub_schemas.update(sub_sub_schemas)
 
             if isinstance(field_type, Complex):
-                complex_type = get_args(resolved_type)[0]
+                complex_type = get_args(field.type)[0]
                 sub_schema, sub_sub_schemas = self._parse_message(complex_type)
                 sub_schemas[sub_schema.name] = sub_schema
                 sub_schemas.update(sub_sub_schemas)

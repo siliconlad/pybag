@@ -57,53 +57,58 @@ def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
             if isinstance(field_schema, SchemaConstant):
                 field[field_name] = field_schema.value
 
-            # Handle primitive and string types
-            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, (Primitive, String)):
-                field[field_name] = cdr.parse(field_schema.type.type)
+            # Handle fields
+            elif isinstance(field_schema, SchemaField):
+                # Handle primitive and string types
+                if isinstance(field_schema.type, (Primitive, String)):
+                    field[field_name] = cdr.parse(field_schema.type.type)
 
-            # Handle arrays
-            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, Array):
-                array_type = field_schema.type
-                if isinstance(array_type.type, (Primitive, String)):
-                    length = array_type.length
-                    primitive_type = array_type.type
-                    field[field_name] = cdr.array(primitive_type.type, length)
-                elif isinstance(array_type.type, Complex):
-                    complex_type = array_type.type
-                    if complex_type.type in sub_schemas:
+                # Handle arrays
+                elif isinstance(field_schema.type, Array):
+                    array_type = field_schema.type
+                    if isinstance(array_type.type, (Primitive, String)):
                         length = array_type.length
-                        sub_schema = sub_schemas[complex_type.type]
-                        fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
-                        field[field_name] = fields
+                        primitive_type = array_type.type
+                        field[field_name] = cdr.array(primitive_type.type, length)
+                    elif isinstance(array_type.type, Complex):
+                        complex_type = array_type.type
+                        if complex_type.type in sub_schemas:
+                            length = array_type.length
+                            sub_schema = sub_schemas[complex_type.type]
+                            fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
+                            field[field_name] = fields
+                        else:
+                            raise ValueError(f'Unknown field type: {complex_type.type}')
                     else:
-                        raise ValueError(f'Unknown field type: {complex_type.type}')
-                else:
-                    raise ValueError(f'Unknown field type: {array_type.type}')
+                        raise ValueError(f'Unknown field type: {array_type.type}')
 
-            # Handle sequences
-            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, Sequence):
-                sequence_type = field_schema.type
-                if isinstance(sequence_type.type, (Primitive, String)):
-                    primitive_type = sequence_type.type
-                    field[field_name] = cdr.sequence(primitive_type.type)
-                elif isinstance(sequence_type.type, Complex):
-                    complex_type = sequence_type.type
+                # Handle sequences
+                elif isinstance(field_schema.type, Sequence):
+                    sequence_type = field_schema.type
+                    if isinstance(sequence_type.type, (Primitive, String)):
+                        primitive_type = sequence_type.type
+                        field[field_name] = cdr.sequence(primitive_type.type)
+                    elif isinstance(sequence_type.type, Complex):
+                        complex_type = sequence_type.type
+                        if complex_type.type in sub_schemas:
+                            length = cdr.uint32()
+                            sub_schema = sub_schemas[complex_type.type]
+                            fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
+                            field[field_name] = fields
+                        else:
+                            raise ValueError(f'Unknown field type: {complex_type.type}')
+                    else:
+                        raise ValueError(f'Unknown field type: {field_schema}')
+
+                # Handle complex types
+                elif isinstance(field_schema.type, Complex):
+                    complex_type = field_schema.type
                     if complex_type.type in sub_schemas:
-                        length = cdr.uint32()
                         sub_schema = sub_schemas[complex_type.type]
-                        fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
-                        field[field_name] = fields
+                        field[field_name] = decode_field(sub_schema, sub_schemas)
                     else:
-                        raise ValueError(f'Unknown field type: {complex_type.type}')
-                else:
-                    raise ValueError(f'Unknown field type: {field_schema}')
+                        raise ValueError(f'Unknown field type: {field_schema}')
 
-            # Handle complex types
-            elif isinstance(field_schema, SchemaField) and isinstance(field_schema.type, Complex):
-                complex_type = field_schema.type
-                if complex_type.type in sub_schemas:
-                    sub_schema = sub_schemas[complex_type.type]
-                    field[field_name] = decode_field(sub_schema, sub_schemas)
                 else:
                     raise ValueError(f'Unknown field type: {field_schema}')
 

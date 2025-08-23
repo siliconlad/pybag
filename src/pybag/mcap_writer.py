@@ -1,9 +1,6 @@
 """Utilities for writing MCAP files."""
 
-from __future__ import annotations
-
 import logging
-import math
 from dataclasses import is_dataclass
 from pathlib import Path
 from typing import Any
@@ -15,7 +12,6 @@ from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     ChannelRecord,
     DataEndRecord,
-    FooterRecord,
     HeaderRecord,
     MessageRecord,
     RecordType,
@@ -48,16 +44,16 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
     encoder = CdrEncoder(little_endian=little_endian)
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(message)
 
-    def _encode_field(message: Any, schema_field: SchemaEntry, sub_schemas: dict[str, Schema]) -> None:
-        if isinstance(schema_field, SchemaField) and isinstance(schema_field.type, Primitive):
+    def _encode_field(message: Any, schema_field: SchemaField, sub_schemas: dict[str, Schema]) -> None:
+        if isinstance(schema_field.type, Primitive):
             primitive_type = schema_field.type
             encoder.encode(primitive_type.type, message)
 
-        if isinstance(schema_field, SchemaField) and isinstance(schema_field.type, String):
+        if isinstance(schema_field.type, String):
             string_type = schema_field.type
             encoder.encode(string_type.type, message)
 
-        if isinstance(schema_field, SchemaField) and isinstance(schema_field.type, Array):
+        if isinstance(schema_field.type, Array):
             array_type = schema_field.type
             if isinstance(array_type.type, (Primitive, String)):
                 encoder.array(array_type.type.type, message)
@@ -67,7 +63,7 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
             else:
                 raise ValueError(f"Unknown array type: {array_type.type}")
 
-        if isinstance(schema_field, SchemaField) and isinstance(schema_field.type, Sequence):
+        if isinstance(schema_field.type, Sequence):
             sequence_type = schema_field.type
             if isinstance(sequence_type.type, (Primitive, String)):
                 encoder.sequence(sequence_type.type.type, message)
@@ -78,7 +74,7 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
             else:
                 raise ValueError(f"Unknown sequence type: {sequence_type.type}")
 
-        if isinstance(schema_field, SchemaField) and isinstance(schema_field.type, Complex):
+        if isinstance(schema_field.type, Complex):
             complex_type = schema_field.type
             if complex_type.type not in sub_schemas:
                 raise ValueError(f"Complex type {complex_type.type} not found in sub_schemas")
@@ -88,7 +84,10 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
         for field_name, schema_field in schema.fields.items():
             if isinstance(schema_field, SchemaConstant):
                 continue  # Nothing to do for constants
-            _encode_field(getattr(message, field_name), schema_field, sub_schemas)
+            elif isinstance(schema_field, SchemaField):
+                _encode_field(getattr(message, field_name), schema_field, sub_schemas)
+            else:
+                raise ValueError(f"Unknown schema field type: {schema_field}")
 
     if isinstance(schema, Complex):
         schema = sub_schemas[schema.type]
