@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Literal
+
 from dataclasses import dataclass
+from typing import Literal
 
 import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
 import pybag.ros2.humble.geometry_msgs as geometry_msgs

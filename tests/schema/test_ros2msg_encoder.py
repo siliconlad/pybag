@@ -1,6 +1,6 @@
-from typing import Literal
 from dataclasses import dataclass, field
 from textwrap import dedent
+from typing import Literal
 
 import pytest
 

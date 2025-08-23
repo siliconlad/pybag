@@ -7,8 +7,8 @@ from dataclasses import dataclass, fields, is_dataclass
 from typing import (
     Annotated,
     Any,
-    Literal,
     ClassVar,
+    Literal,
     get_args,
     get_origin,
     get_type_hints

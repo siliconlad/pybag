@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Annotated, Literal, TypeVar, Generic, TypeAlias, Any
+
+from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
 int8 = Annotated[int, ("int8",)]
 int16 = Annotated[int, ("int16",)]

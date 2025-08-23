@@ -1,7 +1,7 @@
 import tempfile
 from dataclasses import dataclass
-from typing import Literal
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
