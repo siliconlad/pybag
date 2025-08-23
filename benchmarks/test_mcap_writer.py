@@ -230,12 +230,12 @@ def test_rosbags_write(benchmark: BenchmarkFixture) -> None:
     Twist = typestore.types["geometry_msgs/msg/Twist"]
     Vector3 = typestore.types["geometry_msgs/msg/Vector3"]
 
-    def _generate_rosbags_odometries(count: int = 1000, seed: int = 0) -> list[Odometry]:
+    def _generate_rosbags_odometries(count: int = 1000, seed: int = 0) -> list:
         # Set random number generator
         rng = random.Random(seed)
 
         # Generate messages
-        messages: list[Odometry] = []
+        messages: list = []
         for i in range(count):
             timestamp = int(i * 1_500_000_000)
             msg = Odometry(

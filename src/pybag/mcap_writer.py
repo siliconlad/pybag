@@ -1,9 +1,6 @@
 """Utilities for writing MCAP files."""
 
-from __future__ import annotations
-
 import logging
-import math
 from dataclasses import is_dataclass
 from pathlib import Path
 from typing import Any
@@ -15,7 +12,6 @@ from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     ChannelRecord,
     DataEndRecord,
-    FooterRecord,
     HeaderRecord,
     MessageRecord,
     RecordType,
@@ -30,6 +26,7 @@ from pybag.schema.ros2msg import (
     Ros2MsgSchemaEncoder,
     Schema,
     SchemaConstant,
+    SchemaEntry,
     SchemaField,
     Sequence,
     String
@@ -62,7 +59,7 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
                 encoder.array(array_type.type.type, message)
             elif isinstance(array_type.type, Complex):
                 for item in message:
-                    _encode_message(item, array_type.type, sub_schemas)
+                    _encode_message(item, sub_schemas[array_type.type.type], sub_schemas)
             else:
                 raise ValueError(f"Unknown array type: {array_type.type}")
 
@@ -73,7 +70,7 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
             elif isinstance(sequence_type.type, Complex):
                 encoder.uint32(len(message))
                 for item in message:
-                    _encode_message(item, sequence_type.type, sub_schemas)
+                    _encode_message(item, sub_schemas[sequence_type.type.type], sub_schemas)
             else:
                 raise ValueError(f"Unknown sequence type: {sequence_type.type}")
 
@@ -84,13 +81,13 @@ def serialize_message(message: Any, little_endian: bool = True) -> bytes:
             _encode_message(message, sub_schemas[complex_type.type], sub_schemas)
 
     def _encode_message(message: Any, schema: Schema, sub_schemas: dict[str, Schema]) -> None:
-        if isinstance(schema, Complex):
-            _encode_message(message, sub_schemas[schema.type], sub_schemas)
-        else:
-            for field_name, schema_field in schema.fields.items():
-                if isinstance(schema_field, SchemaConstant):
-                    continue  # Nothing to do for constants
+        for field_name, schema_field in schema.fields.items():
+            if isinstance(schema_field, SchemaConstant):
+                continue  # Nothing to do for constants
+            elif isinstance(schema_field, SchemaField):
                 _encode_field(getattr(message, field_name), schema_field, sub_schemas)
+            else:
+                raise ValueError(f"Unknown schema field type: {schema_field}")
 
     if isinstance(schema, Complex):
         schema = sub_schemas[schema.type]
@@ -145,6 +142,13 @@ class McapFileWriter:
             if (schema_id := self._schemas.get(channel_type)) is None:
                 schema_id = self._next_schema_id
                 self._next_schema_id += 1
+
+                # Check that the channel type has a __msg_name__ attribute
+                # TODO: Replace with a protocol
+                if not hasattr(channel_type, '__msg_name__'):
+                    raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
+                if not isinstance(channel_type.__msg_name__, str):
+                    raise ValueError(f"Channel type {channel_type} __msg_name__ must be a string")
 
                 schema_record = SchemaRecord(
                     id=schema_id,

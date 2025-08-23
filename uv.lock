@@ -322,6 +322,7 @@ zstd = [
 test = [
     { name = "mcap" },
     { name = "mcap-ros2-support" },
+    { name = "numpy" },
     { name = "pytest" },
     { name = "pytest-benchmark" },
     { name = "pytest-cov" },
@@ -339,6 +340,7 @@ provides-extras = ["zstd", "lz4"]
 test = [
     { name = "mcap", specifier = ">=1.2.2" },
     { name = "mcap-ros2-support", specifier = ">=0.5.5" },
+    { name = "numpy", specifier = ">=2.2.3" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-benchmark", specifier = ">=4.0.0" },
     { name = "pytest-cov", specifier = ">=6.2.1" },

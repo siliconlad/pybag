@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from textwrap import dedent
+from typing import Literal
 
 import pytest
 
@@ -61,7 +62,7 @@ def test_serialize_array() -> None:
     @dataclass
     class ArrayExample:
         __msg_name__ = 'tests/msgs/ArrayExample'
-        numbers: pybag.Array(pybag.int32)
+        numbers: pybag.Array[pybag.int32]
 
     obj = ArrayExample(numbers=[1, 2, 3])
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -76,7 +77,7 @@ def test_serialize_array_with_length() -> None:
     @dataclass
     class ArrayExample:
         __msg_name__ = 'tests/msgs/ArrayExample'
-        numbers: pybag.Array(pybag.int32, 3)
+        numbers: pybag.Array[pybag.int32, Literal[3]]
 
     obj = ArrayExample(numbers=[1, 2, 3])
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -91,7 +92,7 @@ def test_serialize_array_with_default() -> None:
     @dataclass
     class ArrayExample:
         __msg_name__ = 'tests/msgs/ArrayExample'
-        numbers: pybag.Array(pybag.int32) = field(default_factory=lambda: [1, 2, 3])
+        numbers: pybag.Array[pybag.int32] = field(default_factory=lambda: [1, 2, 3])
 
     obj = ArrayExample()
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -126,7 +127,7 @@ def test_serialize_constants() -> None:
     @dataclass(kw_only=True)
     class Example:
         __msg_name__ = 'tests/msgs/ExampleConst'
-        FOO: pybag.Constant(pybag.int32) = 1
+        FOO: pybag.Constant[pybag.int32] = 1
         bar: pybag.int32
 
     obj = Example(bar=42)
@@ -154,15 +155,15 @@ def test_serialize_nested_complex_array() -> None:
     class MultiArrayLayout:
         __msg_name__ = 'std_msgs/msg/MultiArrayLayout'
 
-        dim: pybag.Array(pybag.Complex(MultiArrayDimension))
+        dim: pybag.Array[pybag.Complex[MultiArrayDimension]]
         data_offset: pybag.uint32
 
     @dataclass()
     class Float32MultiArray:
         __msg_name__ = 'std_msgs/msg/Float32MultiArray'
 
-        layout: pybag.Complex(MultiArrayLayout)
-        data: pybag.Array(pybag.float32)
+        layout: pybag.Complex[MultiArrayLayout]
+        data: pybag.Array[pybag.float32]
 
     obj = Float32MultiArray(
         layout=MultiArrayLayout(
