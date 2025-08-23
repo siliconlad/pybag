@@ -113,7 +113,7 @@ class Schema:
 
 class Ros2MsgSchemaDecoder:
     def __init__(self):
-        self._cache = None  # TODO: Cache messages we come across
+        self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
 
     def _remove_inline_comment(self, line: str) -> str:
         in_single = False
@@ -234,8 +234,11 @@ class Ros2MsgSchemaDecoder:
 
 
     def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
-        assert schema.encoding == 'ros2msg'
-        logger.debug(f'Parsing schema: {schema.name}')
+        if schema.id in self._cache:
+            return self._cache[schema.id]
+
+        assert schema.encoding == "ros2msg"
+        logger.debug(f"Parsing schema: {schema.name}")
 
         package_name = schema.name.split('/')[0]
         msg = schema.data.decode('utf-8')
@@ -266,7 +269,9 @@ class Ros2MsgSchemaDecoder:
                 sub_msg_schema[field_name] = field
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
-        return Schema(schema.name, msg_schema), sub_msg_schemas
+        result = Schema(schema.name, msg_schema), sub_msg_schemas
+        self._cache[schema.id] = result
+        return result
 
 
 class Ros2MsgSchemaEncoder:
