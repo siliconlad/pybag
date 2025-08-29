@@ -67,6 +67,21 @@ def test_parse_unbounded_sequence_field():
     assert sub_schemas == {}
 
 
+def test_parse_caches_schema():
+    schema_text = "int32 my_int\n"
+    schema = SchemaRecord(
+        id=1,
+        name="pkg/msg/Primitive",
+        encoding="ros2msg",
+        data=schema_text.encode("utf-8"),
+    )
+    decoder = Ros2MsgSchemaDecoder()
+    first = decoder.parse(schema)
+    second = decoder.parse(schema)
+
+    assert first is second
+
+
 def test_parse_bounded_array():
     schema_text = "int32[<=5] limited\n"
     schema = SchemaRecord(

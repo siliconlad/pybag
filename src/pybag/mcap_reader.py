@@ -40,15 +40,19 @@ class DecodedMessage:
     data: Any  # TODO: Figure out how to type this
 
 
-def decode_message(message: MessageRecord, schema: SchemaRecord) -> type:
+def decode_message(
+    message: MessageRecord,
+    schema: SchemaRecord,
+    decoder: Ros2MsgSchemaDecoder,
+) -> type:
     """Decode a message using a schema."""
     # TODO: Support other encodings (e.g. ROS 1)
-    if schema.encoding != 'ros2msg':
-        error_msg = f'Unknown encoding type: {schema.encoding}'
+    if schema.encoding != "ros2msg":
+        error_msg = f"Unknown encoding type: {schema.encoding}"
         raise McapUnknownEncodingError(error_msg)
 
     cdr = CdrDecoder(message.data)
-    msg_schema, schema_msgs = Ros2MsgSchemaDecoder().parse(schema)  # TODO: Store more permanently
+    msg_schema, schema_msgs = decoder.parse(schema)
 
     def decode_field(schema: Schema, sub_schemas: dict[str, Schema]) -> type:
         field = {}
@@ -124,6 +128,7 @@ class McapFileReader:
 
     def __init__(self, reader: BaseMcapRecordReader):
         self._reader = reader
+        self._schema_decoder = Ros2MsgSchemaDecoder()
 
     @staticmethod
     def from_file(file_path: Path | str) -> 'McapFileReader':
@@ -185,7 +190,11 @@ class McapFileReader:
                 message.sequence,
                 message.log_time,
                 message.publish_time,
-                decode_message(message, self._reader.get_message_schema(message))
+                decode_message(
+                    message,
+                    self._reader.get_message_schema(message),
+                    self._schema_decoder,
+                ),
             )
 
 
