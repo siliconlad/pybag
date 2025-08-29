@@ -23,7 +23,7 @@ def test_parse_primitive_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/Primitive"
@@ -48,7 +48,7 @@ def test_parse_unbounded_sequence_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/SeqArray"
@@ -76,8 +76,8 @@ def test_parse_caches_schema():
         data=schema_text.encode("utf-8"),
     )
     decoder = Ros2MsgSchemaDecoder()
-    first = decoder.parse(schema)
-    second = decoder.parse(schema)
+    first = decoder.parse_schema(schema)
+    second = decoder.parse_schema(schema)
 
     assert first is second
 
@@ -90,7 +90,7 @@ def test_parse_bounded_array():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/BoundedArray"
@@ -119,7 +119,7 @@ def test_parse_static_array_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StaticArray"
@@ -148,7 +148,7 @@ def test_parse_complex_header_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/HasHeader"
@@ -173,7 +173,7 @@ def test_parse_constant_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/Const"
@@ -198,7 +198,7 @@ def test_parse_string_with_length_limit():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/BoundedString"
@@ -224,7 +224,7 @@ def test_parse_wstring_with_length_limit():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/BoundedString"
@@ -250,7 +250,7 @@ def test_parse_default_integer_value():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/DefaultValue"
@@ -275,7 +275,7 @@ def test_parse_bounded_string_array():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/BoundedStringArray"
@@ -304,7 +304,7 @@ def test_parse_default_string_value_double_quotes():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StringDefaultDouble"
@@ -329,7 +329,7 @@ def test_parse_default_string_value_single_quotes():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StringDefaultSingle"
@@ -354,7 +354,7 @@ def test_parse_default_string_value_with_hash_double_quotes():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StringWithHash"
@@ -379,7 +379,7 @@ def test_parse_default_string_value_with_hash_single_quotes():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StringWithHash"
@@ -404,7 +404,7 @@ def test_parse_default_array_of_ints():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/ArrayDefault"
@@ -431,7 +431,7 @@ def test_parse_constant_string_field_double_quotes():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StringConstWithHash"
@@ -457,7 +457,7 @@ def test_parse_constant_string_field_single_quotes():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/StringConstWithHash"
@@ -487,7 +487,7 @@ def test_parse_complex_array_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/ComplexArray"
@@ -532,7 +532,7 @@ def test_parse_complex_fixed_array_field():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/ComplexFixedArray"
@@ -579,7 +579,7 @@ def test_parse_sub_message_schema():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/WithPoint"
@@ -618,7 +618,7 @@ def test_field_with_inline_comment():
         encoding="ros2msg",
         data=schema_text.encode("utf-8"),
     )
-    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse(schema)
+    ros2_schema, sub_schemas = Ros2MsgSchemaDecoder().parse_schema(schema)
 
     assert isinstance(ros2_schema, Schema)
     assert ros2_schema.name == "pkg/msg/InlineComment"
@@ -644,7 +644,7 @@ def test_invalid_constant_name_must_be_uppercase():
         data=schema_text.encode("utf-8"),
     )
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaDecoder().parse(schema)
+        Ros2MsgSchemaDecoder().parse_schema(schema)
 
 
 def test_invalid_field_name_double_underscore():
@@ -656,7 +656,7 @@ def test_invalid_field_name_double_underscore():
         data=schema_text.encode("utf-8"),
     )
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaDecoder().parse(schema)
+        Ros2MsgSchemaDecoder().parse_schema(schema)
 
 
 def test_invalid_field_name_end_with_underscore():
@@ -668,7 +668,7 @@ def test_invalid_field_name_end_with_underscore():
         data=schema_text.encode("utf-8"),
     )
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaDecoder().parse(schema)
+        Ros2MsgSchemaDecoder().parse_schema(schema)
 
 
 def test_invalid_field_name_starts_with_number():
@@ -680,7 +680,7 @@ def test_invalid_field_name_starts_with_number():
         data=schema_text.encode("utf-8"),
     )
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaDecoder().parse(schema)
+        Ros2MsgSchemaDecoder().parse_schema(schema)
 
 
 def test_invalid_field_name_contains_uppercase():
@@ -692,7 +692,7 @@ def test_invalid_field_name_contains_uppercase():
         data=schema_text.encode("utf-8"),
     )
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaDecoder().parse(schema)
+        Ros2MsgSchemaDecoder().parse_schema(schema)
 
 
 def test_invalid_field_name_contains_special_characters():
@@ -704,4 +704,4 @@ def test_invalid_field_name_contains_special_characters():
         data=schema_text.encode("utf-8"),
     )
     with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaDecoder().parse(schema)
+        Ros2MsgSchemaDecoder().parse_schema(schema)

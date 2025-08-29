@@ -4,23 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pybag.encoding.cdr import CdrDecoder
+from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
-)
-from pybag.mcap.records import MessageRecord, SchemaRecord
-from pybag.schema.ros2msg import (
-    Array,
-    Complex,
-    Primitive,
-    Ros2MsgSchemaDecoder,
-    Schema,
-    SchemaConstant,
-    SchemaField,
-    Sequence,
-    String
 )
 
 # GLOBAL TODOs:
@@ -40,95 +28,16 @@ class DecodedMessage:
     data: Any  # TODO: Figure out how to type this
 
 
-def decode_message(
-    message: MessageRecord,
-    schema: SchemaRecord,
-    decoder: Ros2MsgSchemaDecoder,
-) -> type:
-    """Decode a message using a schema."""
-    # TODO: Support other encodings (e.g. ROS 1)
-    if schema.encoding != "ros2msg":
-        error_msg = f"Unknown encoding type: {schema.encoding}"
-        raise McapUnknownEncodingError(error_msg)
-
-    cdr = CdrDecoder(message.data)
-    msg_schema, schema_msgs = decoder.parse(schema)
-
-    def decode_field(schema: Schema, sub_schemas: dict[str, Schema]) -> type:
-        field = {}
-        for field_name, field_schema in schema.fields.items():
-            # Handle constants
-            if isinstance(field_schema, SchemaConstant):
-                field[field_name] = field_schema.value
-
-            # Handle fields
-            elif isinstance(field_schema, SchemaField):
-                # Handle primitive and string types
-                if isinstance(field_schema.type, (Primitive, String)):
-                    field[field_name] = cdr.parse(field_schema.type.type)
-
-                # Handle arrays
-                elif isinstance(field_schema.type, Array):
-                    array_type = field_schema.type
-                    if isinstance(array_type.type, (Primitive, String)):
-                        length = array_type.length
-                        primitive_type = array_type.type
-                        field[field_name] = cdr.array(primitive_type.type, length)
-                    elif isinstance(array_type.type, Complex):
-                        complex_type = array_type.type
-                        if complex_type.type in sub_schemas:
-                            length = array_type.length
-                            sub_schema = sub_schemas[complex_type.type]
-                            fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
-                            field[field_name] = fields
-                        else:
-                            raise ValueError(f'Unknown field type: {complex_type.type}')
-                    else:
-                        raise ValueError(f'Unknown field type: {array_type.type}')
-
-                # Handle sequences
-                elif isinstance(field_schema.type, Sequence):
-                    sequence_type = field_schema.type
-                    if isinstance(sequence_type.type, (Primitive, String)):
-                        primitive_type = sequence_type.type
-                        field[field_name] = cdr.sequence(primitive_type.type)
-                    elif isinstance(sequence_type.type, Complex):
-                        complex_type = sequence_type.type
-                        if complex_type.type in sub_schemas:
-                            length = cdr.uint32()
-                            sub_schema = sub_schemas[complex_type.type]
-                            fields = [decode_field(sub_schema, sub_schemas) for i in range(length)]
-                            field[field_name] = fields
-                        else:
-                            raise ValueError(f'Unknown field type: {complex_type.type}')
-                    else:
-                        raise ValueError(f'Unknown field type: {field_schema}')
-
-                # Handle complex types
-                elif isinstance(field_schema.type, Complex):
-                    complex_type = field_schema.type
-                    if complex_type.type in sub_schemas:
-                        sub_schema = sub_schemas[complex_type.type]
-                        field[field_name] = decode_field(sub_schema, sub_schemas)
-                    else:
-                        raise ValueError(f'Unknown field type: {field_schema}')
-
-                else:
-                    raise ValueError(f'Unknown field type: {field_schema}')
-
-            # Throw error for unknown field types
-            else:
-                raise ValueError(f'Unknown field type: {field_schema}')
-        return type(schema.name.replace('/', '.'), (), field)
-    return decode_field(msg_schema, schema_msgs)
-
-
 class McapFileReader:
     """Class to read MCAP file"""
 
     def __init__(self, reader: BaseMcapRecordReader):
         self._reader = reader
-        self._schema_decoder = Ros2MsgSchemaDecoder()
+
+        header = self._reader.get_header()
+        self._profile = header.profile
+        self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
+
 
     @staticmethod
     def from_file(file_path: Path | str) -> 'McapFileReader':
@@ -190,10 +99,9 @@ class McapFileReader:
                 message.sequence,
                 message.log_time,
                 message.publish_time,
-                decode_message(
+                self._message_deserializer.deserialize_message(
                     message,
-                    self._reader.get_message_schema(message),
-                    self._schema_decoder,
+                    self._reader.get_message_schema(message)
                 ),
             )
 

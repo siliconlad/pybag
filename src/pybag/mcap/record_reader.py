@@ -24,6 +24,7 @@ from pybag.mcap.records import (
     ChunkIndexRecord,
     ChunkRecord,
     FooterRecord,
+    HeaderRecord,
     MessageIndexRecord,
     MessageRecord,
     SchemaRecord,
@@ -58,6 +59,11 @@ class BaseMcapRecordReader(ABC):
     @abstractmethod
     def close(self) -> None:
         """Close the MCAP file and release all resources."""
+        ...
+
+    @abstractmethod
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
         ...
 
     @abstractmethod
@@ -218,6 +224,11 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         self._file.close()
 
     # Getters for records
+
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_header(self._file)
 
     def get_footer(self) -> FooterRecord:
         """Get the footer record from the MCAP file."""

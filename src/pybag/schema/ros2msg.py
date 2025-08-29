@@ -2,44 +2,29 @@ import ast
 import dataclasses
 import logging
 import re
-from abc import ABC
-from dataclasses import dataclass, fields, is_dataclass
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Literal,
-    get_args,
-    get_origin,
-    get_type_hints
-)
+from dataclasses import fields, is_dataclass
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 from pybag.io.raw_writer import BytesWriter
 from pybag.mcap.records import SchemaRecord
+from pybag.schema import (
+    PRIMITIVE_TYPE_MAP,
+    STRING_TYPE_MAP,
+    Array,
+    Complex,
+    Primitive,
+    Schema,
+    SchemaConstant,
+    SchemaDecoder,
+    SchemaEncoder,
+    SchemaEntry,
+    SchemaField,
+    SchemaFieldType,
+    Sequence,
+    String
+)
 
 logger = logging.getLogger(__name__)
-
-# Map ROS2 types to Python types
-# https://docs.ros.org/en/foxy/Concepts/About-ROS-Interfaces.html#field-types
-PRIMITIVE_TYPE_MAP = {
-    'bool': bool,
-    'byte': bytes,
-    'char': str,
-    'float32': float,
-    'float64': float,
-    'int8': int,
-    'uint8': int,
-    'int16': int,
-    'uint16': int,
-    'int32': int,
-    'uint32': int,
-    'int64': int,
-    'uint64': int,
-}
-STRING_TYPE_MAP = {
-    'string': str,
-    'wstring': str,
-}
 
 
 class Ros2MsgError(Exception):
@@ -47,71 +32,8 @@ class Ros2MsgError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
 
-# Schema Field Types
 
-@dataclass
-class SchemaFieldType(ABC):
-    ...
-
-
-@dataclass
-class Primitive(SchemaFieldType):
-    type: str
-
-    @classmethod
-    def is_primitive(cls, type: str) -> bool:
-        return type in PRIMITIVE_TYPE_MAP
-
-
-@dataclass
-class String(SchemaFieldType):
-    type: str = 'string'
-    max_length: int | None = None
-
-
-@dataclass
-class Array(SchemaFieldType):
-    type: 'SchemaFieldType'
-    length: int
-    is_bounded: bool = False  # False == fixed length
-
-
-@dataclass
-class Sequence(SchemaFieldType):
-    type: 'SchemaFieldType'
-
-
-@dataclass
-class Complex(SchemaFieldType):
-    type: str
-
-# Schema Entry (one line of a message)
-
-@dataclass
-class SchemaEntry(ABC):
-    ...
-
-
-@dataclass
-class SchemaConstant(SchemaEntry):
-    type: SchemaFieldType
-    value: int | float | bool | str | bytes
-
-
-@dataclass
-class SchemaField(SchemaEntry):
-    type: SchemaFieldType
-    default: Any = None
-
-# Schema (one entire message)
-
-@dataclass
-class Schema:
-    name: str
-    fields: dict[str, SchemaEntry]
-
-
-class Ros2MsgSchemaDecoder:
+class Ros2MsgSchemaDecoder(SchemaDecoder):
     def __init__(self):
         self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
 
@@ -233,7 +155,7 @@ class Ros2MsgSchemaDecoder:
         return field_raw_name, SchemaField(schema_type, default_value)
 
 
-    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
+    def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
         if schema.id in self._cache:
             return self._cache[schema.id]
 
@@ -274,7 +196,7 @@ class Ros2MsgSchemaDecoder:
         return result
 
 
-class Ros2MsgSchemaEncoder:
+class Ros2MsgSchemaEncoder(SchemaEncoder):
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
 
