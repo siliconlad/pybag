@@ -1,6 +1,8 @@
+from pybag.encoding import MessageDecoder
 from pybag.encoding.cdr import CdrDecoder
 from pybag.mcap.error import McapUnknownEncodingError
 from pybag.mcap.records import MessageRecord, SchemaRecord
+from pybag.schema import SchemaDecoder
 from pybag.schema.ros2msg import (
     Array,
     Complex,
@@ -12,8 +14,6 @@ from pybag.schema.ros2msg import (
     Sequence,
     String
 )
-from pybag.schema import SchemaDecoder
-from pybag.encoding import MessageDecoder
 
 
 class UnknownProfileError(Exception):
