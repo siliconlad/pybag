@@ -11,7 +11,8 @@ from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.records import RecordType
-from pybag.mcap_writer import McapFileWriter, serialize_message
+from pybag.mcap_writer import McapFileWriter
+from pybag.serialize import serialize_message
 
 
 @dataclass
