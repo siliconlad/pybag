@@ -2,6 +2,7 @@ import logging
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
 from typing import Any
 
 from pybag.deserialize import MessageDeserializerFactory
@@ -113,9 +114,18 @@ class McapFileReader:
                 )
             )
 
+    def close(self) -> None:
+        """Close the MCAP reader and release all resources."""
+        self._reader.close()
 
-if __name__ == '__main__':
-    import json
-    reader = McapFileReader.from_file(Path('/pybag/mcaps/pose_with_covariance.mcap'))
-    for msg in reader.messages(topic='/pose_with_covariance'):
-        print(json.dumps(msg.data, indent=4, sort_keys=True))
+    def __enter__(self) -> "McapFileReader":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None
+    ) -> None:
+        self.close()
+
