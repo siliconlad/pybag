@@ -2,8 +2,8 @@ import logging
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 from types import TracebackType
+from typing import Any
 
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
