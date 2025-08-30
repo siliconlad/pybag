@@ -96,7 +96,7 @@ class McapFileReader:
         for message in self._reader.get_messages(channel_id, start_time, end_time):
             message_deserializer = self._message_deserializer
             if message_deserializer is None:
-                message_deserializer = MessageDeserializerFactory.from_message(
+                message_deserializer = MessageDeserializerFactory.from_channel(
                     self._reader.get_channel(channel_id),
                     self._reader.get_message_schema(message)
                 )

@@ -128,8 +128,10 @@ class MessageDeserializerFactory:
     def from_profile(profile: str) -> MessageDeserializer | None:
         if profile == "ros2":
             return MessageDeserializer(Ros2MsgSchemaDecoder(), CdrDecoder)
+        return None
 
     @staticmethod
-    def from_message(channel: ChannelRecord, schema: SchemaRecord) -> MessageDeserializer | None:
+    def from_channel(channel: ChannelRecord, schema: SchemaRecord) -> MessageDeserializer | None:
         if channel.message_encoding == "cdr" and schema.encoding == "ros2msg":
             return MessageDeserializer(Ros2MsgSchemaDecoder(), CdrDecoder)
+        return None
