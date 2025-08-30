@@ -15,7 +15,7 @@ from pybag.mcap.records import (
     RecordType,
     SchemaRecord,
     StatisticsRecord,
-    SummaryOffsetRecord,
+    SummaryOffsetRecord
 )
 from pybag.serialize import MessageSerializerFactory
 

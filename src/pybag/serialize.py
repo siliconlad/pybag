@@ -14,7 +14,7 @@ from pybag.schema.ros2msg import (
     SchemaConstant,
     SchemaField,
     Sequence,
-    String,
+    String
 )
 
 
