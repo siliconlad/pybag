@@ -38,7 +38,6 @@ class McapFileReader:
         self._profile = header.profile
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
-
     @staticmethod
     def from_file(file_path: Path | str) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_file(file_path)
@@ -94,15 +93,24 @@ class McapFileReader:
             raise McapUnknownEncodingError(f'Topic {topic} not found in MCAP file')
 
         for message in self._reader.get_messages(channel_id, start_time, end_time):
+            message_deserializer = self._message_deserializer
+            if message_deserializer is None:
+                message_deserializer = MessageDeserializerFactory.from_message(
+                    self._reader.get_channel(channel_id),
+                    self._reader.get_message_schema(message)
+                )
+            if message_deserializer is None:
+                raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
+
             yield DecodedMessage(
                 message.channel_id,
                 message.sequence,
                 message.log_time,
                 message.publish_time,
-                self._message_deserializer.deserialize_message(
+                message_deserializer.deserialize_message(
                     message,
                     self._reader.get_message_schema(message)
-                ),
+                )
             )
 
 

@@ -1,7 +1,6 @@
 from pybag.encoding import MessageDecoder
 from pybag.encoding.cdr import CdrDecoder
-from pybag.mcap.error import McapUnknownEncodingError
-from pybag.mcap.records import MessageRecord, SchemaRecord
+from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.schema import SchemaDecoder
 from pybag.schema.ros2msg import (
     Array,
@@ -14,12 +13,6 @@ from pybag.schema.ros2msg import (
     Sequence,
     String
 )
-
-
-class UnknownProfileError(Exception):
-    """Exception raised when an unknown profile is encountered."""
-    def __init__(self, profile: str):
-        super().__init__(f"Unknown profile: {profile}")
 
 
 class MessageDeserializer:
@@ -132,7 +125,11 @@ class MessageDeserializerFactory:
     """Factory for creating message deserializers."""
 
     @staticmethod
-    def from_profile(profile: str) -> MessageDeserializer:
+    def from_profile(profile: str) -> MessageDeserializer | None:
         if profile == "ros2":
             return MessageDeserializer(Ros2MsgSchemaDecoder(), CdrDecoder)
-        raise McapUnknownEncodingError(f"Unknown encoding type: {profile}")
+
+    @staticmethod
+    def from_message(channel: ChannelRecord, schema: SchemaRecord) -> MessageDeserializer | None:
+        if channel.message_encoding == "cdr" and schema.encoding == "ros2msg":
+            return MessageDeserializer(Ros2MsgSchemaDecoder(), CdrDecoder)
