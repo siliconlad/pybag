@@ -29,10 +29,6 @@ class MessageSerializer:
         self._schema_encoder = schema_encoder
         self._message_encoder = message_encoder
 
-    @property
-    def schema_encoder(self) -> SchemaEncoder:
-        return self._schema_encoder
-
     def _encode_field(
         self,
         encoder: MessageEncoder,
@@ -123,6 +119,9 @@ class MessageSerializer:
         self._encode_message(encoder, message, schema, sub_schemas)
         return encoder.save()
 
+    def serialize_schema(self, schema: Any) -> bytes:
+        return self._schema_encoder.encode(schema)
+
 
 class MessageSerializerFactory:
     """Factory for creating message serializers."""
@@ -134,16 +133,7 @@ class MessageSerializerFactory:
         return None
 
     @staticmethod
-    def from_channel(
-        channel: ChannelRecord, schema: SchemaRecord
-    ) -> MessageSerializer | None:
+    def from_channel(channel: ChannelRecord, schema: SchemaRecord) -> MessageSerializer | None:
         if channel.message_encoding == "cdr" and schema.encoding == "ros2msg":
             return MessageSerializer(Ros2MsgSchemaEncoder(), CdrEncoder)
         return None
-
-
-def serialize_message(message: Any, little_endian: bool = True) -> bytes:
-    serializer = MessageSerializerFactory.from_profile("ros2")
-    if serializer is None:  # pragma: no cover - defensive programming
-        raise ValueError("Unknown encoding type: ros2")
-    return serializer.serialize_message(message, little_endian=little_endian)

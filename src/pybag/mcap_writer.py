@@ -43,6 +43,7 @@ class McapFileWriter:
         self._channel_message_counts: dict[int, int] = {}
 
         # Write the start of the file
+        # TODO: Support different profiles
         McapRecordWriter.write_magic_bytes(self._writer)
         header = HeaderRecord(profile="ros2", library=f"pybag {__version__}")
         McapRecordWriter.write_header(self._writer, header)
@@ -51,7 +52,6 @@ class McapFileWriter:
         self._message_serializer = MessageSerializerFactory.from_profile(self._profile)
         if self._message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
-        self._schema_encoder = self._message_serializer.schema_encoder
 
     @classmethod
     def open(cls, file_path: str | Path) -> "McapFileWriter":
@@ -86,7 +86,7 @@ class McapFileWriter:
                     id=schema_id,
                     name=channel_type.__msg_name__,
                     encoding="ros2msg",
-                    data=self._schema_encoder.encode(channel_type),
+                    data=self._message_serializer.serialize_schema(channel_type),
                 )
 
                 McapRecordWriter.write_schema(self._writer, schema_record)
