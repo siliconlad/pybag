@@ -120,12 +120,11 @@ class McapFileReader:
     def __enter__(self) -> "McapFileReader":
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None
+    ) -> None:
         self.close()
 
-
-if __name__ == '__main__':
-    import json
-    reader = McapFileReader.from_file(Path('/pybag/mcaps/pose_with_covariance.mcap'))
-    for msg in reader.messages(topic='/pose_with_covariance'):
-        print(json.dumps(msg.data, indent=4, sort_keys=True))
