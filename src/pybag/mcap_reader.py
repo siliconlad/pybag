@@ -113,6 +113,16 @@ class McapFileReader:
                 )
             )
 
+    def close(self) -> None:
+        """Close the MCAP reader and release all resources."""
+        self._reader.close()
+
+    def __enter__(self) -> "McapFileReader":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
 
 if __name__ == '__main__':
     import json
