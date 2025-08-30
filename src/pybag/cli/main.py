@@ -1,6 +1,6 @@
 import argparse
 
-from .info import add_parser as add_info_parser
+from .info import add_info_parser
 
 
 def build_parser() -> argparse.ArgumentParser:
