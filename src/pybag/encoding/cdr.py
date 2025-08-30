@@ -1,15 +1,15 @@
 import logging
-import math
 import struct
 from typing import Any
 
+from pybag.encoding import MessageDecoder, MessageEncoder
 from pybag.io.raw_reader import BytesReader
 from pybag.io.raw_writer import BytesWriter
 
 logger = logging.getLogger(__name__)
 
 
-class CdrDecoder:
+class CdrDecoder(MessageDecoder):
     def __init__(self, data: bytes):
         assert len(data) > 4, 'Data must be at least 4 bytes long.'
 
@@ -127,7 +127,7 @@ class CdrDecoder:
         return [getattr(self, f'{type}')() for _ in range(length)]
 
 
-class CdrEncoder:
+class CdrEncoder(MessageEncoder):
     """Encode primitive values into a CDR byte stream."""
 
     def __init__(self, *, little_endian: bool = True) -> None:
@@ -152,7 +152,6 @@ class CdrEncoder:
 
     def save(self) -> bytes:
         """Return the encoded byte stream."""
-
         return self._header + self._payload.as_bytes()
 
     # Primitive encoders -------------------------------------------------
