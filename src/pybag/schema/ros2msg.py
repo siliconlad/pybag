@@ -2,36 +2,29 @@ import ast
 import dataclasses
 import logging
 import re
-from abc import ABC
-from dataclasses import dataclass, fields, is_dataclass
-from typing import Annotated, Any, Tuple, get_args, get_origin
+from dataclasses import fields, is_dataclass
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 from pybag.io.raw_writer import BytesWriter
 from pybag.mcap.records import SchemaRecord
+from pybag.schema import (
+    PRIMITIVE_TYPE_MAP,
+    STRING_TYPE_MAP,
+    Array,
+    Complex,
+    Primitive,
+    Schema,
+    SchemaConstant,
+    SchemaDecoder,
+    SchemaEncoder,
+    SchemaEntry,
+    SchemaField,
+    SchemaFieldType,
+    Sequence,
+    String
+)
 
 logger = logging.getLogger(__name__)
-
-# Map ROS2 types to Python types
-# https://docs.ros.org/en/foxy/Concepts/About-ROS-Interfaces.html#field-types
-PRIMITIVE_TYPE_MAP = {
-    'bool': bool,
-    'byte': bytes,
-    'char': str,
-    'float32': float,
-    'float64': float,
-    'int8': int,
-    'uint8': int,
-    'int16': int,
-    'uint16': int,
-    'int32': int,
-    'uint32': int,
-    'int64': int,
-    'uint64': int,
-}
-STRING_TYPE_MAP = {
-    'string': str,
-    'wstring': str,
-}
 
 
 class Ros2MsgError(Exception):
@@ -39,73 +32,10 @@ class Ros2MsgError(Exception):
     def __init__(self, message: str):
         super().__init__(message)
 
-# Schema Field Types
 
-@dataclass
-class SchemaFieldType(ABC):
-    ...
-
-
-@dataclass
-class Primitive(SchemaFieldType):
-    type: str
-
-    @classmethod
-    def is_primitive(cls, type: str) -> bool:
-        return type in PRIMITIVE_TYPE_MAP
-
-
-@dataclass
-class String(SchemaFieldType):
-    type: str = 'string'
-    max_length: int | None = None
-
-
-@dataclass
-class Array(SchemaFieldType):
-    type: 'SchemaFieldType'
-    length: int
-    is_bounded: bool = False  # False == fixed length
-
-
-@dataclass
-class Sequence(SchemaFieldType):
-    type: 'SchemaFieldType'
-
-
-@dataclass
-class Complex(SchemaFieldType):
-    type: str
-
-# Schema Entry (one line of a message)
-
-@dataclass
-class SchemaEntry(ABC):
-    ...
-
-
-@dataclass
-class SchemaConstant(SchemaEntry):
-    type: SchemaFieldType
-    value: int | float | bool | str | bytes
-
-
-@dataclass
-class SchemaField(SchemaEntry):
-    type: SchemaFieldType
-    default: Any = None
-
-# Schema (one entire message)
-
-@dataclass
-class Schema:
-    name: str
-    fields: dict[str, SchemaEntry]
-
-
-class Ros2MsgSchemaDecoder:
+class Ros2MsgSchemaDecoder(SchemaDecoder):
     def __init__(self):
-        self._cache = None  # TODO: Cache messages we come across
+        self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
 
     def _remove_inline_comment(self, line: str) -> str:
         in_single = False
@@ -133,7 +63,10 @@ class Ros2MsgSchemaDecoder:
             if not isinstance(values, list):
                 raise Ros2MsgError('Array default must be a list')
             element_type = field_type.type
-            return [PRIMITIVE_TYPE_MAP[element_type.type](v) for v in values]
+            if isinstance(element_type, Primitive):
+                return [PRIMITIVE_TYPE_MAP[element_type.type](v) for v in values]
+            else:
+                raise Ros2MsgError('Default values not supported for this field type')
 
         raise Ros2MsgError('Default values not supported for this field type')
 
@@ -216,13 +149,18 @@ class Ros2MsgSchemaDecoder:
             default_value = self._parse_value(schema_type, raw_default)
 
         if is_constant:
+            if default_value is None:
+                raise Ros2MsgError('Constant must have a default value')
             return field_raw_name, SchemaConstant(schema_type, default_value)
         return field_raw_name, SchemaField(schema_type, default_value)
 
 
-    def parse(self, schema: SchemaRecord) -> tuple[Schema, dict[str, SchemaEntry]]:
-        assert schema.encoding == 'ros2msg'
-        logger.debug(f'Parsing schema: {schema.name}')
+    def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
+        if schema.id in self._cache:
+            return self._cache[schema.id]
+
+        assert schema.encoding == "ros2msg"
+        logger.debug(f"Parsing schema: {schema.name}")
 
         package_name = schema.name.split('/')[0]
         msg = schema.data.decode('utf-8')
@@ -253,19 +191,34 @@ class Ros2MsgSchemaDecoder:
                 sub_msg_schema[field_name] = field
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
-        return Schema(schema.name, msg_schema), sub_msg_schemas
+        result = Schema(schema.name, msg_schema), sub_msg_schemas
+        self._cache[schema.id] = result
+        return result
 
 
-class Ros2MsgSchemaEncoder:
+class Ros2MsgSchemaEncoder(SchemaEncoder):
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
+
+    def _extract_literal_int(self, literal_type: Any) -> int:
+        """Extract the value from a Literal type annotation."""
+        if hasattr(literal_type, '__origin__') and literal_type.__origin__ is Literal:
+            if literal_args := get_args(literal_type):
+                return int(literal_args[0])
+            else:
+                raise Ros2MsgError(f"Unknown literal type: {literal_type}")
+        if isinstance(literal_type, str) and literal_type.isdigit():
+            return int(literal_type)
+        if isinstance(literal_type, int):
+            return literal_type
+        raise Ros2MsgError(f"Unknown literal type: {literal_type}")
 
     def _parse_annotation(self, annotation_type: Any) -> SchemaFieldType:
         annotation_args = get_args(annotation_type)
         if len(annotation_args) < 2:
             raise Ros2MsgError(f"Field is not correctly annotated.")
 
-        field_type = annotation_args[1]
+        field_type = annotation_args[-1]
         if field_type[0] in PRIMITIVE_TYPE_MAP:
             return Primitive(field_type[0])
 
@@ -276,10 +229,15 @@ class Ros2MsgSchemaEncoder:
             sub_type = self._parse_annotation(field_type[1])
             if (length := field_type[2]) is None:
                 return Sequence(sub_type)
-            return Array(sub_type, length=length, is_bounded=False)
+            # Extract the actual integer value from Literal types
+            actual_length = self._extract_literal_int(length)
+            return Array(sub_type, length=actual_length, is_bounded=False)
 
         if field_type[0] == 'complex':
             return Complex(field_type[1])
+
+        if field_type[0] == 'constant':
+            return self._parse_annotation(field_type[1])
 
         raise Ros2MsgError(f"Unknown field type: {field_type}")
 
@@ -290,22 +248,56 @@ class Ros2MsgSchemaEncoder:
             return annotation.default_factory()
         return None
 
-    def _parse_message(self, message: Any) -> Schema:
+    def _parse_message(self, message: Any) -> tuple[Schema, dict[str, Schema]]:
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
-        class_name = message.__name__ if isinstance(message, type) else type(message).__name__
+        class_name = message.__msg_name__ if isinstance(message, type) else type(message).__msg_name__
 
         schema = Schema(class_name, {})
         sub_schemas: dict[str, Schema] = {}
-        for field in fields(message):
+
+        cls = message if isinstance(message, type) else type(message)
+
+        for field in fields(cls):
             if get_origin(field.type) is not Annotated:
                 raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
+
             field_type = self._parse_annotation(field.type)
             field_default = self._parse_default_value(field)
+
+            if get_args(field.type)[-1][0] == 'constant':
+                schema.fields[field.name] = SchemaConstant(field_type, field_default)
+                continue
             schema.fields[field.name] = SchemaField(field_type, field_default)
+
+            if isinstance(field_type, Sequence):
+                if isinstance(field_type.type, Complex):
+                    # For Sequence[Complex[Class]], extract the Class from the annotation
+                    list_type = get_args(field.type)[0]  # list[Annotated[Class, ...]]
+                    if get_origin(list_type) is list and get_args(list_type):
+                        complex_annotation = get_args(list_type)[0]  # Annotated[Class, ...]
+                        if get_origin(complex_annotation) is Annotated:
+                            complex_type = get_args(complex_annotation)[0]  # Class
+                            sub_schema, sub_sub_schemas = self._parse_message(complex_type)
+                            sub_schemas[sub_schema.name] = sub_schema
+                            sub_schemas.update(sub_sub_schemas)
+
+            if isinstance(field_type, Array):
+                if isinstance(field_type.type, Complex):
+                    # For Array[Complex[Class]], extract the Class from the annotation
+                    list_type = get_args(field.type)[0]  # list[Annotated[Class, ...]]
+                    if get_origin(list_type) is list and get_args(list_type):
+                        complex_annotation = get_args(list_type)[0]  # Annotated[Class, ...]
+                        if get_origin(complex_annotation) is Annotated:
+                            complex_type = get_args(complex_annotation)[0]  # Class
+                            sub_schema, sub_sub_schemas = self._parse_message(complex_type)
+                            sub_schemas[sub_schema.name] = sub_schema
+                            sub_schemas.update(sub_sub_schemas)
+
             if isinstance(field_type, Complex):
-                sub_schema, sub_sub_schemas = self._parse_message(getattr(message, field.name))
+                complex_type = get_args(field.type)[0]
+                sub_schema, sub_sub_schemas = self._parse_message(complex_type)
                 sub_schemas[sub_schema.name] = sub_schema
                 sub_schemas.update(sub_sub_schemas)
 
@@ -319,13 +311,14 @@ class Ros2MsgSchemaEncoder:
                 return field_type.type
             return f'{field_type.type}<={field_type.max_length}'
         if isinstance(field_type, Array):
+            sub_type = self._type_str(field_type.type)
             if field_type.is_bounded:
-                return f'{field_type.type}[<={field_type.length}]'
-            return f'{field_type.type}[{field_type.length}]'
+                return f'{sub_type}[<={field_type.length}]'
+            return f'{sub_type}[{field_type.length}]'
         if isinstance(field_type, Sequence):
-            return f'{field_type.type}[]'
+            return f'{self._type_str(field_type.type)}[]'
         if isinstance(field_type, Complex):
-            return field_type.type
+            return field_type.type.replace('/msg/', '/')
         raise Ros2MsgError(f'Unknown field type: {field_type}')
 
     def _value_str(self, value: Any) -> str:
@@ -338,9 +331,9 @@ class Ros2MsgSchemaEncoder:
         raise Ros2MsgError(f'Unknown value type: {type(value)}')
 
     def _encode_constant(self, writer: BytesWriter, field_name: str, field: SchemaConstant) -> None:
-        encoded_type = self._encode_type(field.type)
+        encoded_type = self._type_str(field.type)
         encoded_name = field_name.upper()
-        encoded_value = self._encode_value(field.type, field.value)
+        encoded_value = self._value_str(field.value)
         writer.write(f'{encoded_type} {encoded_name}={encoded_value}\n'.encode('utf-8'))
 
     def _encode_field(self, writer: BytesWriter, field_name: str, field: SchemaField) -> None:
@@ -360,6 +353,15 @@ class Ros2MsgSchemaEncoder:
                 self._encode_constant(writer, field_name, field)
             elif isinstance(field, SchemaField):
                 self._encode_field(writer, field_name, field)
+
+        for sub_schema in sub_schemas.values():
+            writer.write(('=' * 80 + '\n').encode('utf-8'))
+            writer.write(f'MSG: {sub_schema.name.replace("/msg/", "/")}\n'.encode('utf-8'))
+            for field_name, field in sub_schema.fields.items():
+                if isinstance(field, SchemaConstant):
+                    self._encode_constant(writer, field_name, field)
+                elif isinstance(field, SchemaField):
+                    self._encode_field(writer, field_name, field)
 
         return writer.as_bytes()
 

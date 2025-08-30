@@ -30,14 +30,14 @@ def validate_data_crc(reader: BaseReader, chunk_size: int = DEFAULT_CRC_CHUNK_SI
         bytes_to_read = reader.tell()
         data_end = McapRecordParser.parse_data_end(reader)
 
-    if data_end.crc == 0:
+    if data_end.data_section_crc == 0:
         return True
 
     reader.seek_from_start(0)
     computed_crc = compute_crc_batched(reader, bytes_to_read, chunk_size)
 
     reader.seek_from_start(original_position)
-    return computed_crc == data_end.crc
+    return computed_crc == data_end.data_section_crc
 
 
 def assert_data_crc(reader: BaseReader, chunk_size: int = DEFAULT_CRC_CHUNK_SIZE) -> None:

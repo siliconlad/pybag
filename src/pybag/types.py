@@ -1,4 +1,6 @@
-from typing import Annotated, TypeVar
+from __future__ import annotations
+
+from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
 int8 = Annotated[int, ("int8",)]
 int16 = Annotated[int, ("int16",)]
@@ -14,18 +16,47 @@ float32 = Annotated[float, ("float32",)]
 float64 = Annotated[float, ("float64",)]
 
 bool = Annotated[bool, ("bool",)]
+byte = Annotated[bytes, ("byte",)]
+char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
 T = TypeVar("T")
 
 
-def Array(type_: type[T], length: int | None = None) -> type[list[T]]:
-    return Annotated[list[type_], ("array", type_, length)]
+# Type-checker compatible version using Generic classes
+class _ConstantType(Generic[T]):
+    """Generic type for constants."""
+    def __class_getitem__(cls, type_: type[T]) -> type[T]:
+        return Annotated[type_, ("constant", type_)]
 
 
-def Complex(type_: type[T]) -> type[T]:
-    return Annotated[T, ("complex", type_.__name__)]
+class _ArrayType:
+    """Generic type for arrays that accepts both single type and type+length."""
+    @classmethod
+    def __class_getitem__(cls, params: Any) -> type[list]:
+        if isinstance(params, tuple):
+            # Array[type, length] - fixed size array
+            if len(params) == 2:
+                type_, length = params
+                return Annotated[list[type_], ("array", type_, length)]
+            else:
+                raise TypeError("Array expects either 1 or 2 parameters")
+        else:
+            # Array[type] - variable size array
+            return Annotated[list[params], ("array", params, None)]
+
+
+class _ComplexType(Generic[T]):
+    """Generic type for complex/nested types."""
+    def __class_getitem__(cls, type_: type[T]) -> type[T]:
+        return Annotated[type_, ("complex", type_.__msg_name__)]
+
+
+# Type aliases for use in type annotations
+Constant: TypeAlias = _ConstantType
+Array: TypeAlias = _ArrayType
+Complex: TypeAlias = _ComplexType
 
 
 __all__ = [
@@ -44,4 +75,5 @@ __all__ = [
     "wstring",
     "Array",
     "Complex",
+    "Constant",
 ]

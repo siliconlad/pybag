@@ -24,6 +24,7 @@ from pybag.mcap.records import (
     ChunkIndexRecord,
     ChunkRecord,
     FooterRecord,
+    HeaderRecord,
     MessageIndexRecord,
     MessageRecord,
     SchemaRecord,
@@ -58,6 +59,11 @@ class BaseMcapRecordReader(ABC):
     @abstractmethod
     def close(self) -> None:
         """Close the MCAP file and release all resources."""
+        ...
+
+    @abstractmethod
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
         ...
 
     @abstractmethod
@@ -197,6 +203,10 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
         # Load all chunk indexes eagerly so subsequent calls can reuse them
         self._load_chunk_indexes()
+    
+        # Cached schema and channel dictionaries populated on first access
+        self._schemas: dict[int, SchemaRecord] | None = None
+        self._channels: dict[int, ChannelRecord] | None = None
 
     # Helpful Constructors
 
@@ -222,6 +232,11 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     # Getters for records
 
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_header(self._file)
+
     def get_footer(self) -> FooterRecord:
         """Get the footer record from the MCAP file."""
         self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
@@ -243,14 +258,16 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping schema IDs to SchemaInfo objects.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
-        schemas = {}
-        while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
-            schema = McapRecordParser.parse_schema(self._file)
-            if schema is None:  # Invalid schema, should be ignored
-                continue
-            schemas[schema.id] = schema
-        return schemas
+        if self._schemas is None:
+            self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
+            schemas: dict[int, SchemaRecord] = {}
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+                schema = McapRecordParser.parse_schema(self._file)
+                if schema is None:  # Invalid schema, should be ignored
+                    continue
+                schemas[schema.id] = schema
+            self._schemas = schemas
+        return self._schemas
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """
@@ -303,12 +320,14 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping channel IDs to channel information.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
-        channels = {}
-        while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
-            channel = McapRecordParser.parse_channel(self._file)
-            channels[channel.id] = channel
-        return channels
+        if self._channels is None:
+            self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
+            channels: dict[int, ChannelRecord] = {}
+            while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+                channel = McapRecordParser.parse_channel(self._file)
+                channels[channel.id] = channel
+            self._channels = channels
+        return self._channels
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """
