@@ -77,10 +77,8 @@ class McapFileWriter:
                 self._next_schema_id += 1
 
                 # Check that the channel type has a __msg_name__ attribute
-                if not hasattr(channel_type, '__msg_name__'):
+                if not isinstance(channel_type, Message):
                     raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
-                if not isinstance(channel_type.__msg_name__, str):
-                    raise ValueError(f"Channel type {channel_type} __msg_name__ must be a string")
 
                 schema_record = SchemaRecord(
                     id=schema_id,
