@@ -23,6 +23,7 @@ from pybag.schema import (
     Sequence,
     String
 )
+from pybag.types import Message
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +249,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
             return annotation.default_factory()
         return None
 
-    def _parse_message(self, message: Any) -> tuple[Schema, dict[str, Schema]]:
+    def _parse_message(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
@@ -344,7 +345,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         else:
             writer.write(f'{encoded_type} {field_name}\n'.encode('utf-8'))
 
-    def encode(self, message: Any) -> bytes:
+    def encode(self, message: Message | type[Message]) -> bytes:
         schema, sub_schemas = self._parse_message(message)
 
         writer = BytesWriter()
@@ -365,7 +366,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
 
         return writer.as_bytes()
 
-    def parse_schema(self, message: Any) -> tuple[Schema, dict[str, Schema]]:
+    def parse_schema(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
         return self._parse_message(message)
 
 
