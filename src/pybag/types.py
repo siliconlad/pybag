@@ -35,7 +35,7 @@ T = TypeVar("T")
 
 @runtime_checkable
 class Message(Protocol):
-    """Protocol for ROS messages requiring a __msg_name__ attribute."""
+    """Message protocol for reading and writing."""
 
     __msg_name__: str
 

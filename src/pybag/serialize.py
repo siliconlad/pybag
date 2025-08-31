@@ -120,7 +120,7 @@ class MessageSerializer:
         self._encode_message(encoder, message, schema, sub_schemas)
         return encoder.save()
 
-    def serialize_schema(self, schema: Any) -> bytes:
+    def serialize_schema(self, schema: type[Message]) -> bytes:
         return self._schema_encoder.encode(schema)
 
 

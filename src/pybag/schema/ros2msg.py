@@ -253,12 +253,11 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
-        class_name = message.__msg_name__ if isinstance(message, type) else type(message).__msg_name__
+        cls = message if isinstance(message, type) else type(message)
+        class_name = cls.__msg_name__
 
         schema = Schema(class_name, {})
         sub_schemas: dict[str, Schema] = {}
-
-        cls = message if isinstance(message, type) else type(message)
 
         for field in fields(cls):
             if get_origin(field.type) is not Annotated:
