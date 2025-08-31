@@ -2,9 +2,7 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
-from rich.columns import Columns
 from rich.console import Console
-from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -37,10 +35,13 @@ def format_timestamp(nanoseconds: int) -> str:
 
 def format_file_size(bytes_size: int) -> str:
     """Format file size in human readable format."""
+    file_size = float(bytes_size)
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-        if bytes_size < 1024:
-            return f"{bytes_size:.1f} {unit}" if bytes_size != int(bytes_size) else f"{int(bytes_size)} {unit}"
-        bytes_size /= 1024
+        if file_size < 1024:
+            if file_size != int(file_size):
+                return f"{file_size:.1f} {unit}"
+            return f"{int(file_size)} {unit}"
+        file_size = file_size / 1024
     return f"{bytes_size:.1f} PB"
 
 
