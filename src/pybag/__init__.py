@@ -4,6 +4,7 @@ from .types import (
     Array,
     Complex,
     Constant,
+    Message,
     bool,
     float32,
     float64,

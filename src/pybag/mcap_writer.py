@@ -18,6 +18,7 @@ from pybag.mcap.records import (
     SummaryOffsetRecord
 )
 from pybag.serialize import MessageSerializerFactory
+from pybag.types import Message
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +32,8 @@ class McapFileWriter:
         self._next_schema_id = 1  # Schema ID must be non-zero
         self._next_channel_id = 1
 
-        self._topics: dict[str, int] = {}    # topic -> channel_id
-        self._schemas: dict[type, int] = {}  # type -> schema_id
+        self._topics: dict[str, int] = {}  # topic -> channel_id
+        self._schemas: dict[type[Message], int] = {}  # type -> schema_id
         self._schema_records: list[SchemaRecord] = []
         self._channel_records: list[ChannelRecord] = []
         self._sequences: dict[int, int] = {}
@@ -59,7 +60,7 @@ class McapFileWriter:
 
         return cls(FileWriter(file_path))
 
-    def add_channel(self, topic: str, channel_type: type) -> int:
+    def add_channel(self, topic: str, channel_type: type[Message]) -> int:
         """Add a channel to the MCAP output.
 
         Args:
@@ -76,11 +77,8 @@ class McapFileWriter:
                 self._next_schema_id += 1
 
                 # Check that the channel type has a __msg_name__ attribute
-                # TODO: Replace with a protocol
-                if not hasattr(channel_type, '__msg_name__'):
+                if not isinstance(channel_type, Message):
                     raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
-                if not isinstance(channel_type.__msg_name__, str):
-                    raise ValueError(f"Channel type {channel_type} __msg_name__ must be a string")
 
                 schema_record = SchemaRecord(
                     id=schema_id,
@@ -111,7 +109,7 @@ class McapFileWriter:
 
         return channel_id
 
-    def write_message(self, topic: str, timestamp: int, message: Any) -> None:
+    def write_message(self, topic: str, timestamp: int, message: Message) -> None:
         """Write a message to a topic at a given timestamp.
 
         Args:

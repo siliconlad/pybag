@@ -1,6 +1,15 @@
 from __future__ import annotations
 
-from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
+from typing import (
+    Annotated,
+    Any,
+    Generic,
+    Literal,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    runtime_checkable
+)
 
 int8 = Annotated[int, ("int8",)]
 int16 = Annotated[int, ("int16",)]
@@ -22,6 +31,13 @@ string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
 T = TypeVar("T")
+
+
+@runtime_checkable
+class Message(Protocol):
+    """Message protocol for reading and writing."""
+
+    __msg_name__: str
 
 
 # Type-checker compatible version using Generic classes
@@ -73,6 +89,7 @@ __all__ = [
     "bool",
     "string",
     "wstring",
+    "Message",
     "Array",
     "Complex",
     "Constant",
