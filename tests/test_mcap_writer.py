@@ -11,7 +11,8 @@ from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.records import RecordType
-from pybag.mcap_writer import McapFileWriter, serialize_message
+from pybag.mcap_writer import McapFileWriter
+from pybag.serialize import MessageSerializerFactory
 
 
 @dataclass
@@ -41,7 +42,9 @@ def test_serialize_message_roundtrip(little_endian: bool) -> None:
         sub=SubMessage(7),
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
-    data = serialize_message(msg, little_endian=little_endian)
+    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
+    data = message_serializer.serialize_message(msg, little_endian=little_endian)
 
     decoder = CdrDecoder(data)
     # integer
@@ -69,8 +72,10 @@ def test_serialize_message_endianness_diff() -> None:
         sub=SubMessage(7),
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
-    le = serialize_message(msg, little_endian=True)
-    be = serialize_message(msg, little_endian=False)
+    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
+    le = message_serializer.serialize_message(msg, little_endian=True)
+    be = message_serializer.serialize_message(msg, little_endian=False)
     assert le != be
 
 
@@ -117,7 +122,9 @@ def test_add_channel_and_write_message() -> None:
     assert data_message.sequence == 0
     assert data_message.log_time == 1
     assert data_message.publish_time == 1
-    assert data_message.data == serialize_message(Example(5))
+    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
+    assert data_message.data == message_serializer.serialize_message(Example(5))
 
     crc_data_end = reader.get_crc()
     reader.clear_crc()
