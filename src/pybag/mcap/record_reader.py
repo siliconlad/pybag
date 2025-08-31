@@ -405,9 +405,10 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             A list of ChunkIndexRecord objects.
         """
         self._load_chunk_indexes()
-        assert self._chunk_indexes is not None
+        if self._chunk_indexes is None:
+            return []
         if channel_id is None:
-            return list(self._chunk_indexes)
+            return self._chunk_indexes
         return [ci for ci in self._chunk_indexes if channel_id in ci.message_index_offsets]
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
