@@ -20,6 +20,7 @@ def typestore(request):
 
 
 def test_messages_filter(typestore: Typestore):
+    # Write a temporary mcap file
     Int32 = typestore.types["std_msgs/msg/Int32"]
     with TemporaryDirectory() as temp_dir:
         with Writer(
@@ -30,10 +31,19 @@ def test_messages_filter(typestore: Typestore):
             conn = writer.add_connection("/rosbags", Int32.__msgtype__, typestore=typestore)
             writer.write(conn, 0, typestore.serialize_cdr(Int32(data=1), Int32.__msgtype__))
             writer.write(conn, 1, typestore.serialize_cdr(Int32(data=-1), Int32.__msgtype__))
+
         mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
+
         all_messages = list(reader.messages("/rosbags"))
         assert len(all_messages) == 2
+        assert all_messages[0].data.data == 1
+        assert all_messages[1].data.data == -1
+
         positive = list(reader.messages("/rosbags", filter=lambda m: m.data.data > 0))
         assert len(positive) == 1
         assert positive[0].data.data == 1
+
+        negative = list(reader.messages("/rosbags", filter=lambda m: m.data.data < 0))
+        assert len(negative) == 1
+        assert negative[0].data.data == -1
