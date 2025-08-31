@@ -43,6 +43,7 @@ def test_serialize_message_roundtrip(little_endian: bool) -> None:
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
     message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
     data = message_serializer.serialize_message(msg, little_endian=little_endian)
 
     decoder = CdrDecoder(data)
@@ -72,6 +73,7 @@ def test_serialize_message_endianness_diff() -> None:
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
     message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
     le = message_serializer.serialize_message(msg, little_endian=True)
     be = message_serializer.serialize_message(msg, little_endian=False)
     assert le != be
@@ -121,6 +123,7 @@ def test_add_channel_and_write_message() -> None:
     assert data_message.log_time == 1
     assert data_message.publish_time == 1
     message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
     assert data_message.data == message_serializer.serialize_message(Example(5))
 
     crc_data_end = reader.get_crc()

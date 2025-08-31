@@ -201,9 +201,6 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         self._chunk_indexes: list[ChunkIndexRecord] | None = None
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
-        # Load all chunk indexes eagerly so subsequent calls can reuse them
-        self._load_chunk_indexes()
-    
         # Cached schema and channel dictionaries populated on first access
         self._schemas: dict[int, SchemaRecord] | None = None
         self._channels: dict[int, ChannelRecord] | None = None
@@ -401,7 +398,8 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Get all chunk indexes from the MCAP file.
 
         Args:
-            channel_id: The ID of the channel to get the chunk indexes for. If None, all chunk indexes are returned.
+            channel_id: The ID of the channel to get the chunk indexes for.
+                        If None, all chunk indexes are returned.
 
         Returns:
             A list of ChunkIndexRecord objects.
