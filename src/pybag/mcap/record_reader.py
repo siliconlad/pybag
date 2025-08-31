@@ -201,6 +201,14 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             record = McapRecordParser.parse_summary_offset(self._file)
             self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
+        # Caches for chunk and message indexes
+        self._chunk_indexes: list[ChunkIndexRecord] | None = None
+        self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
+
+        # Cached schema and channel dictionaries populated on first access
+        self._schemas: dict[int, SchemaRecord] | None = None
+        self._channels: dict[int, ChannelRecord] | None = None
+
     # Helpful Constructors
 
     @staticmethod
@@ -229,6 +237,11 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     # Getters for records
 
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_header(self._file)
+
     def get_footer(self) -> FooterRecord:
         """Get the footer record from the MCAP file."""
         self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
@@ -250,14 +263,16 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping schema IDs to SchemaInfo objects.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
-        schemas = {}
-        while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
-            schema = McapRecordParser.parse_schema(self._file)
-            if schema is None:  # Invalid schema, should be ignored
-                continue
-            schemas[schema.id] = schema
-        return schemas
+        if self._schemas is None:
+            self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
+            schemas: dict[int, SchemaRecord] = {}
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+                schema = McapRecordParser.parse_schema(self._file)
+                if schema is None:  # Invalid schema, should be ignored
+                    continue
+                schemas[schema.id] = schema
+            self._schemas = schemas
+        return self._schemas
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """
@@ -310,12 +325,14 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping channel IDs to channel information.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
-        channels = {}
-        while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
-            channel = McapRecordParser.parse_channel(self._file)
-            channels[channel.id] = channel
-        return channels
+        if self._channels is None:
+            self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
+            channels: dict[int, ChannelRecord] = {}
+            while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+                channel = McapRecordParser.parse_channel(self._file)
+                channels[channel.id] = channel
+            self._channels = channels
+        return self._channels
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """
@@ -348,10 +365,16 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A list of MessageIndexRecord objects.
         """
-        message_index = {}
+        key = chunk_index.chunk_start_offset
+        if key in self._message_indexes:
+            return self._message_indexes[key]
+
+        message_index: dict[int, MessageIndexRecord] = {}
         for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
             self._file.seek_from_start(message_index_offset)
             message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
+
+        self._message_indexes[key] = message_index
         return message_index
 
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
@@ -369,23 +392,32 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     # Chunk Management
 
+    def _load_chunk_indexes(self) -> None:
+        if self._chunk_indexes is not None:
+            return
+        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
+        self._chunk_indexes = []
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+            chunk_index = McapRecordParser.parse_chunk_index(self._file)
+            self._chunk_indexes.append(chunk_index)
+
     def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
         """
         Get all chunk indexes from the MCAP file.
 
         Args:
-            channel_id: The ID of the channel to get the chunk indexes for. If None, all chunk indexes are returned.
+            channel_id: The ID of the channel to get the chunk indexes for.
+                        If None, all chunk indexes are returned.
 
         Returns:
             A list of ChunkIndexRecord objects.
         """
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
-        chunk_indexes = []
-        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
-            chunk_index = McapRecordParser.parse_chunk_index(self._file)
-            if channel_id is None or channel_id in chunk_index.message_index_offsets:
-                chunk_indexes.append(chunk_index)
-        return chunk_indexes
+        self._load_chunk_indexes()
+        if self._chunk_indexes is None:
+            return []
+        if channel_id is None:
+            return self._chunk_indexes
+        return [ci for ci in self._chunk_indexes if channel_id in ci.message_index_offsets]
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
         """

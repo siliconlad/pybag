@@ -1,32 +1,35 @@
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 import pybag
-import pybag.types as t
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.records import RecordType
-from pybag.mcap_writer import McapFileWriter, serialize_message
+from pybag.mcap_writer import McapFileWriter
+from pybag.serialize import MessageSerializerFactory
 
 
 @dataclass
 class SubMessage:
+    __msg_name__ = 'tests/msgs/SubMessage'
     value: pybag.int32
 
 
 @dataclass
 class ExampleMessage:
+    __msg_name__ = 'tests/msgs/ExampleMessage'
     integer: pybag.int32
     text: pybag.string
-    fixed: pybag.Array(pybag.int32, length=3)
-    dynamic: pybag.Array(pybag.int32, length=None)
-    sub: pybag.Complex(SubMessage)
-    sub_array: pybag.Array(pybag.Complex(SubMessage), length=3)
+    fixed: pybag.Array[pybag.int32, Literal[3]]
+    dynamic: pybag.Array[pybag.int32]
+    sub: pybag.Complex[SubMessage]
+    sub_array: pybag.Array[pybag.Complex[SubMessage], Literal[3]]
 
 
 @pytest.mark.parametrize("little_endian", [True, False])
@@ -39,7 +42,9 @@ def test_serialize_message_roundtrip(little_endian: bool) -> None:
         sub=SubMessage(7),
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
-    data = serialize_message(msg, little_endian=little_endian)
+    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
+    data = message_serializer.serialize_message(msg, little_endian=little_endian)
 
     decoder = CdrDecoder(data)
     # integer
@@ -67,15 +72,18 @@ def test_serialize_message_endianness_diff() -> None:
         sub=SubMessage(7),
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
-    le = serialize_message(msg, little_endian=True)
-    be = serialize_message(msg, little_endian=False)
+    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
+    le = message_serializer.serialize_message(msg, little_endian=True)
+    be = message_serializer.serialize_message(msg, little_endian=False)
     assert le != be
 
 
 def test_add_channel_and_write_message() -> None:
     @dataclass
     class Example:
-        value: t.int32
+        __msg_name__ = "tests/msgs/Example"
+        value: pybag.int32
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
@@ -95,7 +103,8 @@ def test_add_channel_and_write_message() -> None:
 
     # Check the schema
     data_schema = McapRecordParser.parse_schema(reader)
-    assert data_schema.name == "Example"
+    assert data_schema is not None
+    assert data_schema.name == "tests/msgs/Example"
     assert data_schema.encoding == "ros2msg"
     assert data_schema.data == "int32 value\n".encode("utf-8")
 
@@ -113,7 +122,9 @@ def test_add_channel_and_write_message() -> None:
     assert data_message.sequence == 0
     assert data_message.log_time == 1
     assert data_message.publish_time == 1
-    assert data_message.data == serialize_message(Example(5))
+    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    assert message_serializer is not None
+    assert data_message.data == message_serializer.serialize_message(Example(5))
 
     crc_data_end = reader.get_crc()
     reader.clear_crc()
@@ -128,6 +139,7 @@ def test_add_channel_and_write_message() -> None:
     # Check the summary schema
     summary_schema_start = reader.tell()
     summary_schema = McapRecordParser.parse_schema(reader)
+    assert summary_schema is not None
     assert summary_schema == data_schema
 
     # Check the summary channel
