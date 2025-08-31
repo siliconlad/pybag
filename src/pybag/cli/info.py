@@ -2,14 +2,17 @@ import argparse
 from datetime import datetime
 from pathlib import Path
 
+from rich.columns import Columns
 from rich.console import Console
+from rich.layout import Layout
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rich.layout import Layout
-from rich.columns import Columns
 
-from pybag.mcap.record_reader import McapRecordReaderFactory, BaseMcapRecordReader
+from pybag.mcap.record_reader import (
+    BaseMcapRecordReader,
+    McapRecordReaderFactory
+)
 
 
 def format_duration(nanoseconds: int) -> str:
@@ -32,6 +35,15 @@ def format_timestamp(nanoseconds: int) -> str:
     return datetime.fromtimestamp(seconds).strftime("%Y-%m-%d %H:%M:%S")
 
 
+def format_file_size(bytes_size: int) -> str:
+    """Format file size in human readable format."""
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if bytes_size < 1024:
+            return f"{bytes_size:.1f} {unit}" if bytes_size != int(bytes_size) else f"{int(bytes_size)} {unit}"
+        bytes_size /= 1024
+    return f"{bytes_size:.1f} PB"
+
+
 def format_frequency(message_count: int, duration_ns: int) -> str:
     """Calculate and format message frequency."""
     if duration_ns == 0:
@@ -51,15 +63,16 @@ def create_file_info_panel(reader: BaseMcapRecordReader, file_path: Path) -> Pan
     """Create a panel with basic file information."""
     stats = reader.get_statistics()
     duration = stats.message_end_time - stats.message_start_time
+    file_size = file_path.stat().st_size
 
     info_text = Text()
     info_text.append(f"File: {file_path.name}\n", style="bold")
-    info_text.append(f"Size: {file_path.stat().st_size:,} bytes\n")
+    info_text.append(f"Size: {format_file_size(file_size)}\n")
     info_text.append(f"Duration: {format_duration(duration)}\n")
     info_text.append(f"Start: {format_timestamp(stats.message_start_time)}\n")
     info_text.append(f"End: {format_timestamp(stats.message_end_time)}")
 
-    return Panel(info_text, title="File Information", border_style="blue")
+    return Panel(info_text, title="File Information", border_style="dim")
 
 
 def create_summary_panel(reader: BaseMcapRecordReader) -> Panel:
@@ -67,51 +80,92 @@ def create_summary_panel(reader: BaseMcapRecordReader) -> Panel:
     stats = reader.get_statistics()
 
     summary_text = Text()
-    summary_text.append(f"Messages: {stats.message_count:,}\n", style="bold green")
-    summary_text.append(f"Topics: {stats.channel_count}\n", style="bold cyan")
-    summary_text.append(f"Schemas: {stats.schema_count}\n", style="bold yellow")
-    summary_text.append(f"Chunks: {stats.chunk_count}\n")
-    summary_text.append(f"Attachments: {stats.attachment_count}\n")
+    summary_text.append(f"Messages: {stats.message_count:,}   ", style="bold")
+    summary_text.append(f"Topics: {stats.channel_count}   ")
+    summary_text.append(f"Schemas: {stats.schema_count}\n")
+    summary_text.append(f"Chunks: {stats.chunk_count}   ")
+    summary_text.append(f"Attachments: {stats.attachment_count}   ")
     summary_text.append(f"Metadata: {stats.metadata_count}")
 
-    return Panel(summary_text, title="Summary", border_style="green")
+    return Panel(summary_text, title="Summary", border_style="dim")
 
 
 def create_topics_table(reader: BaseMcapRecordReader) -> Table:
     """Create a table with topic information."""
-    table = Table(title="Topics")
-    table.add_column("Topic", style="cyan", no_wrap=True)
-    table.add_column("Messages", justify="right", style="green")
-    table.add_column("Frequency", justify="right", style="yellow")
+    from rich.box import SIMPLE
+    table = Table(show_header=True, header_style="bold", box=SIMPLE, border_style="dim")
+    table.add_column("Topic", no_wrap=True, justify="center")
+    table.add_column("Messages", justify="center")
+    table.add_column("Frequency", justify="center")
+    table.add_column("Type", no_wrap=True, justify="center")
 
     stats = reader.get_statistics()
     duration = stats.message_end_time - stats.message_start_time
     topics = reader.get_channels()
+    schemas = reader.get_schemas()
 
-    for channel_id, channel in topics.items():
-        message_count = stats.channel_message_counts[channel_id]
+    # Sort topics by message count (descending)
+    sorted_topics = sorted(
+        topics.items(),
+        key=lambda x: stats.channel_message_counts.get(x[0], 0),
+        reverse=True
+    )
+
+    for channel_id, channel in sorted_topics:
+        message_count = stats.channel_message_counts.get(channel_id, 0)
         frequency = format_frequency(message_count, duration)
-        table.add_row(channel.topic, f"{message_count:,}", frequency)
+
+        # Get schema name if available
+        schema_name = "Unknown"
+        if channel.schema_id in schemas:
+            schema_name = schemas[channel.schema_id].name
+
+        table.add_row(
+            channel.topic,
+            f"{message_count:,}",
+            frequency,
+            schema_name
+        )
 
     return table
 
 
 def create_schemas_table(reader: BaseMcapRecordReader) -> Table:
     """Create a table with schema information."""
-    table = Table(title="Schemas")
+    table = Table(show_header=True, header_style="bold", box=None, border_style="dim")
     table.add_column("ID", justify="right", style="cyan")
     table.add_column("Name", style="green")
-    table.add_column("Encoding", style="yellow")
-    table.add_column("Size", justify="right", style="magenta")
+    table.add_column("Encoding")
+    table.add_column("Size", justify="right")
+    table.add_column("Topics", justify="right")
 
     schemas = reader.get_schemas()
+    channels = reader.get_channels()
 
-    for schema_id, schema in schemas.items():
+    # Count how many channels use each schema
+    schema_usage = {}
+    for channel in channels.values():
+        schema_id = channel.schema_id
+        schema_usage[schema_id] = schema_usage.get(schema_id, 0) + 1
+
+    # Sort schemas by usage (descending), then by name
+    sorted_schemas = sorted(
+        schemas.items(),
+        key=lambda x: (schema_usage.get(x[0], 0), x[1].name),
+        reverse=True
+    )
+
+    for schema_id, schema in sorted_schemas:
+        usage_count = schema_usage.get(schema_id, 0)
+        size_formatted = format_file_size(len(schema.data))
+        usage_text = str(usage_count)
+
         table.add_row(
             str(schema_id),
             schema.name,
             schema.encoding,
-            f"{len(schema.data)} bytes"
+            size_formatted,
+            usage_text
         )
 
     return table
@@ -128,28 +182,51 @@ def info_command(args: argparse.Namespace) -> None:
 
     try:
         reader = McapRecordReaderFactory.from_file(file_path)
+        stats = reader.get_statistics()
+        header = reader.get_header()
+        duration = stats.message_end_time - stats.message_start_time
+        file_size = file_path.stat().st_size
 
-        # Create layout
-        layout = Layout()
-        layout.split_column(
-            Layout(name="top", size=6),
-            Layout(name="middle", size=8),
-            Layout(name="bottom")
-        )
+        # Print clean title
+        console.print(f"\n[bold blue]{file_path.name}[/bold blue]\n")
 
-        # Split top row for file info and summary
-        layout["top"].split_row(
-            Layout(create_file_info_panel(reader, file_path), name="file_info"),
-            Layout(create_summary_panel(reader), name="summary")
-        )
+        # File properties
+        file_info = Text()
+        file_info.append("Size: ", style="dim")
+        file_info.append(f"{format_file_size(file_size)}")
+        file_info.append("  Duration: ", style="dim")
+        file_info.append(f"{format_duration(duration)}")
+        if header.profile:
+            file_info.append("  Profile: ", style="dim")
+            file_info.append(header.profile, style="cyan")
+        console.print(file_info)
 
-        # Split bottom for topics and schemas
-        layout["bottom"].split_row(
-            Layout(create_topics_table(reader), name="topics"),
-            Layout(create_schemas_table(reader), name="schemas")
-        )
+        # Content summary
+        content_info = Text()
+        content_info.append("Messages: ", style="dim")
+        content_info.append(f"{stats.message_count:,}", style="bold")
+        content_info.append("  Topics: ", style="dim")
+        content_info.append(f"{stats.channel_count}")
+        content_info.append("  Schemas: ", style="dim")
+        content_info.append(f"{stats.schema_count}")
+        content_info.append("  Chunks: ", style="dim")
+        content_info.append(f"{stats.chunk_count}")
+        console.print(content_info)
 
-        console.print(layout)
+        # Time range section
+        console.print()
+        console.print("[dim]Time Range:[/dim]")
+        console.print(f"  {format_timestamp(stats.message_start_time)} → {format_timestamp(stats.message_end_time)}")
+        console.print(f"  [dim]{stats.message_start_time} → {stats.message_end_time} ns[/dim]")
+
+        # Topics section
+        console.print()
+        if stats.channel_count == 0:
+            console.print("[dim]Topics: none[/dim]")
+        else:
+            console.print("[dim]Topics:[/dim]")
+            topics_table = create_topics_table(reader)
+            console.print(topics_table)
 
     except Exception as e:
         console.print(f"[bold red]Error reading MCAP file:[/bold red] {e}")
