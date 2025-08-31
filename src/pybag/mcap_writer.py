@@ -1,14 +1,16 @@
 """Utilities for writing MCAP files."""
 
 import logging
+import zlib
 from pathlib import Path
 from typing import Any
 
 from pybag import __version__
-from pybag.io.raw_writer import BaseWriter, CrcWriter, FileWriter
+from pybag.io.raw_writer import BaseWriter, BytesWriter, CrcWriter, FileWriter
 from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     ChannelRecord,
+    ChunkRecord,
     DataEndRecord,
     HeaderRecord,
     MessageRecord,
@@ -25,8 +27,13 @@ logger = logging.getLogger(__name__)
 class McapFileWriter:
     """High level writer for producing MCAP files."""
 
-    def __init__(self, writer: BaseWriter) -> None:
+    def __init__(self, writer: BaseWriter, *, chunk_size: int | None = None) -> None:
         self._writer = CrcWriter(writer)
+        self._chunk_size = chunk_size
+        self._chunk_buffer: BytesWriter | None = None
+        self._chunk_start_time: int | None = None
+        self._chunk_end_time: int | None = None
+        self._chunk_count = 0
 
         self._next_schema_id = 1  # Schema ID must be non-zero
         self._next_channel_id = 1
@@ -54,10 +61,10 @@ class McapFileWriter:
             raise ValueError(f"Unknown encoding type: {self._profile}")
 
     @classmethod
-    def open(cls, file_path: str | Path) -> "McapFileWriter":
+    def open(cls, file_path: str | Path, *, chunk_size: int | None = None) -> "McapFileWriter":
         """Create a writer backed by a file on disk."""
 
-        return cls(FileWriter(file_path))
+        return cls(FileWriter(file_path), chunk_size=chunk_size)
 
     def add_channel(self, topic: str, channel_type: type) -> int:
         """Add a channel to the MCAP output.
@@ -131,14 +138,45 @@ class McapFileWriter:
             publish_time=timestamp,
             data=self._message_serializer.serialize_message(message),
         )
-        McapRecordWriter.write_message(self._writer, record)
+
+        if self._chunk_size is None:
+            McapRecordWriter.write_message(self._writer, record)
+        else:
+            if self._chunk_buffer is None:
+                self._chunk_buffer = BytesWriter()
+                self._chunk_start_time = timestamp
+            self._chunk_end_time = timestamp
+            McapRecordWriter.write_message(self._chunk_buffer, record)
+            if self._chunk_buffer.size() >= self._chunk_size:
+                self._flush_chunk()
 
         self._message_count += 1
         self._channel_message_counts[channel_id] += 1
         self._message_start_time = min(self._message_start_time or timestamp, timestamp)
         self._message_end_time = max(self._message_end_time or timestamp, timestamp)
 
+    def _flush_chunk(self) -> None:
+        if self._chunk_buffer is None or self._chunk_buffer.size() == 0:
+            return
+        records = self._chunk_buffer.as_bytes()
+        chunk = ChunkRecord(
+            message_start_time=self._chunk_start_time or 0,
+            message_end_time=self._chunk_end_time or 0,
+            uncompressed_size=len(records),
+            uncompressed_crc=zlib.crc32(records),
+            compression="",
+            records=records,
+        )
+        McapRecordWriter.write_chunk(self._writer, chunk)
+        self._chunk_count += 1
+        self._chunk_buffer = None
+        self._chunk_start_time = None
+        self._chunk_end_time = None
+
     def close(self) -> None:
+        if self._chunk_size is not None:
+            self._flush_chunk()
+
         # Data end record
         data_end = DataEndRecord(data_section_crc=self._writer.get_crc())
         McapRecordWriter.write_data_end(self._writer, data_end)
@@ -166,7 +204,7 @@ class McapFileWriter:
             channel_count=len(self._channel_records),
             attachment_count=0,
             metadata_count=0,
-            chunk_count=0,
+            chunk_count=self._chunk_count,
             message_start_time=self._message_start_time or 0,
             message_end_time=self._message_end_time or 0,
             channel_message_counts=self._channel_message_counts,
