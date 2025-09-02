@@ -1,5 +1,5 @@
 [project]
-name = "pybag"
+name = "pybag-sdk"
 version = "0.1.0"
 description = "A Python library to work with bag files without ROS."
 readme = "README.md"
@@ -34,3 +34,6 @@ multi_line_output = 3
 [tool.pytest.ini_options]
 addopts = "--cov=pybag --benchmark-sort=mean"
 testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pybag"]
