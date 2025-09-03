@@ -227,6 +227,14 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         """Close the MCAP file and release all resources."""
         self._file.close()
 
+    # Context Managers
+
+    def __enter__(self) -> 'McapRecordRandomAccessReader':
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
     # Getters for records
 
     def get_header(self) -> HeaderRecord:
