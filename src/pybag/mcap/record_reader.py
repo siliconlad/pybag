@@ -173,6 +173,10 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         self._version = McapRecordParser.parse_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
 
+        # Parse and store header
+        self._header = McapRecordParser.parse_header(self._file)
+        logger.debug(f'MCAP profile: {self._header.profile}')
+
         footer = self.get_footer()
 
         # Summary section start
@@ -226,6 +230,10 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
     def close(self) -> None:
         """Close the MCAP file and release all resources."""
         self._file.close()
+
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
+        return self._header
 
     # Getters for records
 

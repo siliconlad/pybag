@@ -12,6 +12,7 @@ pybag = "pybag.cli.main:main"
 [project.optional-dependencies]
 zstd = ["zstandard>=0.23.0"]
 lz4 = ["lz4>=4.4.3"]
+cli = ["rich>=13.7.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,6 +27,7 @@ test = [
     "mcap-ros2-support>=0.5.5",
     "rosbags>=0.10.10",
     "numpy>=2.2.3",
+    "pybag[cli]",
 ]
 
 [tool.isort]
