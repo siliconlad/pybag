@@ -3,7 +3,7 @@
 import logging
 import zlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pybag import __version__
 from pybag.io.raw_writer import BaseWriter, BytesWriter, CrcWriter, FileWriter
@@ -34,18 +34,12 @@ class McapFileWriter:
         writer: BaseWriter,
         *,
         chunk_size: int | None = None,
-        chunk_compression: str | None = None,
+        chunk_compression: Literal["zlib"] | None = None,
     ) -> None:
         self._writer = CrcWriter(writer)
+        self._chunk_count = 0
         self._chunk_size = chunk_size
         self._chunk_compression = chunk_compression or ""
-        self._current_chunk_buffer: BytesWriter | None = None
-        self._current_chunk_start_time: int | None = None
-        self._current_chunk_end_time: int | None = None
-        self._chunk_count = 0
-        self._chunk_indexes: list[ChunkIndexRecord] = []
-        self._message_index_records: list[dict[int, MessageIndexRecord]] = []
-        self._current_message_index: dict[int, list[tuple[int, int]]] = {}
 
         self._next_schema_id = 1  # Schema ID must be non-zero
         self._next_channel_id = 1
@@ -61,6 +55,12 @@ class McapFileWriter:
         self._message_end_time: int | None = None
         self._channel_message_counts: dict[int, int] = {}
 
+        self._current_chunk_buffer: BytesWriter = BytesWriter()
+        self._current_chunk_start_time: int | None = None
+        self._current_chunk_end_time: int | None = None
+        self._current_message_index: dict[int, list[tuple[int, int]]] = {}
+        self._chunk_indexes: list[ChunkIndexRecord] = []
+
         # Write the start of the file
         # TODO: Support different profiles
         McapRecordWriter.write_magic_bytes(self._writer)
@@ -72,15 +72,30 @@ class McapFileWriter:
         if self._message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
 
+    def __enter__(self) -> "McapFileWriter":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.close()
+
     @classmethod
     def open(
         cls,
         file_path: str | Path,
         *,
         chunk_size: int | None = None,
-        chunk_compression: str | None = None,
+        chunk_compression: Literal["zlib"] | None = None,
     ) -> "McapFileWriter":
-        """Create a writer backed by a file on disk."""
+        """Create a writer backed by a file on disk.
+
+        Args:
+            file_path: The path to the file to write to.
+            chunk_size: The size of the chunk to write to in bytes.
+            chunk_compression: The compression to use for the chunk.
+
+        Returns:
+            A writer backed by a file on disk.
+        """
 
         return cls(
             FileWriter(file_path),
@@ -161,65 +176,62 @@ class McapFileWriter:
             data=self._message_serializer.serialize_message(message),
         )
 
-        if self._chunk_size is None:
-            McapRecordWriter.write_message(self._writer, record)
-        else:
-            if self._current_chunk_buffer is None:
-                self._current_chunk_buffer = BytesWriter()
+        if self._chunk_size is not None:
             if self._current_chunk_start_time is None:
                 self._current_chunk_start_time = timestamp
-                self._current_message_index = {}
-            self._current_chunk_end_time = timestamp
+            self._current_chunk_end_time = max(self._current_chunk_end_time or timestamp, timestamp)
             offset = self._current_chunk_buffer.size()
             McapRecordWriter.write_message(self._current_chunk_buffer, record)
             self._current_message_index.setdefault(channel_id, []).append((timestamp, offset))
             if self._current_chunk_buffer.size() >= self._chunk_size:
                 self._flush_chunk()
+        else:
+            McapRecordWriter.write_message(self._writer, record)
 
+        # Keep track of statistics
         self._message_count += 1
         self._channel_message_counts[channel_id] += 1
         self._message_start_time = min(self._message_start_time or timestamp, timestamp)
         self._message_end_time = max(self._message_end_time or timestamp, timestamp)
 
+    def _compress_chunk(self, records: bytes) -> bytes:
+        if self._chunk_compression == "zlib":
+            return zlib.compress(records)
+        elif self._chunk_compression == "":
+            return records
+        raise ValueError(f"Unsupported chunk compression: {self._chunk_compression}")
+
     def _flush_chunk(self) -> None:
-        if self._current_chunk_buffer is None or self._current_chunk_buffer.size() == 0:
-            return
         records = self._current_chunk_buffer.as_bytes()
-        if self._chunk_compression:
-            if self._chunk_compression == "zlib":
-                compressed_records = zlib.compress(records)
-            else:
-                raise ValueError(f"Unsupported chunk compression: {self._chunk_compression}")
-            compression = self._chunk_compression
-            stored_records = compressed_records
-        else:
-            compression = ""
-            stored_records = records
         chunk = ChunkRecord(
             message_start_time=self._current_chunk_start_time or 0,
             message_end_time=self._current_chunk_end_time or 0,
             uncompressed_size=len(records),
             uncompressed_crc=zlib.crc32(records),
-            compression=compression,
-            records=stored_records,
+            compression=self._chunk_compression,
+            records=self._compress_chunk(records),
         )
         chunk_start_offset = self._writer.tell()
         McapRecordWriter.write_chunk(self._writer, chunk)
         chunk_length = self._writer.tell() - chunk_start_offset
-        self._message_index_records.append(
-            {
-                cid: MessageIndexRecord(channel_id=cid, records=idx)
-                for cid, idx in self._current_message_index.items()
-            }
-        )
+
+        # Write the message index records for the chunk
+        message_index_offsets = {}
+        message_index_start_offset = self._writer.tell()
+        for cid, records in self._current_message_index.items():
+            message_index_offsets[cid] = self._writer.tell()
+            message_index_record = MessageIndexRecord(channel_id=cid, records=records)
+            McapRecordWriter.write_message_index(self._writer, message_index_record)
+        message_index_length = self._writer.tell() - message_index_start_offset
+
         self._chunk_indexes.append(
             ChunkIndexRecord(
                 message_start_time=chunk.message_start_time,
                 message_end_time=chunk.message_end_time,
                 chunk_start_offset=chunk_start_offset,
                 chunk_length=chunk_length,
-                message_index_offsets={},
-                message_index_length=0,
+                message_index_offsets=message_index_offsets,
+                message_index_length=message_index_length,
                 compression=chunk.compression,
                 compressed_size=len(chunk.records),
                 uncompressed_size=chunk.uncompressed_size,
@@ -255,14 +267,6 @@ class McapFileWriter:
         channel_group_length = self._writer.tell() - channel_group_start
 
         # Message index and chunk index records
-        for chunk_index, message_indexes in zip(self._chunk_indexes, self._message_index_records):
-            chunk_message_index_start = self._writer.tell()
-            offsets: dict[int, int] = {}
-            for channel_id, record in message_indexes.items():
-                offsets[channel_id] = self._writer.tell()
-                McapRecordWriter.write_message_index(self._writer, record)
-            chunk_index.message_index_offsets = offsets
-            chunk_index.message_index_length = self._writer.tell() - chunk_message_index_start
         chunk_index_group_start = self._writer.tell()
         for record in self._chunk_indexes:
             McapRecordWriter.write_chunk_index(self._writer, record)
@@ -334,9 +338,3 @@ class McapFileWriter:
 
         # Close the file
         self._writer.close()
-
-    def __enter__(self) -> "McapFileWriter":
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
