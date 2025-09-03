@@ -24,7 +24,7 @@ def test_read_multiple_topics_and_patterns():
 
         mcap_file = _find_mcap_file(temp_dir)
         reader = McapFileReader.from_file(mcap_file)
-        messages = list(reader.messages(topics=['/pose/*', '/cmd_vel']))
+        messages = list(reader.messages(['/pose/*', '/cmd_vel']))
 
         assert [m.log_time for m in messages] == [0, 1]
         assert [m.data.data for m in messages] == ['pose', 'cmd']

@@ -73,16 +73,15 @@ class McapFileReader:
 
     def messages(
         self,
-        topic: str | list[str] | None = None,
-        topics: list[str] | None = None,
+        topics: str | list[str] | None = None,
         start_time: float | None = None,
         end_time: float | None = None,
     ) -> Generator[DecodedMessage, None, None]:
         """Iterate over messages in the MCAP file.
 
         Args:
-            topic: Single topic or pattern to filter by. Deprecated, use ``topics`` instead.
-            topics: List of topics or glob patterns to filter by.
+            topics: Topic or list of topics/glob patterns to filter by. If ``None``,
+                all topics are returned.
             start_time: Start time to filter by. If ``None``, start from the beginning of the
                 file.
             end_time: End time to filter by. If ``None``, read to the end of the file.
@@ -91,45 +90,27 @@ class McapFileReader:
             An iterator over :class:`DecodedMessage` objects.
         """
 
-        if topics is None:
-            if topic is None:
-                raise McapUnknownTopicError('No topics provided')
-            topics = [topic] if isinstance(topic, str) else list(topic)
-        else:
-            if topic is not None:
-                raise ValueError('Specify either "topic" or "topics", not both')
-
         import fnmatch
+
         channel_map = {c.topic: cid for cid, c in self._reader.get_channels().items()}
-        channel_ids: set[int] = set()
-        for pattern in topics:
-            matched = fnmatch.filter(channel_map.keys(), pattern)
-            if not matched:
-                raise McapUnknownTopicError(f'Topic {pattern} not found in MCAP file')
-            channel_ids.update(channel_map[m] for m in matched)
+        if topics is None:
+            channel_ids = set(channel_map.values())
+        else:
+            patterns = [topics] if isinstance(topics, str) else list(topics)
+            channel_ids: set[int] = set()
+            for pattern in patterns:
+                matched = fnmatch.filter(channel_map.keys(), pattern)
+                if not matched:
+                    raise McapUnknownTopicError(f'Topic {pattern} not found in MCAP file')
+                channel_ids.update(channel_map[m] for m in matched)
 
-        import heapq
-
-        generators = [
-            self._reader.get_messages(cid, start_time, end_time)
-            for cid in sorted(channel_ids)
-        ]
-        heap: list[tuple[int, int, Any, Any]] = []
-        for idx, gen in enumerate(generators):
-            try:
-                msg = next(gen)
-            except StopIteration:
-                continue
-            heapq.heappush(heap, (msg.log_time, idx, msg, gen))
-
-        while heap:
-            log_time, idx, message, gen = heapq.heappop(heap)
+        for message in self._reader.get_messages(channel_ids, start_time, end_time):
             channel_id = message.channel_id
             message_deserializer = self._message_deserializer
             if message_deserializer is None:
                 message_deserializer = MessageDeserializerFactory.from_message(
                     self._reader.get_channel(channel_id),
-                    self._reader.get_message_schema(message)
+                    self._reader.get_message_schema(message),
                 )
             if message_deserializer is None:
                 raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
@@ -137,23 +118,17 @@ class McapFileReader:
             yield DecodedMessage(
                 channel_id,
                 message.sequence,
-                log_time,
+                message.log_time,
                 message.publish_time,
                 message_deserializer.deserialize_message(
                     message,
-                    self._reader.get_message_schema(message)
-                )
+                    self._reader.get_message_schema(message),
+                ),
             )
-
-            try:
-                next_msg = next(gen)
-            except StopIteration:
-                continue
-            heapq.heappush(heap, (next_msg.log_time, idx, next_msg, gen))
 
 
 if __name__ == '__main__':
     import json
     reader = McapFileReader.from_file(Path('/pybag/mcaps/pose_with_covariance.mcap'))
-    for msg in reader.messages(topic='/pose_with_covariance'):
+    for msg in reader.messages('/pose_with_covariance'):
         print(json.dumps(msg.data, indent=4, sort_keys=True))

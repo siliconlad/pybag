@@ -2,7 +2,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterable
 
 from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
@@ -152,7 +152,7 @@ class BaseMcapRecordReader(ABC):
     @abstractmethod
     def get_messages(
         self,
-        channel_id: int,
+        channel_ids: int | Iterable[int] | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
@@ -447,47 +447,47 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     def get_messages(
         self,
-        channel_id: int,
+        channel_ids: int | Iterable[int] | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
-        """
-        Get all messages from a given channel.
+        """Get messages from the MCAP file, optionally filtering by channel IDs."""
+        if isinstance(channel_ids, int):
+            channel_ids = [channel_ids]
+        elif channel_ids is not None:
+            channel_ids = list(channel_ids)
 
-        If the start and end timestamps are not provided, all messages in the channel are returned.
-
-        Args:
-            channel_id: The ID of the channel.
-            start_timestamp: The start timestamp to filter by. If None, no filtering is done.
-            end_timestamp: The end timestamp to filter by. If None, no filtering is done.
-
-        Returns:
-            A generator of MessageRecord objects.
-        """
-        chunk_indexes = self.get_chunk_indexes(channel_id)
+        chunk_indexes = self.get_chunk_indexes()
         for chunk_index in sorted(chunk_indexes, key=lambda x: x.message_start_time):
-            # Skip chunk that do not match the timestamp range
+            # Skip chunks outside the time range
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
                 continue
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
                 continue
 
-            # Get the message index for the chunk
-            message_index = self.get_message_index(chunk_index, channel_id)
-            if message_index is None:
+            if channel_ids is None:
+                selected = list(chunk_index.message_index_offsets.keys())
+            else:
+                selected = [cid for cid in channel_ids if cid in chunk_index.message_index_offsets]
+            if not selected:
                 continue
 
-            # Read all messages in the chunk
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for timestamp, offset in sorted(message_index.records, key=lambda x: x[0]):
-                # Skip messages that do not match the timestamp range
-                if start_timestamp is not None and timestamp < start_timestamp:
-                    continue
-                if end_timestamp is not None and timestamp > end_timestamp:
-                    continue
 
-                # Read the message
+            records: list[tuple[int, int]] = []
+            for cid in selected:
+                message_index = self.get_message_index(chunk_index, cid)
+                if message_index is None:
+                    continue
+                for timestamp, offset in message_index.records:
+                    if start_timestamp is not None and timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp > end_timestamp:
+                        continue
+                    records.append((timestamp, offset))
+
+            for timestamp, offset in sorted(records, key=lambda x: x[0]):
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
