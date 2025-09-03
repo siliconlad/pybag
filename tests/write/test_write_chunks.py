@@ -13,7 +13,7 @@ from pybag.mcap_writer import McapFileWriter
 def test_chunk_roundtrip() -> None:
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "data.mcap"
-        with McapFileWriter.open(path, chunk_size=1) as writer:
+        with McapFileWriter.open(path, chunk_size=1, chunk_compression="zlib") as writer:
             writer.write_message("/pybag", 0, std_msgs.String(data="a"))
             writer.write_message("/pybag", 1, std_msgs.String(data="b"))
         with open(path, "rb") as f:
@@ -24,3 +24,4 @@ def test_chunk_roundtrip() -> None:
         random_reader.close()
     assert msgs == ["a", "b"]
     assert len(chunk_indexes) == 2
+    assert all(c.compression == "zlib" for c in chunk_indexes)
