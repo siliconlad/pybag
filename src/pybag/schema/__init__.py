@@ -20,6 +20,8 @@ PRIMITIVE_TYPE_MAP = {
     'uint32': int,
     'int64': int,
     'uint64': int,
+    'time': int,
+    'duration': int,
 }
 STRING_TYPE_MAP = {
     'string': str,
