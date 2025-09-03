@@ -4,12 +4,16 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from mcap.reader import make_reader
+from mcap_ros2.decoder import DecoderFactory
 
 import pybag
+import pybag.ros2.humble.std_msgs as std_msgs
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
-from pybag.io.raw_reader import BytesReader, CrcReader
+from pybag.io.raw_reader import BytesReader, CrcReader, FileReader
 from pybag.mcap.record_parser import McapRecordParser
+from pybag.mcap.record_reader import McapRecordRandomAccessReader
 from pybag.mcap.records import RecordType
 from pybag.mcap_writer import McapFileWriter
 from pybag.serialize import MessageSerializerFactory
@@ -198,3 +202,23 @@ def test_add_channel_and_write_message() -> None:
     # Check the summary magic bytes
     summary_version = McapRecordParser.parse_magic_bytes(reader)
     assert summary_version == version
+
+
+def test_chunk_roundtrip() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "data.mcap"
+        with McapFileWriter.open(path, chunk_size=1, chunk_compression="zlib") as writer:
+            writer.write_message("/pybag", 0, std_msgs.String(data="a"))
+            writer.write_message("/pybag", 1, std_msgs.String(data="b"))
+
+        # Check we can read the messages correctly
+        with open(path, "rb") as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            msgs = [m.data for _, _, _, m in reader.iter_decoded_messages()]
+            assert msgs == ["a", "b"]
+
+        # Check we can read the chunk indexes correctly
+        with McapRecordRandomAccessReader.from_file(path) as random_reader:
+            chunk_indexes = random_reader.get_chunk_indexes()
+            assert len(chunk_indexes) == 2
+            assert all(c.compression == "zlib" for c in chunk_indexes)
