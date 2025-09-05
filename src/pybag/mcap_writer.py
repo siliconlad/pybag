@@ -3,7 +3,7 @@
 import logging
 import zlib
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from pybag import __version__
 from pybag.io.raw_writer import BaseWriter, BytesWriter, CrcWriter, FileWriter
@@ -34,12 +34,13 @@ class McapFileWriter:
         writer: BaseWriter,
         *,
         chunk_size: int | None = None,
-        chunk_compression: Literal["zlib"] | None = None,
+        chunk_compression: Literal["lz4", "zstd"] | None = None,
     ) -> None:
         self._writer = CrcWriter(writer)
         self._chunk_count = 0
         self._chunk_size = chunk_size
         self._chunk_compression = chunk_compression or ""
+        self._compress_chunk = self._create_chunk_compressor()
 
         self._next_schema_id = 1  # Schema ID must be non-zero
         self._next_channel_id = 1
@@ -84,7 +85,7 @@ class McapFileWriter:
         file_path: str | Path,
         *,
         chunk_size: int | None = None,
-        chunk_compression: Literal["zlib"] | None = None,
+        chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
     ) -> "McapFileWriter":
         """Create a writer backed by a file on disk.
 
@@ -194,12 +195,17 @@ class McapFileWriter:
         self._message_start_time = min(self._message_start_time or timestamp, timestamp)
         self._message_end_time = max(self._message_end_time or timestamp, timestamp)
 
-    def _compress_chunk(self, records: bytes) -> bytes:
-        if self._chunk_compression == "zlib":
-            return zlib.compress(records)
+    def _create_chunk_compressor(self) -> Callable[[bytes], bytes]:
+        if self._chunk_compression == "lz4":
+            import lz4.frame
+            return lz4.frame.compress
+        elif self._chunk_compression == "zstd":
+            import zstandard as zstd
+            return zstd.ZstdCompressor().compress
         elif self._chunk_compression == "":
-            return records
-        raise ValueError(f"Unsupported chunk compression: {self._chunk_compression}")
+            return lambda x: x
+        else:
+            raise ValueError(f"Unsupported chunk compression: {self._chunk_compression}")
 
     def _flush_chunk(self) -> None:
         records = self._current_chunk_buffer.as_bytes()
@@ -238,13 +244,13 @@ class McapFileWriter:
             )
         )
         self._chunk_count += 1
-        self._current_chunk_buffer.close()
+        self._current_chunk_buffer.clear()
         self._current_chunk_start_time = None
         self._current_chunk_end_time = None
         self._current_message_index = {}
 
     def close(self) -> None:
-        if self._chunk_size is not None:
+        if self._current_chunk_buffer.size() > 0:
             self._flush_chunk()
 
         # Data end record

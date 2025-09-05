@@ -207,7 +207,7 @@ def test_add_channel_and_write_message() -> None:
 def test_chunk_roundtrip() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "data.mcap"
-        with McapFileWriter.open(path, chunk_size=1, chunk_compression="zlib") as writer:
+        with McapFileWriter.open(path, chunk_size=1, chunk_compression="lz4") as writer:
             writer.write_message("/pybag", 0, std_msgs.String(data="a"))
             writer.write_message("/pybag", 1, std_msgs.String(data="b"))
 
@@ -221,4 +221,4 @@ def test_chunk_roundtrip() -> None:
         with McapRecordRandomAccessReader.from_file(path) as random_reader:
             chunk_indexes = random_reader.get_chunk_indexes()
             assert len(chunk_indexes) == 2
-            assert all(c.compression == "zlib" for c in chunk_indexes)
+            assert all(c.compression == "lz4" for c in chunk_indexes)
