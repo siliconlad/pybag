@@ -87,7 +87,7 @@ def test_add_channel_and_write_message() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
-        with McapFileWriter.open(file_path) as mcap:
+        with McapFileWriter.open(file_path, profile="ros2") as mcap:
             channel_id = mcap.add_channel("/example", Example)
             mcap.write_message("/example", 1, Example(5))
         reader = CrcReader(BytesReader(file_path.read_bytes()))
@@ -198,3 +198,10 @@ def test_add_channel_and_write_message() -> None:
     # Check the summary magic bytes
     summary_version = McapRecordParser.parse_magic_bytes(reader)
     assert summary_version == version
+
+
+def test_invalid_profile() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "test.mcap"
+        with pytest.raises(ValueError, match="Unknown encoding type"):
+            McapFileWriter.open(file_path, profile="ros1")

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class McapFileWriter:
     """High level writer for producing MCAP files."""
 
-    def __init__(self, writer: BaseWriter) -> None:
+    def __init__(self, writer: BaseWriter, *, profile: str = "ros2") -> None:
         self._writer = CrcWriter(writer)
 
         self._next_schema_id = 1  # Schema ID must be non-zero
@@ -43,21 +43,20 @@ class McapFileWriter:
         self._channel_message_counts: dict[int, int] = {}
 
         # Write the start of the file
-        # TODO: Support different profiles
         McapRecordWriter.write_magic_bytes(self._writer)
-        header = HeaderRecord(profile="ros2", library=f"pybag {__version__}")
+        header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
         McapRecordWriter.write_header(self._writer, header)
 
-        self._profile = header.profile
+        self._profile = profile
         self._message_serializer = MessageSerializerFactory.from_profile(self._profile)
         if self._message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
 
     @classmethod
-    def open(cls, file_path: str | Path) -> "McapFileWriter":
+    def open(cls, file_path: str | Path, *, profile: str = "ros2") -> "McapFileWriter":
         """Create a writer backed by a file on disk."""
 
-        return cls(FileWriter(file_path))
+        return cls(FileWriter(file_path), profile=profile)
 
     def add_channel(self, topic: str, channel_type: type) -> int:
         """Add a channel to the MCAP output.
