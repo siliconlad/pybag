@@ -11,7 +11,7 @@ import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
-from pybag.io.raw_reader import BytesReader, CrcReader, FileReader
+from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.record_reader import McapRecordRandomAccessReader
 from pybag.mcap.records import RecordType
