@@ -208,7 +208,7 @@ def test_invalid_profile() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
         with pytest.raises(ValueError, match="Unknown encoding type"):
-            McapFileWriter.open(file_path, profile="ros1")
+            McapFileWriter.open(file_path, profile="invalid_profile")
 
 
 def test_chunk_roundtrip() -> None:
