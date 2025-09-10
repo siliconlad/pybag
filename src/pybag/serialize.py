@@ -30,6 +30,14 @@ class MessageSerializer:
         self._schema_encoder = schema_encoder
         self._message_encoder = message_encoder
 
+    @property
+    def schema_encoding(self) -> str:
+        return self._schema_encoder.encoding
+
+    @property
+    def message_encoding(self) -> str:
+        return self._message_encoder.encoding
+
     def _encode_field(
         self,
         encoder: MessageEncoder,

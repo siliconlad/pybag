@@ -131,7 +131,7 @@ class McapFileWriter:
                 schema_record = SchemaRecord(
                     id=schema_id,
                     name=channel_type.__msg_name__,
-                    encoding="ros2msg",
+                    encoding=self._message_serializer.schema_encoding,
                     data=self._message_serializer.serialize_schema(channel_type),
                 )
 
@@ -146,7 +146,7 @@ class McapFileWriter:
                 id=channel_id,
                 schema_id=schema_id,
                 topic=topic,
-                message_encoding="cdr",
+                message_encoding=self._message_serializer.message_encoding,
                 metadata={},
             )
             McapRecordWriter.write_channel(self._writer, channel_record)
