@@ -16,6 +16,7 @@ from pybag.schema.ros2msg import (
     Sequence,
     String
 )
+from pybag.types import Message
 
 
 class MessageSerializer:
@@ -96,7 +97,7 @@ class MessageSerializer:
     def _encode_message(
         self,
         encoder: MessageEncoder,
-        message: Any,
+        message: Message,
         schema: Schema,
         sub_schemas: dict[str, Schema],
     ) -> None:
@@ -109,7 +110,7 @@ class MessageSerializer:
                 continue
             raise ValueError(f"Unknown schema field type: {schema_field}")
 
-    def serialize_message(self, message: Any, *, little_endian: bool = True) -> bytes:
+    def serialize_message(self, message: Message, *, little_endian: bool = True) -> bytes:
         if not is_dataclass(message):  # pragma: no cover - defensive programming
             raise TypeError("Expected a dataclass instance")
         encoder = self._message_encoder(little_endian=little_endian)
@@ -119,7 +120,7 @@ class MessageSerializer:
         self._encode_message(encoder, message, schema, sub_schemas)
         return encoder.save()
 
-    def serialize_schema(self, schema: Any) -> bytes:
+    def serialize_schema(self, schema: type[Message]) -> bytes:
         return self._schema_encoder.encode(schema)
 
 

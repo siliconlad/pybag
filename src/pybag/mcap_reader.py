@@ -3,7 +3,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
@@ -77,6 +77,7 @@ class McapFileReader:
         topic: str,
         start_time: float | None = None,
         end_time: float | None = None,
+        filter: Callable[[DecodedMessage], bool] | None = None,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -85,6 +86,7 @@ class McapFileReader:
             topic: Topic to filter by.
             start_time: Start time to filter by. If None, start from the beginning of the file.
             end_time: End time to filter by. If None, read to the end of the file.
+            filter: Callable used to filter messages. If None, all messages are returned.
 
         Returns:
             An iterator over DecodedMessage objects.
@@ -103,7 +105,7 @@ class McapFileReader:
             if message_deserializer is None:
                 raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
 
-            yield DecodedMessage(
+            decoded = DecodedMessage(
                 message.channel_id,
                 message.sequence,
                 message.log_time,
@@ -111,8 +113,10 @@ class McapFileReader:
                 message_deserializer.deserialize_message(
                     message,
                     self._reader.get_message_schema(message)
-                )
+                ),
             )
+            if filter is None or filter(decoded):
+                yield decoded
 
     def close(self) -> None:
         """Close the MCAP reader and release all resources."""

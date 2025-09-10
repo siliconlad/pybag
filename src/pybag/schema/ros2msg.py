@@ -23,6 +23,7 @@ from pybag.schema import (
     Sequence,
     String
 )
+from pybag.types import Message
 
 logger = logging.getLogger(__name__)
 
@@ -248,16 +249,15 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
             return annotation.default_factory()
         return None
 
-    def _parse_message(self, message: Any) -> tuple[Schema, dict[str, Schema]]:
+    def _parse_message(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
         if not is_dataclass(message):
             raise TypeError("Expected a dataclass instance")
 
-        class_name = message.__msg_name__ if isinstance(message, type) else type(message).__msg_name__
+        cls = message if isinstance(message, type) else type(message)
+        class_name = cls.__msg_name__
 
         schema = Schema(class_name, {})
         sub_schemas: dict[str, Schema] = {}
-
-        cls = message if isinstance(message, type) else type(message)
 
         for field in fields(cls):
             if get_origin(field.type) is not Annotated:
@@ -344,7 +344,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         else:
             writer.write(f'{encoded_type} {field_name}\n'.encode('utf-8'))
 
-    def encode(self, message: Any) -> bytes:
+    def encode(self, message: Message | type[Message]) -> bytes:
         schema, sub_schemas = self._parse_message(message)
 
         writer = BytesWriter()
@@ -365,7 +365,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
 
         return writer.as_bytes()
 
-    def parse_schema(self, message: Any) -> tuple[Schema, dict[str, Schema]]:
+    def parse_schema(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
         return self._parse_message(message)
 
 
