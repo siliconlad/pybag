@@ -15,7 +15,7 @@ from pybag.schema import (
     SchemaConstant,
     SchemaField,
     Sequence,
-    String,
+    String
 )
 
 # Map primitive ROS2 types to struct format characters
