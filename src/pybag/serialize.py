@@ -32,11 +32,11 @@ class MessageSerializer:
 
     @property
     def schema_encoding(self) -> str:
-        return self._schema_encoder.encoding
+        return self._schema_encoder.encoding()
 
     @property
     def message_encoding(self) -> str:
-        return self._message_encoder.encoding
+        return self._message_encoder.encoding()
 
     def _encode_field(
         self,

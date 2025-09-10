@@ -94,9 +94,9 @@ class SchemaDecoder(ABC):
 
 
 class SchemaEncoder(ABC):
-    @property
+    @classmethod
     @abstractmethod
-    def encoding(self) -> str:
+    def encoding(cls) -> str:
         """The encoding to use for the schema."""
 
     @abstractmethod

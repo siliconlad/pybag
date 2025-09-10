@@ -201,8 +201,8 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
 
-    @property
-    def encoding(self) -> str:
+    @classmethod
+    def encoding(cls) -> str:
         return "ros2msg"
 
     def _extract_literal_int(self, literal_type: Any) -> int:
