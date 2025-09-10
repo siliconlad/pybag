@@ -103,6 +103,7 @@ class McapFileWriter:
 
         return cls(
             FileWriter(file_path),
+            profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
         )
