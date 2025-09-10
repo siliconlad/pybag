@@ -34,6 +34,7 @@ class McapFileWriter:
         self,
         writer: BaseWriter,
         *,
+        profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
     ) -> None:
@@ -64,12 +65,11 @@ class McapFileWriter:
         self._chunk_indexes: list[ChunkIndexRecord] = []
 
         # Write the start of the file
-        # TODO: Support different profiles
         McapRecordWriter.write_magic_bytes(self._writer)
-        header = HeaderRecord(profile="ros2", library=f"pybag {__version__}")
+        header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
         McapRecordWriter.write_header(self._writer, header)
 
-        self._profile = header.profile
+        self._profile = profile
         self._message_serializer = MessageSerializerFactory.from_profile(self._profile)
         if self._message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
@@ -85,6 +85,7 @@ class McapFileWriter:
         cls,
         file_path: str | Path,
         *,
+        profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
     ) -> "McapFileWriter":
@@ -92,6 +93,7 @@ class McapFileWriter:
 
         Args:
             file_path: The path to the file to write to.
+            profile: The profile to use for the MCAP file.
             chunk_size: The size of the chunk to write to in bytes.
             chunk_compression: The compression to use for the chunk.
 
@@ -101,6 +103,7 @@ class McapFileWriter:
 
         return cls(
             FileWriter(file_path),
+            profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
         )
@@ -128,7 +131,7 @@ class McapFileWriter:
                 schema_record = SchemaRecord(
                     id=schema_id,
                     name=channel_type.__msg_name__,
-                    encoding="ros2msg",
+                    encoding=self._message_serializer.schema_encoding,
                     data=self._message_serializer.serialize_schema(channel_type),
                 )
 
@@ -143,7 +146,7 @@ class McapFileWriter:
                 id=channel_id,
                 schema_id=schema_id,
                 topic=topic,
-                message_encoding="cdr",
+                message_encoding=self._message_serializer.message_encoding,
                 metadata={},
             )
             McapRecordWriter.write_channel(self._writer, channel_record)

@@ -94,6 +94,11 @@ class SchemaDecoder(ABC):
 
 
 class SchemaEncoder(ABC):
+    @classmethod
+    @abstractmethod
+    def encoding(cls) -> str:
+        """The encoding to use for the schema."""
+
     @abstractmethod
     def encode(self, schema: Schema) -> bytes:
         """Encode a schema into a bytes object."""

@@ -146,6 +146,10 @@ class CdrEncoder(MessageEncoder):
         endian_flag = 1 if self._is_little_endian else 0
         self._header = bytes([0x00, endian_flag, 0x00, 0x00])
 
+    @classmethod
+    def encoding(cls) -> str:
+        return "cdr"
+
     def encode(self, type_str: str, value: Any) -> None:
         """Encode ``value`` based on ``type_str``."""
         getattr(self, type_str)(value)

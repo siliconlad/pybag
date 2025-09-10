@@ -201,6 +201,10 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
 
+    @classmethod
+    def encoding(cls) -> str:
+        return "ros2msg"
+
     def _extract_literal_int(self, literal_type: Any) -> int:
         """Extract the value from a Literal type annotation."""
         if hasattr(literal_type, '__origin__') and literal_type.__origin__ is Literal:

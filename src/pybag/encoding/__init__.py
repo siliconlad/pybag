@@ -76,7 +76,12 @@ class MessageDecoder(ABC):
         ...
 
 
-class MessageEncoder:
+class MessageEncoder(ABC):
+    @classmethod
+    @abstractmethod
+    def encoding(cls) -> str:
+        """The encoding to use for the message."""
+
     @abstractmethod
     def encode(self, type_str: str, value: Any) -> None:
         ...
