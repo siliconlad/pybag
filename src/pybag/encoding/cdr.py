@@ -189,8 +189,7 @@ class CdrEncoder(MessageEncoder):
         return self
 
     def _flush(self) -> None:
-        size = struct.calcsize(self._loaded)
-        if size > 0:
+        if struct.calcsize(self._loaded) > 0:
             self._payload.write(struct.pack(self._loaded, *self._values))
         self._loaded = self._fmt
         self._values = []
@@ -207,45 +206,43 @@ class CdrEncoder(MessageEncoder):
     # Primitive encoders -------------------------------------------------
 
     def bool(self, value: bool) -> None:
-        self._align(1)._push("?", value)
+        self._align(1)._push('?', value)
 
     def int8(self, value: int) -> None:
-        fmt = "b"
-        self._align(1)._push(fmt, value)
+        self._align(1)._push('b', value)
 
     def uint8(self, value: int) -> None:
-        fmt = "B"
-        self._align(1)._push(fmt, value)
+        self._align(1)._push('B', value)
 
     def byte(self, value: bytes) -> None:
-        self._align(1)._push("c", value)
+        self._align(1)._push('c', value)
 
     def char(self, value: str) -> None:
-        self._align(1)._push("c", value.encode())
+        self._align(1)._push('c', value.encode())
 
     def int16(self, value: int) -> None:
-        self._align(2)._push("h", value)
+        self._align(2)._push('h', value)
 
     def uint16(self, value: int) -> None:
-        self._align(2)._push("H", value)
+        self._align(2)._push('H', value)
 
     def int32(self, value: int) -> None:
-        self._align(4)._push("i", value)
+        self._align(4)._push('i', value)
 
     def uint32(self, value: int) -> None:
-        self._align(4)._push("I", value)
+        self._align(4)._push('I', value)
 
     def int64(self, value: int) -> None:
-        self._align(8)._push("q", value)
+        self._align(8)._push('q', value)
 
     def uint64(self, value: int) -> None:
-        self._align(8)._push("Q", value)
+        self._align(8)._push('Q', value)
 
     def float32(self, value: float) -> None:
-        self._align(4)._push("f", value)
+        self._align(4)._push('f', value)
 
     def float64(self, value: float) -> None:
-        self._align(8)._push("d", value)
+        self._align(8)._push('d', value)
 
     def string(self, value: str) -> None:
         encoded = value.encode()
