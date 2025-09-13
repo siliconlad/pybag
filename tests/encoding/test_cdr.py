@@ -55,3 +55,38 @@ def test_encode_decode_sequence(little_endian: bool) -> None:
     # Decode the data
     decoder = CdrDecoder(encoder.save())
     assert decoder.sequence('int32').load()[0] == [1, 2, 3]
+
+
+def test_empty_sequence() -> None:
+    """Test that empty sequences don't corrupt batched operations.
+
+    This reproduces a bug where _last(0) returns the entire buffer due to
+    Python's -0 == 0 behavior, causing empty sequences to consume earlier
+    queued primitives.
+    """
+    # Encode: uint32(1), empty sequence, uint32(2)
+    encoder = CdrEncoder(little_endian=True)
+    encoder.encode('uint32', 1)
+    encoder.sequence('uint32', [])  # Empty sequence
+    encoder.encode('uint32', 2)
+
+    data = encoder.save()
+
+    decoder = CdrDecoder(data)
+    result = decoder.push('uint32').sequence('uint32').push('uint32').load()
+    assert result == (1, [], 2)
+
+
+def test_empty_array() -> None:
+    """Test that empty arrays don't corrupt batched operations."""
+    # Encode: uint32(1), empty array, uint32(2)
+    encoder = CdrEncoder(little_endian=True)
+    encoder.encode('uint32', 1)
+    encoder.array('uint32', [])  # Empty array
+    encoder.encode('uint32', 2)
+
+    data = encoder.save()
+
+    decoder = CdrDecoder(data)
+    result = decoder.push('uint32').array('uint32', 0).push('uint32').load()
+    assert result == (1, [], 2)

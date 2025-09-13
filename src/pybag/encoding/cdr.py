@@ -43,6 +43,9 @@ class CdrDecoder(MessageDecoder):
         self._buffer += data
         self._loaded = self._fmt
 
+        if size == 0:
+            return tuple()
+
         data = self._buffer[-size:]
         self._buffer = self._buffer[:-size]
 
