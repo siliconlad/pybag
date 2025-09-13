@@ -158,9 +158,14 @@ class CdrEncoder(MessageEncoder):
             little_endian: Whether the resulting CDR stream should be little endian.
         """
         self._is_little_endian = little_endian
+        self._fmt = "<" if self._is_little_endian else ">"
 
         # Writer used for the payload after the 4 byte encapsulation header.
         self._payload = BytesWriter()
+
+        # Store queued struct format string and values.
+        self._loaded = self._fmt
+        self._values: list[Any] = []
 
         # Store the encapsulation header.  The second byte contains the
         # endianness flag (1 for little endian, 0 for big endian).
@@ -171,83 +176,79 @@ class CdrEncoder(MessageEncoder):
     def encoding(cls) -> str:
         return "cdr"
 
+    def _align(self, size: int) -> "CdrEncoder":
+        loaded_size = struct.calcsize(self._loaded)
+        if (self._payload.tell() + loaded_size) % size > 0:
+            align = size - ((self._payload.tell() + loaded_size) % size)
+            self._loaded += "x" * align
+        return self
+
+    def _push(self, fmt: str, value: Any) -> "CdrEncoder":
+        self._loaded += fmt
+        self._values.append(value)
+        return self
+
+    def _flush(self) -> None:
+        if struct.calcsize(self._loaded) > 0:
+            self._payload.write(struct.pack(self._loaded, *self._values))
+        self._loaded = self._fmt
+        self._values = []
+
     def encode(self, type_str: str, value: Any) -> None:
         """Encode ``value`` based on ``type_str``."""
         getattr(self, type_str)(value)
 
     def save(self) -> bytes:
         """Return the encoded byte stream."""
+        self._flush()
         return self._header + self._payload.as_bytes()
 
     # Primitive encoders -------------------------------------------------
 
     def bool(self, value: bool) -> None:
-        self._payload.align(1)
-        self._payload.write(struct.pack("?", value))
+        self._align(1)._push('?', value)
 
     def int8(self, value: int) -> None:
-        self._payload.align(1)
-        fmt = "<b" if self._is_little_endian else ">b"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(1)._push('b', value)
 
     def uint8(self, value: int) -> None:
-        self._payload.align(1)
-        fmt = "<B" if self._is_little_endian else ">B"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(1)._push('B', value)
 
     def byte(self, value: bytes) -> None:
-        self._payload.align(1)
-        self._payload.write(value)
+        self._align(1)._push('c', value)
 
     def char(self, value: str) -> None:
-        self._payload.align(1)
-        fmt = "<c" if self._is_little_endian else ">c"
-        self._payload.write(struct.pack(fmt, value.encode()))
+        self._align(1)._push('c', value.encode())
 
     def int16(self, value: int) -> None:
-        self._payload.align(2)
-        fmt = "<h" if self._is_little_endian else ">h"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(2)._push('h', value)
 
     def uint16(self, value: int) -> None:
-        self._payload.align(2)
-        fmt = "<H" if self._is_little_endian else ">H"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(2)._push('H', value)
 
     def int32(self, value: int) -> None:
-        self._payload.align(4)
-        fmt = "<i" if self._is_little_endian else ">i"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(4)._push('i', value)
 
     def uint32(self, value: int) -> None:
-        self._payload.align(4)
-        fmt = "<I" if self._is_little_endian else ">I"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(4)._push('I', value)
 
     def int64(self, value: int) -> None:
-        self._payload.align(8)
-        fmt = "<q" if self._is_little_endian else ">q"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(8)._push('q', value)
 
     def uint64(self, value: int) -> None:
-        self._payload.align(8)
-        fmt = "<Q" if self._is_little_endian else ">Q"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(8)._push('Q', value)
 
     def float32(self, value: float) -> None:
-        self._payload.align(4)
-        fmt = "<f" if self._is_little_endian else ">f"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(4)._push('f', value)
 
     def float64(self, value: float) -> None:
-        self._payload.align(8)
-        fmt = "<d" if self._is_little_endian else ">d"
-        self._payload.write(struct.pack(fmt, value))
+        self._align(8)._push('d', value)
 
     def string(self, value: str) -> None:
         encoded = value.encode()
         # Write length (including null terminator)
         self.uint32(len(encoded) + 1)
+        self._flush()
         self._payload.write(encoded + b"\x00")
 
     # Container encoders -------------------------------------------------
