@@ -42,7 +42,7 @@ class MessageDeserializer:
             elif isinstance(field_schema, SchemaField):
                 # Handle primitive and string types
                 if isinstance(field_schema.type, (Primitive, String)):
-                    field[field_name] = message_decoder.parse(field_schema.type.type)
+                    field[field_name] = message_decoder.push(field_schema.type.type).load()[0]
 
                 # Handle arrays
                 elif isinstance(field_schema.type, Array):
@@ -50,7 +50,7 @@ class MessageDeserializer:
                     if isinstance(array_type.type, (Primitive, String)):
                         length = array_type.length
                         primitive_type = array_type.type
-                        field[field_name] = message_decoder.array(primitive_type.type, length)
+                        field[field_name] = message_decoder.array(primitive_type.type, length).load()[0]
                     elif isinstance(array_type.type, Complex):
                         complex_type = array_type.type
                         if complex_type.type in sub_schemas:
@@ -74,11 +74,11 @@ class MessageDeserializer:
                     sequence_type = field_schema.type
                     if isinstance(sequence_type.type, (Primitive, String)):
                         primitive_type = sequence_type.type
-                        field[field_name] = message_decoder.sequence(primitive_type.type)
+                        field[field_name] = message_decoder.sequence(primitive_type.type).load()[0]
                     elif isinstance(sequence_type.type, Complex):
                         complex_type = sequence_type.type
                         if complex_type.type in sub_schemas:
-                            length = message_decoder.uint32()
+                            length = message_decoder.uint32().load()[0]
                             sub_schema = sub_schemas[complex_type.type]
                             fields = [
                                 self._decode_field(
