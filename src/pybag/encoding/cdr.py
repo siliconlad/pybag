@@ -55,7 +55,10 @@ class CdrDecoder(MessageDecoder):
         getattr(self, type_str)()
         return self
 
-    def load(self) -> tuple[Any, ...]:
+    def load(self, *type_strs: str) -> tuple[Any, ...]:
+        for type_str in type_strs:
+            self.push(type_str)
+
         if (size := struct.calcsize(self._loaded)) > 0:
             self._buffer += struct.unpack(self._loaded, self._data.read(size))
         data = self._buffer

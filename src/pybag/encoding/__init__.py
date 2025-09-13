@@ -8,7 +8,7 @@ class MessageDecoder(ABC):
         ...
 
     @abstractmethod
-    def load(self) -> tuple[Any, ...]:
+    def load(self, *type_strs: str) -> tuple[Any, ...]:
         ...
 
     # Primitive parsers -------------------------------------------------

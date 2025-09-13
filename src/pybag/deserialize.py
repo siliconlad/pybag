@@ -1,7 +1,10 @@
+from typing import Callable
+
 from pybag.encoding import MessageDecoder
 from pybag.encoding.cdr import CdrDecoder
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.schema import SchemaDecoder
+from pybag.schema.compiler import compile_decoder
 from pybag.schema.ros2msg import (
     Array,
     Complex,
@@ -25,6 +28,7 @@ class MessageDeserializer:
     ):
         self._schema_decoder = schema_decoder
         self._message_decoder = message_decoder
+        self._compiled: dict[int, Callable[[MessageDecoder], type]] = {}
 
     def _decode_field(
         self,
@@ -115,10 +119,16 @@ class MessageDeserializer:
         return type(schema.name.replace('/', '.'), (), field)
 
     def deserialize_message(self, message: MessageRecord, schema: SchemaRecord) -> type:
-        """Deserialize a message using the provided schema."""
+        """Deserialize a message using the provided schema.
+
+        Schemas are compiled on first use to speed up subsequent decodes.
+        """
         message_decoder = self._message_decoder(message.data)
-        msg_schema, schema_msgs = self._schema_decoder.parse_schema(schema)
-        return self._decode_field(message_decoder, msg_schema, schema_msgs)
+        if (decoder := self._compiled.get(schema.id)) is None:
+            msg_schema, schema_msgs = self._schema_decoder.parse_schema(schema)
+            decoder = compile_decoder(msg_schema, schema_msgs)
+            self._compiled[schema.id] = decoder
+        return decoder(message_decoder)
 
 
 class MessageDeserializerFactory:
