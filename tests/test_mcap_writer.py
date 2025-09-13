@@ -52,19 +52,19 @@ def test_serialize_message_roundtrip(little_endian: bool) -> None:
 
     decoder = CdrDecoder(data)
     # integer
-    assert decoder.int32() == 42
+    assert decoder.int32().load()[0] == 42
     # text
-    assert decoder.string() == "hello"
+    assert decoder.string().load()[0] == "hello"
     # fixed
-    assert decoder.array("int32", 3) == [1, 2, 3]
+    assert decoder.array("int32", 3).load()[0] == [1, 2, 3]
     # dynamic
-    assert decoder.sequence("int32") == [4, 5]
+    assert decoder.sequence("int32").load()[0] == [4, 5]
     # sub
-    assert decoder.int32() == 7
+    assert decoder.int32().load()[0] == 7
     # sub_array
-    assert decoder.int32() == 1
-    assert decoder.int32() == 2
-    assert decoder.int32() == 3
+    assert decoder.int32().load()[0] == 1
+    assert decoder.int32().load()[0] == 2
+    assert decoder.int32().load()[0] == 3
 
 
 def test_serialize_message_endianness_diff() -> None:

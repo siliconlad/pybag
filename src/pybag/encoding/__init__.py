@@ -4,75 +4,79 @@ from typing import Any
 
 class MessageDecoder(ABC):
     @abstractmethod
-    def parse(self, type_str: str) -> Any:
+    def push(self, type_str: str) -> 'MessageDecoder':
+        ...
+
+    @abstractmethod
+    def load(self) -> tuple[Any, ...]:
         ...
 
     # Primitive parsers -------------------------------------------------
 
     @abstractmethod
-    def bool(self) -> bool:
+    def bool(self):
         ...
 
     @abstractmethod
-    def int8(self) -> int:
+    def int8(self):
         ...
 
     @abstractmethod
-    def uint8(self) -> int:
+    def uint8(self):
         ...
 
     @abstractmethod
-    def byte(self) -> bytes:
+    def byte(self):
         ...
 
     @abstractmethod
-    def char(self) -> str:
+    def char(self):
         ...
 
     @abstractmethod
-    def int16(self) -> int:
+    def int16(self):
         ...
 
     @abstractmethod
-    def uint16(self) -> int:
+    def uint16(self):
         ...
 
     @abstractmethod
-    def int32(self) -> int:
+    def int32(self):
         ...
 
     @abstractmethod
-    def uint32(self) -> int:
+    def uint32(self):
         ...
 
     @abstractmethod
-    def int64(self) -> int:
+    def int64(self):
         ...
 
     @abstractmethod
-    def uint64(self) -> int:
+    def uint64(self):
         ...
 
     @abstractmethod
-    def float32(self) -> float:
+    def float32(self):
         ...
 
     @abstractmethod
-    def float64(self) -> float:
+    def float64(self):
         ...
 
     @abstractmethod
-    def string(self) -> str:
+    def string(self):
         ...
 
     # Container parsers --------------------------------------------------
 
     @abstractmethod
-    def array(self, type: str, length: int) -> list:
+    def array(self, type: str, length: int):
         ...
 
     @abstractmethod
-    def sequence(self, type: str) -> list:
+    def sequence(self, type: str):
         ...
 
 

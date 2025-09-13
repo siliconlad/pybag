@@ -32,7 +32,7 @@ def test_encode_decode_all_primitive_types(little_endian: bool) -> None:
     decoder = CdrDecoder(data)
     for type_name, values in data_values:
         for v in values:
-            assert decoder.parse(type_name) == v
+            assert decoder.push(type_name).load()[0] == v
 
 
 @pytest.mark.parametrize('little_endian', [True, False])
@@ -43,7 +43,7 @@ def test_encode_decode_array(little_endian: bool) -> None:
 
     # Decode the data
     decoder = CdrDecoder(encoder.save())
-    assert decoder.array('int32', 3) == [1, 2, 3]
+    assert decoder.array('int32', 3).load()[0] == [1, 2, 3]
 
 
 @pytest.mark.parametrize('little_endian', [True, False])
@@ -54,4 +54,4 @@ def test_encode_decode_sequence(little_endian: bool) -> None:
 
     # Decode the data
     decoder = CdrDecoder(encoder.save())
-    assert decoder.sequence('int32') == [1, 2, 3]
+    assert decoder.sequence('int32').load()[0] == [1, 2, 3]
