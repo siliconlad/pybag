@@ -1,9 +1,9 @@
 """Compile a schema into an efficient message decoder."""
 from __future__ import annotations
 
-import builtins
 import re
 import struct
+from types import SimpleNamespace
 from typing import Callable
 
 from pybag.encoding import MessageDecoder
@@ -60,7 +60,7 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             f"def {func_name}(decoder):",
             f"{_TAB}fmt_prefix = '<' if decoder._is_little_endian else '>'",
             f"{_TAB}_data = decoder._data",
-            f"{_TAB}fields = {{}}",
+            f"{_TAB}obj = SimpleNamespace()",
         ]
         field_names: list[str] = []
         run_type: str | None = None
@@ -80,10 +80,10 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                 names = ", ".join(run_fields)
                 lines.append(f"{_TAB}{names} = struct.unpack(fmt_prefix + '{fmt}', _data.read({size * count}))")
                 for field in run_fields:
-                    lines.append(f"{_TAB}fields['{field}'] = {field}")
+                    lines.append(f"{_TAB}obj.{field} = {field}")
             else:
                 field = run_fields[0]
-                lines.append(f"{_TAB}fields['{field}'] = struct.unpack(fmt_prefix + '{fmt}', _data.read({size * count}))[0]")
+                lines.append(f"{_TAB}obj.{field} = struct.unpack(fmt_prefix + '{fmt}', _data.read({size * count}))[0]")
 
             run_fields = []
             run_type = None
@@ -92,12 +92,12 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             field_names.append(field_name)
             if isinstance(entry, SchemaConstant):
                 flush()
-                lines.append(f"{_TAB}fields['{field_name}'] = {repr(entry.value)}")
+                lines.append(f"{_TAB}obj.{field_name} = {repr(entry.value)}")
                 continue
 
             if not isinstance(entry, SchemaField):
                 flush()
-                lines.append(f"{_TAB}fields['{field_name}'] = None")
+                lines.append(f"{_TAB}obj.{field_name} = None")
                 continue
 
             field_type = entry.type
@@ -114,10 +114,10 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             flush()
 
             if isinstance(field_type, Primitive):
-                lines.append(f"{_TAB}fields['{field_name}'] = decoder.{field_type.type}()")
+                lines.append(f"{_TAB}obj.{field_name} = decoder.{field_type.type}()")
 
             elif isinstance(field_type, String):
-                lines.append(f"{_TAB}fields['{field_name}'] = decoder.{field_type.type}()")
+                lines.append(f"{_TAB}obj.{field_name} = decoder.{field_type.type}()")
 
             elif isinstance(field_type, Array):
                 elem = field_type.type
@@ -126,23 +126,23 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                     fmt = _STRUCT_FORMAT[elem.type] * field_type.length
                     lines.append(f"{_TAB}_data.align({size})")
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = list(struct.unpack(fmt_prefix + '{fmt}', _data.read({size * field_type.length})))"
+                        f"{_TAB}obj.{field_name} = list(struct.unpack(fmt_prefix + '{fmt}', _data.read({size * field_type.length})))"
                     )
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = [{sub_func}(decoder) for _ in range({field_type.length})]"
+                        f"{_TAB}obj.{field_name} = [{sub_func}(decoder) for _ in range({field_type.length})]"
                     )
                 elif isinstance(elem, String):
                     elem_name = elem.type
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = [decoder.{elem_name}() for _ in range({field_type.length})]"
+                        f"{_TAB}obj.{field_name} = [decoder.{elem_name}() for _ in range({field_type.length})]"
                     )
                 else:
                     elem_name = getattr(elem, "type", "unknown")
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = decoder.array('{elem_name}', {field_type.length})"
+                        f"{_TAB}obj.{field_name} = decoder.array('{elem_name}', {field_type.length})"
                     )
 
             elif isinstance(field_type, Sequence):
@@ -153,43 +153,41 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                     lines.append(f"{_TAB}_len = decoder.uint32()")
                     lines.append(f"{_TAB}_data.align({size})")
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = list(struct.unpack(fmt_prefix + '{char}' * _len, _data.read({size} * _len)))"
+                        f"{_TAB}obj.{field_name} = list(struct.unpack(fmt_prefix + '{char}' * _len, _data.read({size} * _len)))"
                     )
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
                     lines.append(f"{_TAB}length = decoder.uint32()")
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = [{sub_func}(decoder) for _ in range(length)]"
+                        f"{_TAB}obj.{field_name} = [{sub_func}(decoder) for _ in range(length)]"
                     )
                 elif isinstance(elem, String):
                     lines.append(f"{_TAB}length = decoder.uint32()")
                     elem_name = elem.type
                     lines.append(
-                        f"{_TAB}fields['{field_name}'] = [decoder.{elem_name}() for _ in range(length)]"
+                        f"{_TAB}obj.{field_name} = [decoder.{elem_name}() for _ in range(length)]"
                     )
                 else:
                     elem_name = getattr(elem, "type", "unknown")
-                    lines.append(f"{_TAB}fields['{field_name}'] = decoder.sequence('{elem_name}')")
+                    lines.append(f"{_TAB}obj.{field_name} = decoder.sequence('{elem_name}')")
 
             elif isinstance(field_type, Complex):
                 sub_schema = sub_schemas[field_type.type]
                 sub_func = build(sub_schema)
-                lines.append(f"{_TAB}fields['{field_name}'] = {sub_func}(decoder)")
+                lines.append(f"{_TAB}obj.{field_name} = {sub_func}(decoder)")
 
             else:
-                lines.append(f"{_TAB}fields['{field_name}'] = None")
+                lines.append(f"{_TAB}obj.{field_name} = None")
 
         flush()
-        lines.append(
-            f"{_TAB}return builtins.type('{current.name.replace('/', '.')}', (), fields)"
-        )
+        lines.append(f"{_TAB}return obj")
         function_defs.append("\n".join(lines))
         return func_name
 
     build(schema)
-    code = "import struct\nimport builtins\n" + "\n\n".join(function_defs)
-    namespace: dict[str, object] = {"struct": struct, "builtins": builtins}
+    code = "import struct\nfrom types import SimpleNamespace\n" + "\n\n".join(function_defs)
+    namespace: dict[str, object] = {"struct": struct, "SimpleNamespace": SimpleNamespace}
     exec(code, namespace)
     return namespace[f"decode_{_sanitize(schema.name)}"]  # type: ignore[index]
 

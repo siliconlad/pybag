@@ -373,6 +373,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
             self._file.seek_from_start(message_index_offset)
             message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
+            message_index[channel_id].records.sort(key=lambda x: x[0])
 
         self._message_indexes[key] = message_index
         return message_index
@@ -400,6 +401,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
             chunk_index = McapRecordParser.parse_chunk_index(self._file)
             self._chunk_indexes.append(chunk_index)
+        self._chunk_indexes.sort(key=lambda x: x.message_start_time)
 
     def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
         """
@@ -460,8 +462,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
                     return None
 
                 # Make sure the timestamp is in the message index
-                sorted_records = sorted(message_index.records, key=lambda x: x[0])
-                offset = next((r[1] for r in sorted_records if r[0] == timestamp), None)
+                offset = next((r[1] for r in message_index.records if r[0] == timestamp), None)
                 if offset is None:
                     return None
 
@@ -491,8 +492,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A generator of MessageRecord objects.
         """
-        chunk_indexes = self.get_chunk_indexes(channel_id)
-        for chunk_index in sorted(chunk_indexes, key=lambda x: x.message_start_time):
+        for chunk_index in self.get_chunk_indexes(channel_id):
             # Skip chunk that do not match the timestamp range
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
                 continue
@@ -507,7 +507,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             # Read all messages in the chunk
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for timestamp, offset in sorted(message_index.records, key=lambda x: x[0]):
+            for timestamp, offset in message_index.records:
                 # Skip messages that do not match the timestamp range
                 if start_timestamp is not None and timestamp < start_timestamp:
                     continue
