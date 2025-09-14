@@ -1,15 +1,16 @@
 import logging
+import heapq
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
-    McapRecordReaderFactory
+    McapRecordReaderFactory,
 )
 
 # GLOBAL TODOs:
@@ -40,7 +41,10 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapFileReader':
+    def from_file(file_path: Path | str | Iterable[Path | str]) -> 'McapFileReader':
+        """Create a reader from a file path or iterable of file paths."""
+        if isinstance(file_path, Iterable) and not isinstance(file_path, (str, Path)):
+            return McapMultipleFileReader.from_files(list(file_path))
         reader = McapRecordReaderFactory.from_file(file_path)
         return McapFileReader(reader)
 
@@ -133,3 +137,73 @@ class McapFileReader:
     ) -> None:
         self.close()
 
+
+class McapMultipleFileReader(McapFileReader):
+    """Reader that seamlessly reads from multiple MCAP files."""
+
+    def __init__(self, readers: list[McapFileReader]):
+        self._readers = readers
+
+    @staticmethod
+    def from_files(file_paths: list[Path | str]) -> 'McapMultipleFileReader':
+        readers = [McapFileReader.from_file(p) for p in file_paths]
+        return McapMultipleFileReader(readers)
+
+    def get_topics(self) -> list[str]:  # type: ignore[override]
+        topics: set[str] = set()
+        for reader in self._readers:
+            topics.update(reader.get_topics())
+        return list(topics)
+
+    def get_message_count(self, topic: str) -> int:  # type: ignore[override]
+        count = 0
+        for reader in self._readers:
+            if topic in reader.get_topics():
+                count += reader.get_message_count(topic)
+        if count == 0:
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
+        return count
+
+    @property  # type: ignore[override]
+    def start_time(self) -> int:
+        return min(reader.start_time for reader in self._readers)
+
+    @property  # type: ignore[override]
+    def end_time(self) -> int:
+        return max(reader.end_time for reader in self._readers)
+
+    def messages(  # type: ignore[override]
+        self,
+        topic: str,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        filter: Callable[[DecodedMessage], bool] | None = None,
+    ) -> Generator[DecodedMessage, None, None]:
+        iterators = []
+        for reader in self._readers:
+            if topic in reader.get_topics():
+                iterators.append(iter(reader.messages(topic, start_time, end_time)))
+        if not iterators:
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
+
+        heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
+        for idx, it in enumerate(iterators):
+            try:
+                msg = next(it)
+                heapq.heappush(heap, (msg.log_time, idx, msg, it))
+            except StopIteration:
+                continue
+
+        while heap:
+            _, idx, msg, it = heapq.heappop(heap)
+            if filter is None or filter(msg):
+                yield msg
+            try:
+                next_msg = next(it)
+                heapq.heappush(heap, (next_msg.log_time, idx, next_msg, it))
+            except StopIteration:
+                pass
+
+    def close(self) -> None:  # type: ignore[override]
+        for reader in self._readers:
+            reader.close()
