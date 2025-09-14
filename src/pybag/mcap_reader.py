@@ -6,7 +6,11 @@ from types import TracebackType
 from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
-from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError, McapUnknownSchemaError
+from pybag.mcap.error import (
+    McapUnknownEncodingError,
+    McapUnknownSchemaError,
+    McapUnknownTopicError
+)
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
