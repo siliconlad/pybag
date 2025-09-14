@@ -157,7 +157,7 @@ def test_empty_rosbags(typestore: Typestore):
         assert messages[0].publish_time == 0
         assert messages[0].sequence == 0
         assert messages[0].channel_id == channel_id
-        assert vars(messages[0].data)  # Empty message has no fields
+        assert vars(messages[0].data) == {}  # Empty message has no fields
 
 
 def test_float32_rosbags(typestore: Typestore):
