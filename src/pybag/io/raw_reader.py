@@ -10,7 +10,6 @@ class FilePosition(IntEnum):
     END = 2      # End of the file
 
 
-
 class BaseReader(ABC):
     @abstractmethod
     def peek(self, size: int) -> bytes:
