@@ -6,7 +6,7 @@ from types import TracebackType
 from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
-from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
+from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError, McapUnknownSchemaError
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
@@ -96,7 +96,8 @@ class McapFileReader:
             raise McapUnknownEncodingError(f'Topic {topic} not found in MCAP file')
 
         channel_record = self._reader.get_channel(channel_id)
-        message_schema = self._reader.get_channel_schema(channel_id)
+        if (message_schema := self._reader.get_channel_schema(channel_id)) is None:
+            raise McapUnknownSchemaError(f'Unknown schema for channel {channel_id}')
 
         if (message_deserializer := self._message_deserializer) is None:
             message_deserializer = MessageDeserializerFactory.from_channel(
