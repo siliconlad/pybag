@@ -193,10 +193,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, profile = cls._parse_string(bytes_reader)
         _, library = cls._parse_string(bytes_reader)
@@ -214,10 +211,11 @@ class McapRecordParser:
         _, record_length = cls._parse_uint64(file)
         if record_length != 20:
             raise MalformedMCAP(f'Unexpected footer record length ({record_length} bytes).')
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, summary_start = cls._parse_uint64(file)
-        _, summary_offset_start = cls._parse_uint64(file)
-        _, summary_crc = cls._parse_uint32(file)
+        _, summary_start = cls._parse_uint64(bytes_reader)
+        _, summary_offset_start = cls._parse_uint64(bytes_reader)
+        _, summary_crc = cls._parse_uint32(bytes_reader)
 
         return FooterRecord(summary_start, summary_offset_start, summary_crc)
 
@@ -228,10 +226,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, id = cls._parse_uint16(bytes_reader)
         if id == 0:  # Invalid and should be ignored
@@ -251,10 +246,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, id = cls._parse_uint16(bytes_reader)
         _, channel_id = cls._parse_uint16(bytes_reader)
@@ -271,10 +263,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, channel_id = cls._parse_uint16(bytes_reader)
         _, sequence = cls._parse_uint32(bytes_reader)
@@ -292,10 +281,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, message_start_time = cls._parse_timestamp(bytes_reader)
         _, message_end_time = cls._parse_timestamp(bytes_reader)
@@ -321,11 +307,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, message_index_length = cls._parse_uint64(file)
-        logger.debug(f'Message index length: {message_index_length}')
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(message_index_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(message_index_length))
 
         _, channel_id = cls._parse_uint16(bytes_reader)
         _, records = cls._parse_array(bytes_reader, lambda file: cls._parse_tuple(file, "timestamp", "uint64"))
@@ -339,10 +321,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, message_start_time = cls._parse_timestamp(bytes_reader)
         _, message_end_time = cls._parse_timestamp(bytes_reader)
@@ -373,10 +352,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, log_time = cls._parse_timestamp(bytes_reader)
         _, create_time = cls._parse_timestamp(bytes_reader)
@@ -395,10 +371,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, name = cls._parse_string(bytes_reader)
         logger.debug(f'Parsing metadata for {name}...')
@@ -413,10 +386,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, data_section_crc = cls._parse_uint32(bytes_reader)
         return DataEndRecord(data_section_crc)
@@ -428,10 +398,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, offset = cls._parse_uint64(bytes_reader)
         _, length = cls._parse_uint64(bytes_reader)
@@ -458,10 +425,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, offset = cls._parse_uint64(bytes_reader)
         _, length = cls._parse_uint64(bytes_reader)
@@ -476,10 +440,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, message_count = cls._parse_uint64(bytes_reader)
         _, schema_count = cls._parse_uint16(bytes_reader)
@@ -510,10 +471,7 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
-
-        # Read the entire record data at once for efficient reading
-        record_data = file.read(record_length)
-        bytes_reader = BytesReader(record_data)
+        bytes_reader = BytesReader(file.read(record_length))
 
         _, group_opcode = cls._parse_uint8(bytes_reader)
         _, group_start = cls._parse_uint64(bytes_reader)
