@@ -10,38 +10,6 @@ class FilePosition(IntEnum):
     END = 2      # End of the file
 
 
-class BufferedReader:
-    """A reader that buffers data for efficient sequential reading."""
-
-    def __init__(self, data: bytes, reader: 'BaseReader'):
-        self._buffer = data
-        self._position = 0
-        self._reader = reader
-
-    def read(self, size: int | None = None) -> bytes:
-        """Read bytes from buffer, falling back to underlying reader if needed."""
-        if size is None:
-            # Read remaining buffer + rest from reader
-            remaining_buffer = self._buffer[self._position:]
-            self._position = len(self._buffer)
-            additional_data = self._reader.read()
-            return remaining_buffer + additional_data
-
-        available_in_buffer = len(self._buffer) - self._position
-
-        if size <= available_in_buffer:
-            # Can satisfy request from buffer
-            result = self._buffer[self._position:self._position + size]
-            self._position += size
-            return result
-        else:
-            # Need to read from buffer + reader
-            buffer_data = self._buffer[self._position:]
-            self._position = len(self._buffer)
-            needed_from_reader = size - len(buffer_data)
-            reader_data = self._reader.read(needed_from_reader)
-            return buffer_data + reader_data
-
 
 class BaseReader(ABC):
     @abstractmethod
@@ -52,11 +20,6 @@ class BaseReader(ABC):
     @abstractmethod
     def read(self, size: int | None = None) -> bytes:
         """Read the next bytes in the reader."""
-        ...
-
-    @abstractmethod
-    def fetch(self, size: int) -> 'BufferedReader':
-        """Fetch bytes into a buffer for efficient sequential reading."""
         ...
 
     @abstractmethod
@@ -96,10 +59,6 @@ class FileReader(BaseReader):
     def read(self, size: int | None = None) -> bytes:
         return self._file.read(size)
 
-    def fetch(self, size: int) -> BufferedReader:
-        data = self._file.read(size)
-        return BufferedReader(data, self)
-
     def seek_from_start(self, offset: int) -> int:
         return self._file.seek(offset, FilePosition.START)
 
@@ -130,11 +89,6 @@ class BytesReader(BaseReader):
         result = self._data[self._position:self._position + size]
         self._position += size
         return result
-
-    def fetch(self, size: int) -> BufferedReader:
-        data = self._data[self._position:self._position + size]
-        self._position += size
-        return BufferedReader(data, self)
 
     def seek_from_start(self, offset: int) -> int:
         self._position = offset
@@ -172,11 +126,6 @@ class CrcReader(BaseReader):
         data = self._reader.read(size)
         self._crc = zlib.crc32(data, self._crc)
         return data
-
-    def fetch(self, size: int) -> BufferedReader:
-        data = self._reader.read(size)
-        self._crc = zlib.crc32(data, self._crc)
-        return BufferedReader(data, self._reader)
 
     def seek_from_start(self, offset: int) -> int:
         return self._reader.seek_from_start(offset)
