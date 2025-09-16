@@ -28,7 +28,7 @@ class MessageDeserializer:
     ):
         self._schema_decoder = schema_decoder
         self._message_decoder = message_decoder
-        self._compiled: dict[int, Callable[[MessageDecoder], type]] = {}
+        self._compiled: dict[int, Callable[[MessageDecoder], object]] = {}
 
     def _decode_field(
         self,
@@ -118,7 +118,7 @@ class MessageDeserializer:
                 raise ValueError(f'Unknown field type: {field_schema}')
         return type(schema.name.replace('/', '.'), (), field)
 
-    def deserialize_message(self, message: MessageRecord, schema: SchemaRecord) -> type:
+    def deserialize_message(self, message: MessageRecord, schema: SchemaRecord) -> object:
         """Deserialize a message using the provided schema.
 
         Schemas are compiled on first use to speed up subsequent decodes.
