@@ -184,13 +184,53 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
         sub_msg_schemas = {}
         for sub_msg in msg[1:]:
             sub_msg_name = sub_msg.split('\n')[0].strip()[5:]  # Remove 'MSG: ' prefix
+            sub_package = sub_msg_name.split('/')[0]
             sub_msg_fields = [m.strip() for m in sub_msg.split('\n')[1:] if m]
             # TODO: Do some caching here
             sub_msg_schema = {}
             for raw_field in sub_msg_fields:
-                field_name, field = self._parse_field(raw_field, package_name)
+                field_name, field = self._parse_field(raw_field, sub_package)
                 sub_msg_schema[field_name] = field
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
+
+        needed_complex: set[str] = set()
+
+        def collect_types(s: Schema) -> None:
+            for entry in s.fields.values():
+                if isinstance(entry, SchemaField):
+                    field_type = entry.type
+                    stack = [field_type]
+                    while stack:
+                        t = stack.pop()
+                        if isinstance(t, Complex):
+                            needed_complex.add(t.type)
+                        elif isinstance(t, Array) or isinstance(t, Sequence):
+                            stack.append(t.type)
+
+        collect_types(Schema(schema.name, msg_schema))
+        for sub in sub_msg_schemas.values():
+            collect_types(sub)
+
+        builtin_schemas = {
+            "builtin_interfaces/Time": Schema(
+                "builtin_interfaces/Time",
+                {
+                    "sec": SchemaField(Primitive("int32")),
+                    "nanosec": SchemaField(Primitive("uint32")),
+                },
+            ),
+            "builtin_interfaces/Duration": Schema(
+                "builtin_interfaces/Duration",
+                {
+                    "sec": SchemaField(Primitive("int32")),
+                    "nanosec": SchemaField(Primitive("uint32")),
+                },
+            ),
+        }
+
+        for name, builtin_schema in builtin_schemas.items():
+            if name in needed_complex and name not in sub_msg_schemas:
+                sub_msg_schemas[name] = builtin_schema
 
         result = Schema(schema.name, msg_schema), sub_msg_schemas
         self._cache[schema.id] = result
