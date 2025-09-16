@@ -152,7 +152,7 @@ class BaseMcapRecordReader(ABC):
     @abstractmethod
     def get_messages(
         self,
-        channel_id: int,
+        channel_id: int | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
@@ -475,17 +475,18 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     def get_messages(
         self,
-        channel_id: int,
+        channel_id: int | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
         """
-        Get all messages from a given channel.
+        Get messages from the MCAP file.
 
-        If the start and end timestamps are not provided, all messages in the channel are returned.
+        If no channel is provided, messages from all channels are returned.
+        If the start and end timestamps are not provided, the entire available range is returned.
 
         Args:
-            channel_id: The ID of the channel.
+            channel_id: Optional channel ID to filter by. If None, all channels are included.
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
 
@@ -499,22 +500,37 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
                 continue
 
-            # Get the message index for the chunk
-            message_index = self.get_message_index(chunk_index, channel_id)
-            if message_index is None:
+            offsets: list[tuple[int, int]] = []
+            if channel_id is None:
+                message_indexes = self.get_message_indexes(chunk_index)
+                if not message_indexes:
+                    continue
+                for message_index in message_indexes.values():
+                    for timestamp, offset in message_index.records:
+                        if start_timestamp is not None and timestamp < start_timestamp:
+                            continue
+                        if end_timestamp is not None and timestamp > end_timestamp:
+                            continue
+                        offsets.append((timestamp, offset))
+                offsets.sort(key=lambda record: (record[0], record[1]))
+            else:
+                message_index = self.get_message_index(chunk_index, channel_id)
+                if message_index is None:
+                    continue
+                for timestamp, offset in message_index.records:
+                    if start_timestamp is not None and timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp > end_timestamp:
+                        continue
+                    offsets.append((timestamp, offset))
+
+            if not offsets:
                 continue
 
             # Read all messages in the chunk
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for timestamp, offset in message_index.records:
-                # Skip messages that do not match the timestamp range
-                if start_timestamp is not None and timestamp < start_timestamp:
-                    continue
-                if end_timestamp is not None and timestamp > end_timestamp:
-                    continue
-
-                # Read the message
+            for _timestamp, offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
