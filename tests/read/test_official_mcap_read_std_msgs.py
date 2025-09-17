@@ -2,796 +2,867 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from textwrap import dedent
+from typing import Any
 
-import pytest
-from mcap.writer import Writer
-from rosbags.typesys import Stores, get_typestore
-from rosbags.typesys.store import Typestore
+from mcap_ros2.writer import Writer as McapWriter
 
 from pybag.mcap_reader import McapFileReader
-from tests.read._sample_message_factory import create_message, to_plain
 
 
-@pytest.fixture(params=[Stores.ROS2_JAZZY, Stores.ROS2_HUMBLE])
-def typestore(request) -> Typestore:
-    return get_typestore(request.param)
-
-
-def _write_mcap(
-    temp_dir: str,
-    typestore: Typestore,
-    msg,
-    msgtype: str,
-    schema_text: str,
-) -> tuple[Path, int]:
+def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path:
     path = Path(temp_dir) / "test.mcap"
     with open(path, "wb") as f:
-        writer = Writer(f)
-        writer.start()
-        schema_id = writer.register_schema(msgtype, "ros2msg", schema_text.encode())
-        channel_id = writer.register_channel("/rosbags", "cdr", schema_id)
-        writer.add_message(
-            channel_id,
+        writer = McapWriter(f)
+        schema = writer.register_msgdef(msgtype, schema_text)
+        writer.write_message(
+            topic="/rosbags",
+            schema=schema,
+            message=msg,
             log_time=0,
-            data=typestore.serialize_cdr(msg, msgtype),
             publish_time=0,
+            sequence=0,
         )
         writer.finish()
-    return path, channel_id
+    return path
 
 
-def test_std_msgs_bool(typestore: Typestore):
-    msgtype = "std_msgs/msg/Bool"
-    msg = create_message(typestore, msgtype, seed=1)
-
-    schema = (
-        "bool data\n"
-    )
+def test_std_msgs_bool():
+    msgtype = "std_msgs/Bool"
+    schema = dedent("""
+        bool data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": True}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data is True
 
 
-def test_std_msgs_byte(typestore: Typestore):
-    msgtype = "std_msgs/msg/Byte"
-    msg = create_message(typestore, msgtype, seed=2)
-
-    schema = (
-        "byte data\n"
-    )
+def test_std_msgs_byte():
+    msgtype = "std_msgs/Byte"
+    schema = dedent("""
+        byte data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 42}  # b'\x2a'
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == b'\x2a'
 
 
-def test_std_msgs_bytemultiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/ByteMultiArray"
-    msg = create_message(typestore, msgtype, seed=3)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "byte[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_bytemultiarray():
+    msgtype = "std_msgs/ByteMultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        byte[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 3, "stride": 3}],
+                "data_offset": 0
+            },
+            "data": [1, 2, 3]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 3
+    assert messages[0].data.layout.dim[0].stride == 3
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [b'\x01', b'\x02', b'\x03']
 
 
-def test_std_msgs_char(typestore: Typestore):
-    msgtype = "std_msgs/msg/Char"
-    msg = create_message(typestore, msgtype, seed=4)
-
-    schema = (
-        "char data\n"
-    )
+def test_std_msgs_char():
+    msgtype = "std_msgs/Char"
+    schema = dedent("""
+        char data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 65}  # ASCII 'A'
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == 'A'
 
 
-def test_std_msgs_colorrgba(typestore: Typestore):
-    msgtype = "std_msgs/msg/ColorRGBA"
-    msg = create_message(typestore, msgtype, seed=5)
-
-    schema = (
-        "float32 r\n"
-        "float32 g\n"
-        "float32 b\n"
-        "float32 a\n"
-    )
+def test_std_msgs_colorrgba():
+    msgtype = "std_msgs/ColorRGBA"
+    schema = dedent("""
+        float32 r
+        float32 g
+        float32 b
+        float32 a
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"r": 1.0, "g": 0.5, "b": 0.25, "a": 0.125}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.r == 1.0
+    assert messages[0].data.g == 0.5
+    assert messages[0].data.b == 0.25
+    assert messages[0].data.a == 0.125
 
 
-def test_std_msgs_empty(typestore: Typestore):
-    msgtype = "std_msgs/msg/Empty"
-    msg = create_message(typestore, msgtype, seed=6)
-
-    schema = (
-        ""
-    )
+def test_std_msgs_empty():
+    msgtype = "std_msgs/Empty"
+    schema = dedent("""
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
 
 
-def test_std_msgs_float32(typestore: Typestore):
-    msgtype = "std_msgs/msg/Float32"
-    msg = create_message(typestore, msgtype, seed=7)
-
-    schema = (
-        "float32 data\n"
-    )
+def test_std_msgs_float32():
+    msgtype = "std_msgs/Float32"
+    schema = dedent("""
+        float32 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 3.14}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert abs(messages[0].data.data - 3.14) < 0.001
 
 
-def test_std_msgs_float32multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/Float32MultiArray"
-    msg = create_message(typestore, msgtype, seed=8)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "float32[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_float32multiarray():
+    msgtype = "std_msgs/Float32MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        float32[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [1.5, 2.5]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
+    assert messages[0].data.layout.data_offset == 0
+    assert abs(messages[0].data.data[0] - 1.5) < 0.001
+    assert abs(messages[0].data.data[1] - 2.5) < 0.001
 
 
-def test_std_msgs_float64(typestore: Typestore):
-    msgtype = "std_msgs/msg/Float64"
-    msg = create_message(typestore, msgtype, seed=9)
-
-    schema = (
-        "float64 data\n"
-    )
+def test_std_msgs_float64():
+    msgtype = "std_msgs/Float64"
+    schema = dedent("""
+        float64 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 2.71828}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == 2.71828
 
 
-def test_std_msgs_float64multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/Float64MultiArray"
-    msg = create_message(typestore, msgtype, seed=10)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "float64[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_float64multiarray():
+    msgtype = "std_msgs/Float64MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        float64[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [3.14159, 2.71828]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.data_offset == 0
+    assert messages[0].data.data[0] == 3.14159
+    assert messages[0].data.data[1] == 2.71828
 
 
-def test_std_msgs_header(typestore: Typestore):
-    msgtype = "std_msgs/msg/Header"
-    msg = create_message(typestore, msgtype, seed=11)
-
-    schema = (
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_std_msgs_header():
+    msgtype = "std_msgs/Header"
+    schema = dedent("""
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "stamp": {"sec": 123, "nanosec": 456789},
+            "frame_id": "test_frame"
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.stamp.sec == 123
+    assert messages[0].data.stamp.nanosec == 456789
+    assert messages[0].data.frame_id == "test_frame"
 
 
-def test_std_msgs_int16(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int16"
-    msg = create_message(typestore, msgtype, seed=12)
-
-    schema = (
-        "int16 data\n"
-    )
+def test_std_msgs_int16():
+    msgtype = "std_msgs/Int16"
+    schema = dedent("""
+        int16 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": -1234}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == -1234
 
 
-def test_std_msgs_int16multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int16MultiArray"
-    msg = create_message(typestore, msgtype, seed=13)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "int16[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_int16multiarray():
+    msgtype = "std_msgs/Int16MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        int16[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 3, "stride": 3}],
+                "data_offset": 0
+            },
+            "data": [-100, 0, 100]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [-100, 0, 100]
 
 
-def test_std_msgs_int32(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int32"
-    msg = create_message(typestore, msgtype, seed=14)
-
-    schema = (
-        "int32 data\n"
-    )
+def test_std_msgs_int32():
+    msgtype = "std_msgs/Int32"
+    schema = dedent("""
+        int32 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": -123456}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == -123456
 
 
-def test_std_msgs_int32multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int32MultiArray"
-    msg = create_message(typestore, msgtype, seed=15)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "int32[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_int32multiarray():
+    msgtype = "std_msgs/Int32MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        int32[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [-1000, 2000]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [-1000, 2000]
 
 
-def test_std_msgs_int64(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int64"
-    msg = create_message(typestore, msgtype, seed=16)
-
-    schema = (
-        "int64 data\n"
-    )
+def test_std_msgs_int64():
+    msgtype = "std_msgs/Int64"
+    schema = dedent("""
+        int64 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": -9876543210}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == -9876543210
 
 
-def test_std_msgs_int64multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int64MultiArray"
-    msg = create_message(typestore, msgtype, seed=17)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "int64[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_int64multiarray():
+    msgtype = "std_msgs/Int64MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        int64[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [-9223372036854775807, 9223372036854775807]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [-9223372036854775807, 9223372036854775807]
 
 
-def test_std_msgs_int8(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int8"
-    msg = create_message(typestore, msgtype, seed=18)
-
-    schema = (
-        "int8 data\n"
-    )
+def test_std_msgs_int8():
+    msgtype = "std_msgs/Int8"
+    schema = dedent("""
+        int8 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": -42}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == -42
 
 
-def test_std_msgs_int8multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/Int8MultiArray"
-    msg = create_message(typestore, msgtype, seed=19)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "int8[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_int8multiarray():
+    msgtype = "std_msgs/Int8MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        int8[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 3, "stride": 3}],
+                "data_offset": 0
+            },
+            "data": [-128, 0, 127]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [-128, 0, 127]
 
 
-def test_std_msgs_multiarraydimension(typestore: Typestore):
-    msgtype = "std_msgs/msg/MultiArrayDimension"
-    msg = create_message(typestore, msgtype, seed=20)
-
-    schema = (
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_multiarraydimension():
+    msgtype = "std_msgs/MultiArrayDimension"
+    schema = dedent("""
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "label": "x",
+            "size": 10,
+            "stride": 40
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.label == "x"
+    assert messages[0].data.size == 10
+    assert messages[0].data.stride == 40
 
 
-def test_std_msgs_multiarraylayout(typestore: Typestore):
-    msgtype = "std_msgs/msg/MultiArrayLayout"
-    msg = create_message(typestore, msgtype, seed=21)
-
-    schema = (
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_multiarraylayout():
+    msgtype = "std_msgs/MultiArrayLayout"
+    schema = dedent("""
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "dim": [
+                {"label": "x", "size": 10, "stride": 40},
+                {"label": "y", "size": 4, "stride": 4}
+            ],
+            "data_offset": 0
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert len(messages[0].data.dim) == 2
+    assert messages[0].data.dim[0].label == "x"
+    assert messages[0].data.dim[0].size == 10
+    assert messages[0].data.dim[0].stride == 40
+    assert messages[0].data.dim[1].label == "y"
+    assert messages[0].data.dim[1].size == 4
+    assert messages[0].data.dim[1].stride == 4
+    assert messages[0].data.data_offset == 0
 
 
-def test_std_msgs_string(typestore: Typestore):
-    msgtype = "std_msgs/msg/String"
-    msg = create_message(typestore, msgtype, seed=22)
-
-    schema = (
-        "string data\n"
-    )
+def test_std_msgs_string():
+    msgtype = "std_msgs/String"
+    schema = dedent("""
+        string data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": "Hello, World!"}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == "Hello, World!"
 
 
-def test_std_msgs_uint16(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt16"
-    msg = create_message(typestore, msgtype, seed=23)
-
-    schema = (
-        "uint16 data\n"
-    )
+def test_std_msgs_uint16():
+    msgtype = "std_msgs/UInt16"
+    schema = dedent("""
+        uint16 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 1234}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == 1234
 
 
-def test_std_msgs_uint16multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt16MultiArray"
-    msg = create_message(typestore, msgtype, seed=24)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "uint16[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_uint16multiarray():
+    msgtype = "std_msgs/UInt16MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        uint16[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [0, 65535]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [0, 65535]
 
 
-def test_std_msgs_uint32(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt32"
-    msg = create_message(typestore, msgtype, seed=25)
-
-    schema = (
-        "uint32 data\n"
-    )
+def test_std_msgs_uint32():
+    msgtype = "std_msgs/UInt32"
+    schema = dedent("""
+        uint32 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 123456}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == 123456
 
 
-def test_std_msgs_uint32multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt32MultiArray"
-    msg = create_message(typestore, msgtype, seed=26)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "uint32[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_uint32multiarray():
+    msgtype = "std_msgs/UInt32MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        uint32[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [0, 4294967295]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [0, 4294967295]
 
 
-def test_std_msgs_uint64(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt64"
-    msg = create_message(typestore, msgtype, seed=27)
-
-    schema = (
-        "uint64 data\n"
-    )
+def test_std_msgs_uint64():
+    msgtype = "std_msgs/UInt64"
+    schema = dedent("""
+        uint64 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 9876543210}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == 9876543210
 
 
-def test_std_msgs_uint64multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt64MultiArray"
-    msg = create_message(typestore, msgtype, seed=28)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "uint64[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_uint64multiarray():
+    msgtype = "std_msgs/UInt64MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        uint64[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 2, "stride": 2}],
+                "data_offset": 0
+            },
+            "data": [0, 18446744073709551615]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [0, 18446744073709551615]
 
 
-def test_std_msgs_uint8(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt8"
-    msg = create_message(typestore, msgtype, seed=29)
-
-    schema = (
-        "uint8 data\n"
-    )
+def test_std_msgs_uint8():
+    msgtype = "std_msgs/UInt8"
+    schema = dedent("""
+        uint8 data
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"data": 255}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.data == 255
 
 
-def test_std_msgs_uint8multiarray(typestore: Typestore):
-    msgtype = "std_msgs/msg/UInt8MultiArray"
-    msg = create_message(typestore, msgtype, seed=30)
-
-    schema = (
-        "std_msgs/MultiArrayLayout layout\n"
-        "uint8[] data\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayLayout\n"
-        "std_msgs/MultiArrayDimension[] dim\n"
-        "uint32 data_offset\n"
-        "================================================================================\n"
-        "MSG: std_msgs/MultiArrayDimension\n"
-        "string label\n"
-        "uint32 size\n"
-        "uint32 stride\n"
-    )
+def test_std_msgs_uint8multiarray():
+    msgtype = "std_msgs/UInt8MultiArray"
+    schema = dedent("""
+        std_msgs/MultiArrayLayout layout
+        uint8[] data
+        ================================================================================
+        MSG: std_msgs/MultiArrayLayout
+        std_msgs/MultiArrayDimension[] dim
+        uint32 data_offset
+        ================================================================================
+        MSG: std_msgs/MultiArrayDimension
+        string label
+        uint32 size
+        uint32 stride
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "layout": {
+                "dim": [{"label": "x", "size": 3, "stride": 3}],
+                "data_offset": 0
+            },
+            "data": [0, 128, 255]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
-
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.layout.data_offset == 0
+    assert list(messages[0].data.data) == [0, 128, 255]

@@ -2,1038 +2,1369 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from textwrap import dedent
+from typing import Any
 
-import pytest
-from mcap.writer import Writer
-from rosbags.typesys import Stores, get_typestore
-from rosbags.typesys.store import Typestore
+from mcap_ros2.writer import Writer as McapWriter
 
 from pybag.mcap_reader import McapFileReader
-from tests.read._sample_message_factory import create_message, to_plain
 
 
-@pytest.fixture(params=[Stores.ROS2_JAZZY, Stores.ROS2_HUMBLE])
-def typestore(request) -> Typestore:
-    return get_typestore(request.param)
-
-
-def _write_mcap(
-    temp_dir: str,
-    typestore: Typestore,
-    msg,
-    msgtype: str,
-    schema_text: str,
-) -> tuple[Path, int]:
+def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path:
     path = Path(temp_dir) / "test.mcap"
     with open(path, "wb") as f:
-        writer = Writer(f)
-        writer.start()
-        schema_id = writer.register_schema(msgtype, "ros2msg", schema_text.encode())
-        channel_id = writer.register_channel("/rosbags", "cdr", schema_id)
-        writer.add_message(
-            channel_id,
+        writer = McapWriter(f)
+        schema = writer.register_msgdef(msgtype, schema_text)
+        writer.write_message(
+            topic="/rosbags",
+            schema=schema,
+            message=msg,
             log_time=0,
-            data=typestore.serialize_cdr(msg, msgtype),
             publish_time=0,
+            sequence=0,
         )
         writer.finish()
-    return path, channel_id
+    return path
 
 
-def test_geometry_msgs_accel(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Accel"
-    msg = create_message(typestore, msgtype, seed=1)
-
-    schema = (
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_accel():
+    msgtype = "geometry_msgs/Accel"
+    schema = dedent("""
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "angular": {"x": 4.0, "y": 5.0, "z": 6.0},
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.linear.x == 1.0
+    assert messages[0].data.linear.y == 2.0
+    assert messages[0].data.linear.z == 3.0
+    assert messages[0].data.angular.x == 4.0
+    assert messages[0].data.angular.y == 5.0
+    assert messages[0].data.angular.z == 6.0
 
 
-def test_geometry_msgs_accelstamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/AccelStamped"
-    msg = create_message(typestore, msgtype, seed=2)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Accel accel\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Accel\n"
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_accelstamped():
+    msgtype = "geometry_msgs/AccelStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Accel accel
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Accel
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "accel": {
+                "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.accel.linear.x == 1.0
+    assert messages[0].data.accel.linear.y == 2.0
+    assert messages[0].data.accel.linear.z == 3.0
+    assert messages[0].data.accel.angular.x == 4.0
+    assert messages[0].data.accel.angular.y == 5.0
+    assert messages[0].data.accel.angular.z == 6.0
 
 
-def test_geometry_msgs_accelwithcovariance(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/AccelWithCovariance"
-    msg = create_message(typestore, msgtype, seed=3)
-
-    schema = (
-        "geometry_msgs/Accel accel\n"
-        "float64[36] covariance\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Accel\n"
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_accelwithcovariance():
+    msgtype = "geometry_msgs/AccelWithCovariance"
+    schema = dedent("""
+        geometry_msgs/Accel accel
+        float64[36] covariance
+        ================================================================================
+        MSG: geometry_msgs/Accel
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "accel": {
+                "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+            },
+            "covariance": [0.0] * 36
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.accel.linear.x == 1.0
+    assert messages[0].data.accel.linear.y == 2.0
+    assert messages[0].data.accel.linear.z == 3.0
+    assert messages[0].data.accel.angular.x == 4.0
+    assert messages[0].data.accel.angular.y == 5.0
+    assert messages[0].data.accel.angular.z == 6.0
+    assert len(messages[0].data.covariance) == 36
 
 
-def test_geometry_msgs_accelwithcovariancestamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/AccelWithCovarianceStamped"
-    msg = create_message(typestore, msgtype, seed=4)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/AccelWithCovariance accel\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/AccelWithCovariance\n"
-        "geometry_msgs/Accel accel\n"
-        "float64[36] covariance\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Accel\n"
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_accelwithcovariancestamped():
+    msgtype = "geometry_msgs/AccelWithCovarianceStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/AccelWithCovariance accel
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/AccelWithCovariance
+        geometry_msgs/Accel accel
+        float64[36] covariance
+        ================================================================================
+        MSG: geometry_msgs/Accel
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "accel": {
+                "accel": {
+                    "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                    "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+                },
+                "covariance": [0.0] * 36
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.accel.accel.linear.x == 1.0
+    assert messages[0].data.accel.accel.linear.y == 2.0
+    assert messages[0].data.accel.accel.linear.z == 3.0
+    assert messages[0].data.accel.accel.angular.x == 4.0
+    assert messages[0].data.accel.accel.angular.y == 5.0
+    assert messages[0].data.accel.accel.angular.z == 6.0
+    assert len(messages[0].data.accel.covariance) == 36
 
 
-def test_geometry_msgs_inertia(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Inertia"
-    msg = create_message(typestore, msgtype, seed=5)
-
-    schema = (
-        "float64 m\n"
-        "geometry_msgs/Vector3 com\n"
-        "float64 ixx\n"
-        "float64 ixy\n"
-        "float64 ixz\n"
-        "float64 iyy\n"
-        "float64 iyz\n"
-        "float64 izz\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_inertia():
+    msgtype = "geometry_msgs/Inertia"
+    schema = dedent("""
+        float64 m
+        geometry_msgs/Vector3 com
+        float64 ixx
+        float64 ixy
+        float64 ixz
+        float64 iyy
+        float64 iyz
+        float64 izz
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "m": 10.5,
+            "com": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "ixx": 1.1,
+            "ixy": 1.2,
+            "ixz": 1.3,
+            "iyy": 2.2,
+            "iyz": 2.3,
+            "izz": 3.3
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.m == 10.5
+    assert messages[0].data.com.x == 1.0
+    assert messages[0].data.com.y == 2.0
+    assert messages[0].data.com.z == 3.0
+    assert messages[0].data.ixx == 1.1
+    assert messages[0].data.ixy == 1.2
+    assert messages[0].data.ixz == 1.3
+    assert messages[0].data.iyy == 2.2
+    assert messages[0].data.iyz == 2.3
+    assert messages[0].data.izz == 3.3
 
 
-def test_geometry_msgs_inertiastamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/InertiaStamped"
-    msg = create_message(typestore, msgtype, seed=6)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Inertia inertia\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Inertia\n"
-        "float64 m\n"
-        "geometry_msgs/Vector3 com\n"
-        "float64 ixx\n"
-        "float64 ixy\n"
-        "float64 ixz\n"
-        "float64 iyy\n"
-        "float64 iyz\n"
-        "float64 izz\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_inertiastamped():
+    msgtype = "geometry_msgs/InertiaStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Inertia inertia
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Inertia
+        float64 m
+        geometry_msgs/Vector3 com
+        float64 ixx
+        float64 ixy
+        float64 ixz
+        float64 iyy
+        float64 iyz
+        float64 izz
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "inertia": {
+                "m": 10.5,
+                "com": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "ixx": 1.1,
+                "ixy": 1.2,
+                "ixz": 1.3,
+                "iyy": 2.2,
+                "iyz": 2.3,
+                "izz": 3.3
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.inertia.m == 10.5
+    assert messages[0].data.inertia.com.x == 1.0
+    assert messages[0].data.inertia.com.y == 2.0
+    assert messages[0].data.inertia.com.z == 3.0
+    assert messages[0].data.inertia.ixx == 1.1
+    assert messages[0].data.inertia.ixy == 1.2
+    assert messages[0].data.inertia.ixz == 1.3
+    assert messages[0].data.inertia.iyy == 2.2
+    assert messages[0].data.inertia.iyz == 2.3
+    assert messages[0].data.inertia.izz == 3.3
 
 
-def test_geometry_msgs_point(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Point"
-    msg = create_message(typestore, msgtype, seed=7)
-
-    schema = (
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_point():
+    msgtype = "geometry_msgs/Point"
+    schema = dedent("""
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"x": 1.0, "y": 2.0, "z": 3.0}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.x == 1.0
+    assert messages[0].data.y == 2.0
+    assert messages[0].data.z == 3.0
 
 
-def test_geometry_msgs_point32(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Point32"
-    msg = create_message(typestore, msgtype, seed=8)
-
-    schema = (
-        "float32 x\n"
-        "float32 y\n"
-        "float32 z\n"
-    )
+def test_geometry_msgs_point32():
+    msgtype = "geometry_msgs/Point32"
+    schema = dedent("""
+        float32 x
+        float32 y
+        float32 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"x": 1.0, "y": 2.0, "z": 3.0}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.x == 1.0
+    assert messages[0].data.y == 2.0
+    assert messages[0].data.z == 3.0
 
 
-def test_geometry_msgs_pointstamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/PointStamped"
-    msg = create_message(typestore, msgtype, seed=9)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Point point\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_pointstamped():
+    msgtype = "geometry_msgs/PointStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Point point
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "point": {"x": 1.0, "y": 2.0, "z": 3.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.point.x == 1.0
+    assert messages[0].data.point.y == 2.0
+    assert messages[0].data.point.z == 3.0
 
 
-def test_geometry_msgs_polygon(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Polygon"
-    msg = create_message(typestore, msgtype, seed=10)
-
-    schema = (
-        "geometry_msgs/Point32[] points\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point32\n"
-        "float32 x\n"
-        "float32 y\n"
-        "float32 z\n"
-    )
+def test_geometry_msgs_polygon():
+    msgtype = "geometry_msgs/Polygon"
+    schema = dedent("""
+        geometry_msgs/Point32[] points
+        ================================================================================
+        MSG: geometry_msgs/Point32
+        float32 x
+        float32 y
+        float32 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "points": [
+                {"x": 1.0, "y": 2.0, "z": 3.0},
+                {"x": 4.0, "y": 5.0, "z": 6.0}
+            ]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert len(messages[0].data.points) == 2
+    assert messages[0].data.points[0].x == 1.0
+    assert messages[0].data.points[0].y == 2.0
+    assert messages[0].data.points[0].z == 3.0
+    assert messages[0].data.points[1].x == 4.0
+    assert messages[0].data.points[1].y == 5.0
+    assert messages[0].data.points[1].z == 6.0
 
 
-def test_geometry_msgs_polygonstamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/PolygonStamped"
-    msg = create_message(typestore, msgtype, seed=11)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Polygon polygon\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Polygon\n"
-        "geometry_msgs/Point32[] points\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point32\n"
-        "float32 x\n"
-        "float32 y\n"
-        "float32 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_polygonstamped():
+    msgtype = "geometry_msgs/PolygonStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Polygon polygon
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Polygon
+        geometry_msgs/Point32[] points
+        ================================================================================
+        MSG: geometry_msgs/Point32
+        float32 x
+        float32 y
+        float32 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "polygon": {
+                "points": [
+                    {"x": 1.0, "y": 2.0, "z": 3.0},
+                    {"x": 4.0, "y": 5.0, "z": 6.0}
+                ]
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert len(messages[0].data.polygon.points) == 2
+    assert messages[0].data.polygon.points[0].x == 1.0
+    assert messages[0].data.polygon.points[0].y == 2.0
+    assert messages[0].data.polygon.points[0].z == 3.0
+    assert messages[0].data.polygon.points[1].x == 4.0
+    assert messages[0].data.polygon.points[1].y == 5.0
+    assert messages[0].data.polygon.points[1].z == 6.0
 
 
-def test_geometry_msgs_pose(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Pose"
-    msg = create_message(typestore, msgtype, seed=12)
-
-    schema = (
-        "geometry_msgs/Point position\n"
-        "geometry_msgs/Quaternion orientation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-    )
+def test_geometry_msgs_pose():
+    msgtype = "geometry_msgs/Pose"
+    schema = dedent("""
+        geometry_msgs/Point position
+        geometry_msgs/Quaternion orientation
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.position.x == 1.0
+    assert messages[0].data.position.y == 2.0
+    assert messages[0].data.position.z == 3.0
+    assert messages[0].data.orientation.x == 0.0
+    assert messages[0].data.orientation.y == 0.0
+    assert messages[0].data.orientation.z == 0.0
+    assert messages[0].data.orientation.w == 1.0
 
 
-def test_geometry_msgs_pose2d(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Pose2D"
-    msg = create_message(typestore, msgtype, seed=13)
-
-    schema = (
-        "float64 x\n"
-        "float64 y\n"
-        "float64 theta\n"
-    )
+def test_geometry_msgs_pose2d():
+    msgtype = "geometry_msgs/Pose2D"
+    schema = dedent("""
+        float64 x
+        float64 y
+        float64 theta
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"x": 1.0, "y": 2.0, "theta": 1.5708}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.x == 1.0
+    assert messages[0].data.y == 2.0
+    assert messages[0].data.theta == 1.5708
 
 
-def test_geometry_msgs_posearray(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/PoseArray"
-    msg = create_message(typestore, msgtype, seed=14)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Pose[] poses\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Pose\n"
-        "geometry_msgs/Point position\n"
-        "geometry_msgs/Quaternion orientation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_posearray():
+    msgtype = "geometry_msgs/PoseArray"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Pose[] poses
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Pose
+        geometry_msgs/Point position
+        geometry_msgs/Quaternion orientation
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "poses": [
+                {
+                    "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                    "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+                }
+            ]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert len(messages[0].data.poses) == 1
+    assert messages[0].data.poses[0].position.x == 1.0
+    assert messages[0].data.poses[0].position.y == 2.0
+    assert messages[0].data.poses[0].position.z == 3.0
+    assert messages[0].data.poses[0].orientation.x == 0.0
+    assert messages[0].data.poses[0].orientation.y == 0.0
+    assert messages[0].data.poses[0].orientation.z == 0.0
+    assert messages[0].data.poses[0].orientation.w == 1.0
 
 
-def test_geometry_msgs_posestamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/PoseStamped"
-    msg = create_message(typestore, msgtype, seed=15)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Pose pose\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Pose\n"
-        "geometry_msgs/Point position\n"
-        "geometry_msgs/Quaternion orientation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_posestamped():
+    msgtype = "geometry_msgs/PoseStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Pose pose
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Pose
+        geometry_msgs/Point position
+        geometry_msgs/Quaternion orientation
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "pose": {
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.pose.position.x == 1.0
+    assert messages[0].data.pose.position.y == 2.0
+    assert messages[0].data.pose.position.z == 3.0
+    assert messages[0].data.pose.orientation.x == 0.0
+    assert messages[0].data.pose.orientation.y == 0.0
+    assert messages[0].data.pose.orientation.z == 0.0
+    assert messages[0].data.pose.orientation.w == 1.0
 
 
-def test_geometry_msgs_posewithcovariance(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/PoseWithCovariance"
-    msg = create_message(typestore, msgtype, seed=16)
-
-    schema = (
-        "geometry_msgs/Pose pose\n"
-        "float64[36] covariance\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Pose\n"
-        "geometry_msgs/Point position\n"
-        "geometry_msgs/Quaternion orientation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-    )
+def test_geometry_msgs_posewithcovariance():
+    msgtype = "geometry_msgs/PoseWithCovariance"
+    schema = dedent("""
+        geometry_msgs/Pose pose
+        float64[36] covariance
+        ================================================================================
+        MSG: geometry_msgs/Pose
+        geometry_msgs/Point position
+        geometry_msgs/Quaternion orientation
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "pose": {
+                "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+            },
+            "covariance": [0.0] * 36
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.pose.position.x == 1.0
+    assert messages[0].data.pose.position.y == 2.0
+    assert messages[0].data.pose.position.z == 3.0
+    assert messages[0].data.pose.orientation.x == 0.0
+    assert messages[0].data.pose.orientation.y == 0.0
+    assert messages[0].data.pose.orientation.z == 0.0
+    assert messages[0].data.pose.orientation.w == 1.0
+    assert len(messages[0].data.covariance) == 36
 
 
-def test_geometry_msgs_posewithcovariancestamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/PoseWithCovarianceStamped"
-    msg = create_message(typestore, msgtype, seed=17)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/PoseWithCovariance pose\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/PoseWithCovariance\n"
-        "geometry_msgs/Pose pose\n"
-        "float64[36] covariance\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Pose\n"
-        "geometry_msgs/Point position\n"
-        "geometry_msgs/Quaternion orientation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Point\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_posewithcovariancestamped():
+    msgtype = "geometry_msgs/PoseWithCovarianceStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/PoseWithCovariance pose
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/PoseWithCovariance
+        geometry_msgs/Pose pose
+        float64[36] covariance
+        ================================================================================
+        MSG: geometry_msgs/Pose
+        geometry_msgs/Point position
+        geometry_msgs/Quaternion orientation
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "pose": {
+                "pose": {
+                    "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                    "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+                },
+                "covariance": [0.0] * 36
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.pose.pose.position.x == 1.0
+    assert messages[0].data.pose.pose.position.y == 2.0
+    assert messages[0].data.pose.pose.position.z == 3.0
+    assert messages[0].data.pose.pose.orientation.x == 0.0
+    assert messages[0].data.pose.pose.orientation.y == 0.0
+    assert messages[0].data.pose.pose.orientation.z == 0.0
+    assert messages[0].data.pose.pose.orientation.w == 1.0
+    assert len(messages[0].data.pose.covariance) == 36
 
 
-def test_geometry_msgs_quaternion(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Quaternion"
-    msg = create_message(typestore, msgtype, seed=18)
-
-    schema = (
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-    )
+def test_geometry_msgs_quaternion():
+    msgtype = "geometry_msgs/Quaternion"
+    schema = dedent("""
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.x == 0.0
+    assert messages[0].data.y == 0.0
+    assert messages[0].data.z == 0.0
+    assert messages[0].data.w == 1.0
 
 
-def test_geometry_msgs_quaternionstamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/QuaternionStamped"
-    msg = create_message(typestore, msgtype, seed=19)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Quaternion quaternion\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_quaternionstamped():
+    msgtype = "geometry_msgs/QuaternionStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Quaternion quaternion
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "quaternion": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.quaternion.x == 0.0
+    assert messages[0].data.quaternion.y == 0.0
+    assert messages[0].data.quaternion.z == 0.0
+    assert messages[0].data.quaternion.w == 1.0
 
 
-def test_geometry_msgs_transform(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Transform"
-    msg = create_message(typestore, msgtype, seed=20)
-
-    schema = (
-        "geometry_msgs/Vector3 translation\n"
-        "geometry_msgs/Quaternion rotation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-    )
+def test_geometry_msgs_transform():
+    msgtype = "geometry_msgs/Transform"
+    schema = dedent("""
+        geometry_msgs/Vector3 translation
+        geometry_msgs/Quaternion rotation
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "translation": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.translation.x == 1.0
+    assert messages[0].data.translation.y == 2.0
+    assert messages[0].data.translation.z == 3.0
+    assert messages[0].data.rotation.x == 0.0
+    assert messages[0].data.rotation.y == 0.0
+    assert messages[0].data.rotation.z == 0.0
+    assert messages[0].data.rotation.w == 1.0
 
 
-def test_geometry_msgs_transformstamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/TransformStamped"
-    msg = create_message(typestore, msgtype, seed=21)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "string child_frame_id\n"
-        "geometry_msgs/Transform transform\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Transform\n"
-        "geometry_msgs/Vector3 translation\n"
-        "geometry_msgs/Quaternion rotation\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Quaternion\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "float64 w\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_transformstamped():
+    msgtype = "geometry_msgs/TransformStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        string child_frame_id
+        geometry_msgs/Transform transform
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Transform
+        geometry_msgs/Vector3 translation
+        geometry_msgs/Quaternion rotation
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "child_frame_id": "child_frame",
+            "transform": {
+                "translation": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.child_frame_id == "child_frame"
+    assert messages[0].data.transform.translation.x == 1.0
+    assert messages[0].data.transform.translation.y == 2.0
+    assert messages[0].data.transform.translation.z == 3.0
+    assert messages[0].data.transform.rotation.x == 0.0
+    assert messages[0].data.transform.rotation.y == 0.0
+    assert messages[0].data.transform.rotation.z == 0.0
+    assert messages[0].data.transform.rotation.w == 1.0
 
 
-def test_geometry_msgs_twist(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Twist"
-    msg = create_message(typestore, msgtype, seed=22)
-
-    schema = (
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_twist():
+    msgtype = "geometry_msgs/Twist"
+    schema = dedent("""
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.linear.x == 1.0
+    assert messages[0].data.linear.y == 2.0
+    assert messages[0].data.linear.z == 3.0
+    assert messages[0].data.angular.x == 4.0
+    assert messages[0].data.angular.y == 5.0
+    assert messages[0].data.angular.z == 6.0
 
 
-def test_geometry_msgs_twiststamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/TwistStamped"
-    msg = create_message(typestore, msgtype, seed=23)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Twist twist\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Twist\n"
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_twiststamped():
+    msgtype = "geometry_msgs/TwistStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Twist twist
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Twist
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "twist": {
+                "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.twist.linear.x == 1.0
+    assert messages[0].data.twist.linear.y == 2.0
+    assert messages[0].data.twist.linear.z == 3.0
+    assert messages[0].data.twist.angular.x == 4.0
+    assert messages[0].data.twist.angular.y == 5.0
+    assert messages[0].data.twist.angular.z == 6.0
 
 
-def test_geometry_msgs_twistwithcovariance(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/TwistWithCovariance"
-    msg = create_message(typestore, msgtype, seed=24)
-
-    schema = (
-        "geometry_msgs/Twist twist\n"
-        "float64[36] covariance\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Twist\n"
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_twistwithcovariance():
+    msgtype = "geometry_msgs/TwistWithCovariance"
+    schema = dedent("""
+        geometry_msgs/Twist twist
+        float64[36] covariance
+        ================================================================================
+        MSG: geometry_msgs/Twist
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "twist": {
+                "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+            },
+            "covariance": [0.0] * 36
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.twist.linear.x == 1.0
+    assert messages[0].data.twist.linear.y == 2.0
+    assert messages[0].data.twist.linear.z == 3.0
+    assert messages[0].data.twist.angular.x == 4.0
+    assert messages[0].data.twist.angular.y == 5.0
+    assert messages[0].data.twist.angular.z == 6.0
+    assert len(messages[0].data.covariance) == 36
 
 
-def test_geometry_msgs_twistwithcovariancestamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/TwistWithCovarianceStamped"
-    msg = create_message(typestore, msgtype, seed=25)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/TwistWithCovariance twist\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/TwistWithCovariance\n"
-        "geometry_msgs/Twist twist\n"
-        "float64[36] covariance\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Twist\n"
-        "geometry_msgs/Vector3 linear\n"
-        "geometry_msgs/Vector3 angular\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_twistwithcovariancestamped():
+    msgtype = "geometry_msgs/TwistWithCovarianceStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/TwistWithCovariance twist
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/TwistWithCovariance
+        geometry_msgs/Twist twist
+        float64[36] covariance
+        ================================================================================
+        MSG: geometry_msgs/Twist
+        geometry_msgs/Vector3 linear
+        geometry_msgs/Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "twist": {
+                "twist": {
+                    "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                    "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+                },
+                "covariance": [0.0] * 36
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.twist.twist.linear.x == 1.0
+    assert messages[0].data.twist.twist.linear.y == 2.0
+    assert messages[0].data.twist.twist.linear.z == 3.0
+    assert messages[0].data.twist.twist.angular.x == 4.0
+    assert messages[0].data.twist.twist.angular.y == 5.0
+    assert messages[0].data.twist.twist.angular.z == 6.0
+    assert len(messages[0].data.twist.covariance) == 36
 
 
-def test_geometry_msgs_vector3(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Vector3"
-    msg = create_message(typestore, msgtype, seed=26)
-
-    schema = (
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_vector3():
+    msgtype = "geometry_msgs/Vector3"
+    schema = dedent("""
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {"x": 1.0, "y": 2.0, "z": 3.0}
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.x == 1.0
+    assert messages[0].data.y == 2.0
+    assert messages[0].data.z == 3.0
 
 
-def test_geometry_msgs_vector3stamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Vector3Stamped"
-    msg = create_message(typestore, msgtype, seed=27)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Vector3 vector\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_vector3stamped():
+    msgtype = "geometry_msgs/Vector3Stamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Vector3 vector
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "vector": {"x": 1.0, "y": 2.0, "z": 3.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.vector.x == 1.0
+    assert messages[0].data.vector.y == 2.0
+    assert messages[0].data.vector.z == 3.0
 
 
-def test_geometry_msgs_wrench(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/Wrench"
-    msg = create_message(typestore, msgtype, seed=28)
-
-    schema = (
-        "geometry_msgs/Vector3 force\n"
-        "geometry_msgs/Vector3 torque\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-    )
+def test_geometry_msgs_wrench():
+    msgtype = "geometry_msgs/Wrench"
+    schema = dedent("""
+        geometry_msgs/Vector3 force
+        geometry_msgs/Vector3 torque
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "force": {"x": 1.0, "y": 2.0, "z": 3.0},
+            "torque": {"x": 4.0, "y": 5.0, "z": 6.0}
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.force.x == 1.0
+    assert messages[0].data.force.y == 2.0
+    assert messages[0].data.force.z == 3.0
+    assert messages[0].data.torque.x == 4.0
+    assert messages[0].data.torque.y == 5.0
+    assert messages[0].data.torque.z == 6.0
 
 
-def test_geometry_msgs_wrenchstamped(typestore: Typestore):
-    msgtype = "geometry_msgs/msg/WrenchStamped"
-    msg = create_message(typestore, msgtype, seed=29)
-
-    schema = (
-        "std_msgs/Header header\n"
-        "geometry_msgs/Wrench wrench\n"
-        "================================================================================\n"
-        "MSG: std_msgs/Header\n"
-        "builtin_interfaces/Time stamp\n"
-        "string frame_id\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Wrench\n"
-        "geometry_msgs/Vector3 force\n"
-        "geometry_msgs/Vector3 torque\n"
-        "================================================================================\n"
-        "MSG: geometry_msgs/Vector3\n"
-        "float64 x\n"
-        "float64 y\n"
-        "float64 z\n"
-        "================================================================================\n"
-        "MSG: builtin_interfaces/Time\n"
-        "int32 sec\n"
-        "uint32 nanosec\n"
-    )
+def test_geometry_msgs_wrenchstamped():
+    msgtype = "geometry_msgs/WrenchStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/Wrench wrench
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Wrench
+        geometry_msgs/Vector3 force
+        geometry_msgs/Vector3 torque
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: builtin_interfaces/Time
+        int32 sec
+        uint32 nanosec
+    """)
 
     with TemporaryDirectory() as temp_dir:
-        path, channel_id = _write_mcap(temp_dir, typestore, msg, msgtype, schema)
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "wrench": {
+                "force": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "torque": {"x": 4.0, "y": 5.0, "z": 6.0}
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
 
     assert len(messages) == 1
-    message = messages[0]
-    assert message.channel_id == channel_id
-    actual = to_plain(typestore, message.data, msgtype)
-    expected = to_plain(typestore, msg, msgtype, actual.keys())
-    assert actual == expected
-
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.wrench.force.x == 1.0
+    assert messages[0].data.wrench.force.y == 2.0
+    assert messages[0].data.wrench.force.z == 3.0
+    assert messages[0].data.wrench.torque.x == 4.0
+    assert messages[0].data.wrench.torque.y == 5.0
+    assert messages[0].data.wrench.torque.z == 6.0
