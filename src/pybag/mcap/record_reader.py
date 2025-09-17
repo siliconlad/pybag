@@ -373,7 +373,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
             self._file.seek_from_start(message_index_offset)
             message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
-            message_index[channel_id].records.sort(key=lambda x: x[0])
+            message_index[channel_id].records.sort(key=lambda x: (x[0], x[1]))
 
         self._message_indexes[key] = message_index
         return message_index
@@ -500,34 +500,24 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
                 continue
 
-            offsets: list[tuple[int, int]] = []
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index)
-                if not message_indexes:
-                    continue
-                for message_index in message_indexes.values():
-                    for timestamp, offset in message_index.records:
-                        if start_timestamp is not None and timestamp < start_timestamp:
-                            continue
-                        if end_timestamp is not None and timestamp > end_timestamp:
-                            continue
-                        offsets.append((timestamp, offset))
-                offsets.sort(key=lambda record: (record[0], record[1]))
             else:
-                message_index = self.get_message_index(chunk_index, channel_id)
-                if message_index is None:
-                    continue
+                message_indexes = {channel_id: self.get_message_index(chunk_index, channel_id)}
+            if not message_indexes:
+                continue
+
+            offsets: list[tuple[int, int]] = []
+            for message_index in message_indexes.values():
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
                     offsets.append((timestamp, offset))
-
             if not offsets:
                 continue
 
-            # Read all messages in the chunk
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
             for _timestamp, offset in offsets:
