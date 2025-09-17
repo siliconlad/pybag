@@ -15,10 +15,10 @@ from .benchmark_utils import create_test_mcap
 
 
 def read_with_pybag(mcap: Path) -> Iterator[Any]:
-    reader = McapFileReader.from_file(mcap)
-    for topic in reader.get_topics():
-        for message in reader.messages(topic):
-            yield message.data
+    with McapFileReader.from_file(mcap) as reader:
+        for topic in reader.get_topics():
+            for message in reader.messages(topic):
+                yield message.data
 
 
 def read_with_rosbags(mcap: Path) -> Iterator[Any]:
