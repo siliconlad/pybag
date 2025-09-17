@@ -299,10 +299,6 @@ def test_std_msgs_header():
     schema = dedent("""
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:

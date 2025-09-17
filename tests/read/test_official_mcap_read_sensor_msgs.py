@@ -71,10 +71,6 @@ def test_sensor_msgs_batterystate():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -150,10 +146,6 @@ def test_sensor_msgs_camerainfo():
         uint32 height
         uint32 width
         bool do_rectify
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -248,10 +240,6 @@ def test_sensor_msgs_compressedimage():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -290,10 +278,6 @@ def test_sensor_msgs_fluidpressure():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -331,10 +315,6 @@ def test_sensor_msgs_illuminance():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -376,10 +356,6 @@ def test_sensor_msgs_image():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -441,10 +417,6 @@ def test_sensor_msgs_imu():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -492,10 +464,6 @@ def test_sensor_msgs_jointstate():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -541,10 +509,6 @@ def test_sensor_msgs_joy():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -684,10 +648,6 @@ def test_sensor_msgs_laserscan():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -741,10 +701,6 @@ def test_sensor_msgs_magneticfield():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -809,10 +765,6 @@ def test_sensor_msgs_multidofjointstate():
         MSG: geometry_msgs/Wrench
         geometry_msgs/Vector3 force
         geometry_msgs/Vector3 torque
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -895,10 +847,7 @@ def test_sensor_msgs_multiecholaserscan():
         ================================================================================
         MSG: sensor_msgs/LaserEcho
         float32[] echoes
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
+
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -972,10 +921,7 @@ def test_sensor_msgs_navsatfix():
         uint16 SERVICE_GALILEO=8
         int8 status
         uint16 service
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
+
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1061,10 +1007,7 @@ def test_sensor_msgs_pointcloud():
         MSG: sensor_msgs/ChannelFloat32
         string name
         float32[] valuess
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
+
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1128,10 +1071,7 @@ def test_sensor_msgs_pointcloud2():
         uint32 offset
         uint8 datatype
         uint32 count
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
+
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1227,10 +1167,6 @@ def test_sensor_msgs_range():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1307,10 +1243,6 @@ def test_sensor_msgs_relativehumidity():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1347,10 +1279,6 @@ def test_sensor_msgs_temperature():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1388,10 +1316,6 @@ def test_sensor_msgs_timereference():
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:

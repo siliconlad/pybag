@@ -43,10 +43,6 @@ def test_nav_msgs_gridcells():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -108,10 +104,6 @@ def test_nav_msgs_mapmetadata():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -180,10 +172,6 @@ def test_nav_msgs_occupancygrid():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -266,10 +254,6 @@ def test_nav_msgs_odometry():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -344,10 +328,6 @@ def test_nav_msgs_path():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:

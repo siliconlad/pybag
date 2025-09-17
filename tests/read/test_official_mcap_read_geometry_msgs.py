@@ -79,10 +79,6 @@ def test_geometry_msgs_accelstamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -180,10 +176,6 @@ def test_geometry_msgs_accelwithcovariancestamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -295,10 +287,6 @@ def test_geometry_msgs_inertiastamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -404,10 +392,6 @@ def test_geometry_msgs_pointstamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -488,10 +472,6 @@ def test_geometry_msgs_polygonstamped():
         float32 x
         float32 y
         float32 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -617,10 +597,6 @@ def test_geometry_msgs_posearray():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -682,10 +658,6 @@ def test_geometry_msgs_posestamped():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -797,10 +769,6 @@ def test_geometry_msgs_posewithcovariancestamped():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -880,10 +848,6 @@ def test_geometry_msgs_quaternionstamped():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -978,10 +942,6 @@ def test_geometry_msgs_transformstamped():
         float64 y
         float64 z
         float64 w
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1070,10 +1030,6 @@ def test_geometry_msgs_twiststamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1171,10 +1127,6 @@ def test_geometry_msgs_twistwithcovariancestamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1250,10 +1202,6 @@ def test_geometry_msgs_vector3stamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1333,10 +1281,6 @@ def test_geometry_msgs_wrenchstamped():
         float64 x
         float64 y
         float64 z
-        ================================================================================
-        MSG: builtin_interfaces/Time
-        int32 sec
-        uint32 nanosec
     """)
 
     with TemporaryDirectory() as temp_dir:
