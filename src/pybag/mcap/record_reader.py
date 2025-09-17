@@ -501,14 +501,14 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
                 continue
 
             if channel_id is None:
-                message_indexes = self.get_message_indexes(chunk_index)
+                message_indexes = self.get_message_indexes(chunk_index).values()
             else:
-                message_indexes = {channel_id: self.get_message_index(chunk_index, channel_id)}
+                message_indexes = [self.get_message_index(chunk_index, channel_id)]
             if not message_indexes:
                 continue
 
             offsets: list[tuple[int, int]] = []
-            for message_index in message_indexes.values():
+            for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
