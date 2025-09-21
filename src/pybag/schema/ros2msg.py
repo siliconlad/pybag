@@ -187,8 +187,10 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
             sub_msg_fields = [m.strip() for m in sub_msg.split('\n')[1:] if m]
             # TODO: Do some caching here
             sub_msg_schema = {}
+            # Use the package name from the sub-message, not the main message
+            sub_msg_package_name = sub_msg_name.split('/')[0]
             for raw_field in sub_msg_fields:
-                field_name, field = self._parse_field(raw_field, package_name)
+                field_name, field = self._parse_field(raw_field, sub_msg_package_name)
                 sub_msg_schema[field_name] = field
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
