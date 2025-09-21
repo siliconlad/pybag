@@ -204,7 +204,7 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                 lines.append(f"{_TAB}obj.{field_name} = None")
 
         flush()
-        lines.append(f"{_TAB}return obj")
+        lines.append(f"{_TAB}return {'obj' if field_names else 'None'}")
         function_defs.append("\n".join(lines))
         return func_name
 
