@@ -61,12 +61,17 @@ def test_messages_read_in_order_when_written_out_of_order(chunk_size):
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            writer.write_message("/unordered", 20, std_msgs.String(data="b"))
-            writer.write_message("/unordered", 10, std_msgs.String(data="a"))
-            writer.write_message("/unordered", 30, std_msgs.String(data="c"))
+            writer.write_message("/unordered", 80, std_msgs.String(data="a"))
+            writer.write_message("/unordered", 70, std_msgs.String(data="b"))
+            writer.write_message("/unordered", 60, std_msgs.String(data="c"))
+            writer.write_message("/unordered", 50, std_msgs.String(data="d"))
+            writer.write_message("/unordered", 40, std_msgs.String(data="e"))
+            writer.write_message("/unordered", 30, std_msgs.String(data="f"))
+            writer.write_message("/unordered", 20, std_msgs.String(data="g"))
+            writer.write_message("/unordered", 10, std_msgs.String(data="h"))
 
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/unordered"))
 
-    assert [message.log_time for message in messages] == [10, 20, 30]
-    assert [message.data.data for message in messages] == ["a", "b", "c"]
+    assert [message.log_time for message in messages] == [10, 20, 30, 40, 50, 60, 70, 80]
+    assert [message.data.data for message in messages] == ["h", "g", "f", "e", "d", "c", "b", "a"]
