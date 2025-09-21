@@ -33,13 +33,14 @@ class MessageSerializer:
     def serialize_message(self, message: Message, *, little_endian: bool = True) -> bytes:
         if not is_dataclass(message):  # pragma: no cover - defensive programming
             raise TypeError("Expected a dataclass instance")
-        encoder = self._message_encoder(little_endian=little_endian)
+
         message_type = type(message)
-        serializer = self._compiled.get(message_type)
-        if serializer is None:
+        if (serializer := self._compiled.get(message_type)) is None:
             schema, sub_schemas = self._schema_encoder.parse_schema(message_type)
             serializer = compile_serializer(schema, sub_schemas)
             self._compiled[message_type] = serializer
+
+        encoder = self._message_encoder(little_endian=little_endian)
         serializer(encoder, message)
         return encoder.save()
 
