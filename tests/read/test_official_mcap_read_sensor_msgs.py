@@ -103,7 +103,7 @@ def test_sensor_msgs_battery_state():
                 "stamp": {"sec": 123, "nanosec": 456789},
                 "frame_id": "battery"
             },
-            "voltage": 12.6,
+            "voltage": 12.5,
             "temperature": 25.0,
             "current": -2.5,  # negative = discharging
             "charge": 45.0,
@@ -114,7 +114,7 @@ def test_sensor_msgs_battery_state():
             "power_supply_health": 1,  # GOOD
             "power_supply_technology": 2,  # LION
             "present": True,
-            "cell_voltage": [4.2, 4.1, 4.3],
+            "cell_voltage": [4.25, 4.125, 4.5],
             "cell_temperature": [24.5, 25.0, 25.5],
             "location": "main_battery",
             "serial_number": "BAT123456"
@@ -131,7 +131,7 @@ def test_sensor_msgs_battery_state():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "battery"
-    assert messages[0].data.voltage == 12.6
+    assert messages[0].data.voltage == 12.5
     assert messages[0].data.temperature == 25.0
     assert messages[0].data.current == -2.5
     assert messages[0].data.percentage == 90.0
@@ -140,9 +140,9 @@ def test_sensor_msgs_battery_state():
     assert messages[0].data.power_supply_technology == 2
     assert messages[0].data.present is True
     assert len(messages[0].data.cell_voltage) == 3
-    assert messages[0].data.cell_voltage[0] == 4.2
-    assert messages[0].data.cell_voltage[1] == 4.1
-    assert messages[0].data.cell_voltage[2] == 4.3
+    assert messages[0].data.cell_voltage[0] == 4.25
+    assert messages[0].data.cell_voltage[1] == 4.125
+    assert messages[0].data.cell_voltage[2] == 4.5
     assert len(messages[0].data.cell_temperature) == 3
     assert messages[0].data.cell_temperature[0] == 24.5
     assert messages[0].data.cell_temperature[1] == 25.0
@@ -710,7 +710,7 @@ def test_sensor_msgs_imu():
     assert messages[0].data.angular_velocity.x == 0.1
     assert messages[0].data.angular_velocity.y == 0.05
     assert messages[0].data.angular_velocity.z == 0.02
-    assert messages[0].data.angular_velocity_covariance == [0.01] + [0.0] * 8
+    assert messages[0].data.angular_velocity_covariance == [0.001] + [0.0] * 8
     assert messages[0].data.linear_acceleration.x == 0.0
     assert messages[0].data.linear_acceleration.y == 0.0
     assert messages[0].data.linear_acceleration.z == 9.81
@@ -823,7 +823,7 @@ def test_sensor_msgs_joy():
                 "stamp": {"sec": 123, "nanosec": 456789},
                 "frame_id": "joy"
             },
-            "axes": [0.5, -0.8, 0.0, 1.0],
+            "axes": [0.5, -0.75, 0.0, 1.0],
             "buttons": [1, 0, 0, 1, 0, 0, 0, 0]
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
@@ -838,7 +838,7 @@ def test_sensor_msgs_joy():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "joy"
-    assert messages[0].data.axes == [0.5, -0.8, 0.0, 1.0]
+    assert messages[0].data.axes == [0.5, -0.75, 0.0, 1.0]
     assert messages[0].data.buttons == [1, 0, 0, 1, 0, 0, 0, 0]
 
 
@@ -861,7 +861,7 @@ def test_sensor_msgs_joy_feedback():
         msg = {
             "type": 1,  # TYPE_RUMBLE
             "id": 0,
-            "intensity": 0.7
+            "intensity": 0.75
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
@@ -874,7 +874,7 @@ def test_sensor_msgs_joy_feedback():
     assert messages[0].channel_id == 1
     assert messages[0].data.type == 1
     assert messages[0].data.id == 0
-    assert messages[0].data.intensity == 0.7
+    assert messages[0].data.intensity == 0.75
 
 
 def test_sensor_msgs_joy_feedback_array():
@@ -998,12 +998,12 @@ def test_sensor_msgs_laserscan():
                 "stamp": {"sec": 123, "nanosec": 456789},
                 "frame_id": "laser"
             },
-            "angle_min": -1.57,
-            "angle_max": 1.57,
-            "angle_increment": 0.017,
-            "time_increment": 0.0001,
-            "scan_time": 0.1,
-            "range_min": 0.1,
+            "angle_min": -1.625,
+            "angle_max": 1.625,
+            "angle_increment": 0.125,
+            "time_increment": 0.125,
+            "scan_time": 0.5,
+            "range_min": 0.5,
             "range_max": 10.0,
             "ranges": [1.5, 2.0, 2.5, 3.0],
             "intensities": [100.0, 120.0, 110.0, 90.0]
@@ -1020,12 +1020,12 @@ def test_sensor_msgs_laserscan():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "laser"
-    assert messages[0].data.angle_min == -1.57
-    assert messages[0].data.angle_max == 1.57
-    assert messages[0].data.angle_increment == 0.017
-    assert messages[0].data.time_increment == 0.0001
-    assert messages[0].data.scan_time == 0.1
-    assert messages[0].data.range_min == 0.1
+    assert messages[0].data.angle_min == -1.625
+    assert messages[0].data.angle_max == 1.625
+    assert messages[0].data.angle_increment == 0.125
+    assert messages[0].data.time_increment == 0.125
+    assert messages[0].data.scan_time == 0.5
+    assert messages[0].data.range_min == 0.5
     assert messages[0].data.range_max == 10.0
     assert messages[0].data.ranges == [1.5, 2.0, 2.5, 3.0]
     assert messages[0].data.intensities == [100.0, 120.0, 110.0, 90.0]
@@ -1284,15 +1284,15 @@ def test_sensor_msgs_multi_echo_laser_scan():
                 "stamp": {"sec": 123, "nanosec": 456789},
                 "frame_id": "laser"
             },
-            "angle_min": -1.57,
-            "angle_max": 1.57,
-            "angle_increment": 0.017,
-            "time_increment": 0.0001,
-            "scan_time": 0.1,
-            "range_min": 0.1,
+            "angle_min": -1.625,
+            "angle_max": 1.625,
+            "angle_increment": 0.125,
+            "time_increment": 0.125,
+            "scan_time": 0.5,
+            "range_min": 0.5,
             "range_max": 10.0,
             "ranges": [
-                {"echoes": [1.5, 1.6]},
+                {"echoes": [1.5, 1.0]},
             ],
             "intensities": [
                 {"echoes": [100.0, 105.0]},
@@ -1310,15 +1310,15 @@ def test_sensor_msgs_multi_echo_laser_scan():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "laser"
-    assert messages[0].data.angle_min == -1.57
-    assert messages[0].data.angle_max == 1.57
-    assert messages[0].data.angle_increment == 0.017
-    assert messages[0].data.time_increment == 0.0001
-    assert messages[0].data.scan_time == 0.1
-    assert messages[0].data.range_min == 0.1
+    assert messages[0].data.angle_min == -1.625
+    assert messages[0].data.angle_max == 1.625
+    assert messages[0].data.angle_increment == 0.125
+    assert messages[0].data.time_increment == 0.125
+    assert messages[0].data.scan_time == 0.5
+    assert messages[0].data.range_min == 0.5
     assert messages[0].data.range_max == 10.0
     assert len(messages[0].data.ranges) == 1
-    assert messages[0].data.ranges[0].echoes == [1.5, 1.6]
+    assert messages[0].data.ranges[0].echoes == [1.5, 1.0]
     assert len(messages[0].data.intensities) == 1
     assert messages[0].data.intensities[0].echoes == [100.0, 105.0]
 
@@ -1535,7 +1535,7 @@ def test_sensor_msgs_point_cloud():
                 {"x": 4.0, "y": 5.0, "z": 6.0}
             ],
             "channels": [
-                {"name": "intensity", "values": [100.0, 200.0]}
+                {"name": "intensity", "valuess": [100.0, 200.0]}
             ]
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
@@ -1559,7 +1559,7 @@ def test_sensor_msgs_point_cloud():
     assert messages[0].data.points[1].z == 6.0
     assert len(messages[0].data.channels) == 1
     assert messages[0].data.channels[0].name == "intensity"
-    assert messages[0].data.channels[0].values == [100.0, 200.0]
+    assert messages[0].data.channels[0].valuess == [100.0, 200.0]
 
 
 def test_sensor_msgs_point_cloud2():
@@ -1760,8 +1760,8 @@ def test_sensor_msgs_range():
                 "frame_id": "ultrasonic_sensor"
             },
             "radiation_type": 0,  # ULTRASOUND
-            "field_of_view": 0.7854,  # 45 degrees in radians
-            "min_range": 0.02,
+            "field_of_view": 0.75,
+            "min_range": 0.25,
             "max_range": 4.0,
             "range": 1.5
         }
@@ -1778,8 +1778,8 @@ def test_sensor_msgs_range():
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "ultrasonic_sensor"
     assert messages[0].data.radiation_type == 0  # ULTRASOUND
-    assert messages[0].data.field_of_view == 0.7854
-    assert messages[0].data.min_range == 0.02
+    assert messages[0].data.field_of_view == 0.75
+    assert messages[0].data.min_range == 0.25
     assert messages[0].data.max_range == 4.0
     assert messages[0].data.range == 1.5
 

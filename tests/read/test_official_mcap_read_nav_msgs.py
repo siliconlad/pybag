@@ -302,7 +302,7 @@ def test_nav_msgs_occupancy_grid():
             },
             "info": {
                 "map_load_time": {"sec": 100, "nanosec": 500000},
-                "resolution": 0.05,
+                "resolution": 0.25,
                 "width": 4,
                 "height": 3,
                 "origin": {
@@ -326,7 +326,7 @@ def test_nav_msgs_occupancy_grid():
     assert messages[0].data.header.frame_id == "map"
     assert messages[0].data.info.map_load_time.sec == 100
     assert messages[0].data.info.map_load_time.nanosec == 500000
-    assert messages[0].data.info.resolution == 0.05
+    assert messages[0].data.info.resolution == 0.25
     assert messages[0].data.info.width == 4
     assert messages[0].data.info.height == 3
     assert messages[0].data.info.origin.position.x == 0.0
