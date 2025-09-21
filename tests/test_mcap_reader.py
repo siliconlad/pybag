@@ -52,7 +52,10 @@ def test_messages_filter(typestore: Typestore):
 
 @pytest.mark.parametrize(
     "chunk_size",
-    [pytest.param(None, id="without_chunks"), pytest.param(10_000, id="with_chunks")],
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(8, id="with_chunks"),
+    ],
 )
 def test_messages_read_in_order_when_written_out_of_order(chunk_size):
     with TemporaryDirectory() as temp_dir:
