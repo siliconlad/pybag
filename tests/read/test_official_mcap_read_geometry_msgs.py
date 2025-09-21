@@ -30,8 +30,8 @@ def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path
 def test_geometry_msgs_accel():
     msgtype = "geometry_msgs/Accel"
     schema = dedent("""
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -65,15 +65,15 @@ def test_geometry_msgs_accelstamped():
     msgtype = "geometry_msgs/AccelStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Accel accel
+        Accel accel
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Accel
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -115,12 +115,12 @@ def test_geometry_msgs_accelstamped():
 def test_geometry_msgs_accelwithcovariance():
     msgtype = "geometry_msgs/AccelWithCovariance"
     schema = dedent("""
-        geometry_msgs/Accel accel
+        Accel accel
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Accel
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -151,26 +151,26 @@ def test_geometry_msgs_accelwithcovariance():
     assert messages[0].data.accel.angular.x == 4.0
     assert messages[0].data.accel.angular.y == 5.0
     assert messages[0].data.accel.angular.z == 6.0
-    assert len(messages[0].data.covariance) == 36
+    assert messages[0].data.covariance == [0.0] * 36
 
 
 def test_geometry_msgs_accelwithcovariancestamped():
     msgtype = "geometry_msgs/AccelWithCovarianceStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/AccelWithCovariance accel
+        AccelWithCovariance accel
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/AccelWithCovariance
-        geometry_msgs/Accel accel
+        Accel accel
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Accel
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -210,7 +210,7 @@ def test_geometry_msgs_accelwithcovariancestamped():
     assert messages[0].data.accel.accel.angular.x == 4.0
     assert messages[0].data.accel.accel.angular.y == 5.0
     assert messages[0].data.accel.accel.angular.z == 6.0
-    assert len(messages[0].data.accel.covariance) == 36
+    assert messages[0].data.accel.covariance == [0.0] * 36
 
 
 def test_geometry_msgs_inertia():
@@ -267,7 +267,7 @@ def test_geometry_msgs_inertiastamped():
     msgtype = "geometry_msgs/InertiaStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Inertia inertia
+        Inertia inertia
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -382,7 +382,7 @@ def test_geometry_msgs_pointstamped():
     msgtype = "geometry_msgs/PointStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Point point
+        Point point
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -422,7 +422,7 @@ def test_geometry_msgs_pointstamped():
 def test_geometry_msgs_polygon():
     msgtype = "geometry_msgs/Polygon"
     schema = dedent("""
-        geometry_msgs/Point32[] points
+        Point32[] points
         ================================================================================
         MSG: geometry_msgs/Point32
         float32 x
@@ -455,18 +455,106 @@ def test_geometry_msgs_polygon():
     assert messages[0].data.points[1].z == 6.0
 
 
+def test_geometry_msgs_polygon_instance():
+    msgtype = "geometry_msgs/PolygonInstance"
+    schema = dedent("""
+        geometry_msgs/Polygon polygon
+        int64 id
+        ================================================================================
+        MSG: geometry_msgs/Polygon
+        Point32[] points
+        ================================================================================
+        MSG: geometry_msgs/Point32
+        float32 x
+        float32 y
+        float32 z
+    """)
+
+    with TemporaryDirectory() as temp_dir:
+        msg = {
+            "polygon": {"points": [{"x": 1.0, "y": 2.0, "z": 3.0}]},
+            "id": 42
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
+        with McapFileReader.from_file(path) as reader:
+            messages = list(reader.messages("/rosbags"))
+
+    assert len(messages) == 1
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.id == 42
+    assert len(messages[0].data.polygon.points) == 1
+    assert messages[0].data.polygon.points[0].x == 1.0
+    assert messages[0].data.polygon.points[0].y == 2.0
+    assert messages[0].data.polygon.points[0].z == 3.0
+
+
+def test_geometry_msgs_polygon_instance_stamped():
+    msgtype = "geometry_msgs/PolygonInstanceStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/PolygonInstance polygon
+        ================================================================================
+        MSG: geometry_msgs/PolygonInstance
+        geometry_msgs/Polygon polygon
+        int64 id
+        ================================================================================
+        MSG: geometry_msgs/Polygon
+        Point32[] points
+        ================================================================================
+        MSG: geometry_msgs/Point32
+        float32 x
+        float32 y
+        float32 z
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+    """)
+    with TemporaryDirectory() as temp_dir:
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "polygon": {
+                "polygon": {"points": [{"x": 1.0, "y": 2.0, "z": 3.0}]},
+                "id": 42
+            },
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
+        with McapFileReader.from_file(path) as reader:
+            messages = list(reader.messages("/rosbags"))
+
+    assert len(messages) == 1
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.polygon.id == 42
+    assert len(messages[0].data.polygon.polygon.points) == 1
+    assert messages[0].data.polygon.polygon.points[0].x == 1.0
+    assert messages[0].data.polygon.polygon.points[0].y == 2.0
+    assert messages[0].data.polygon.polygon.points[0].z == 3.0
+
+
 def test_geometry_msgs_polygonstamped():
     msgtype = "geometry_msgs/PolygonStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Polygon polygon
+        Polygon polygon
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Polygon
-        geometry_msgs/Point32[] points
+        Point32[] points
         ================================================================================
         MSG: geometry_msgs/Point32
         float32 x
@@ -511,8 +599,8 @@ def test_geometry_msgs_polygonstamped():
 def test_geometry_msgs_pose():
     msgtype = "geometry_msgs/Pose"
     schema = dedent("""
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -573,19 +661,19 @@ def test_geometry_msgs_pose2d():
     assert messages[0].data.theta == 1.5708
 
 
-def test_geometry_msgs_posearray():
+def test_geometry_msgs_pose_array():
     msgtype = "geometry_msgs/PoseArray"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Pose[] poses
+        Pose[] poses
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -634,19 +722,19 @@ def test_geometry_msgs_posearray():
     assert messages[0].data.poses[0].orientation.w == 1.0
 
 
-def test_geometry_msgs_posestamped():
+def test_geometry_msgs_pose_stamped():
     msgtype = "geometry_msgs/PoseStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Pose pose
+        Pose pose
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -692,15 +780,15 @@ def test_geometry_msgs_posestamped():
     assert messages[0].data.pose.orientation.w == 1.0
 
 
-def test_geometry_msgs_posewithcovariance():
+def test_geometry_msgs_pose_with_covariance():
     msgtype = "geometry_msgs/PoseWithCovariance"
     schema = dedent("""
-        geometry_msgs/Pose pose
+        Pose pose
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -738,26 +826,26 @@ def test_geometry_msgs_posewithcovariance():
     assert messages[0].data.pose.orientation.y == 0.0
     assert messages[0].data.pose.orientation.z == 0.0
     assert messages[0].data.pose.orientation.w == 1.0
-    assert len(messages[0].data.covariance) == 36
+    assert messages[0].data.covariance == [0.0] * 36
 
 
-def test_geometry_msgs_posewithcovariancestamped():
+def test_geometry_msgs_pose_with_covariance_stamped():
     msgtype = "geometry_msgs/PoseWithCovarianceStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/PoseWithCovariance pose
+        PoseWithCovariance pose
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/PoseWithCovariance
-        geometry_msgs/Pose pose
+        Pose pose
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -804,16 +892,16 @@ def test_geometry_msgs_posewithcovariancestamped():
     assert messages[0].data.pose.pose.orientation.y == 0.0
     assert messages[0].data.pose.pose.orientation.z == 0.0
     assert messages[0].data.pose.pose.orientation.w == 1.0
-    assert len(messages[0].data.pose.covariance) == 36
+    assert messages[0].data.pose.covariance == [0.0] * 36
 
 
 def test_geometry_msgs_quaternion():
     msgtype = "geometry_msgs/Quaternion"
     schema = dedent("""
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -833,11 +921,11 @@ def test_geometry_msgs_quaternion():
     assert messages[0].data.w == 1.0
 
 
-def test_geometry_msgs_quaternionstamped():
+def test_geometry_msgs_quaternion_stamped():
     msgtype = "geometry_msgs/QuaternionStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Quaternion quaternion
+        Quaternion quaternion
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -879,8 +967,8 @@ def test_geometry_msgs_quaternionstamped():
 def test_geometry_msgs_transform():
     msgtype = "geometry_msgs/Transform"
     schema = dedent("""
-        geometry_msgs/Vector3 translation
-        geometry_msgs/Quaternion rotation
+        Vector3 translation
+        Quaternion rotation
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -922,15 +1010,15 @@ def test_geometry_msgs_transformstamped():
     schema = dedent("""
         std_msgs/Header header
         string child_frame_id
-        geometry_msgs/Transform transform
+        Transform transform
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Transform
-        geometry_msgs/Vector3 translation
-        geometry_msgs/Quaternion rotation
+        Vector3 translation
+        Quaternion rotation
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -981,8 +1069,8 @@ def test_geometry_msgs_transformstamped():
 def test_geometry_msgs_twist():
     msgtype = "geometry_msgs/Twist"
     schema = dedent("""
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -1016,15 +1104,15 @@ def test_geometry_msgs_twiststamped():
     msgtype = "geometry_msgs/TwistStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Twist twist
+        Twist twist
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Twist
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -1066,12 +1154,12 @@ def test_geometry_msgs_twiststamped():
 def test_geometry_msgs_twistwithcovariance():
     msgtype = "geometry_msgs/TwistWithCovariance"
     schema = dedent("""
-        geometry_msgs/Twist twist
+        Twist twist
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Twist
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -1102,26 +1190,26 @@ def test_geometry_msgs_twistwithcovariance():
     assert messages[0].data.twist.angular.x == 4.0
     assert messages[0].data.twist.angular.y == 5.0
     assert messages[0].data.twist.angular.z == 6.0
-    assert len(messages[0].data.covariance) == 36
+    assert messages[0].data.covariance == [0.0] * 36
 
 
 def test_geometry_msgs_twistwithcovariancestamped():
     msgtype = "geometry_msgs/TwistWithCovarianceStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/TwistWithCovariance twist
+        TwistWithCovariance twist
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/TwistWithCovariance
-        geometry_msgs/Twist twist
+        Twist twist
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Twist
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -1192,7 +1280,7 @@ def test_geometry_msgs_vector3stamped():
     msgtype = "geometry_msgs/Vector3Stamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Vector3 vector
+        Vector3 vector
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -1229,11 +1317,62 @@ def test_geometry_msgs_vector3stamped():
     assert messages[0].data.vector.z == 3.0
 
 
+def test_geometry_msgs_velocity_stamped():
+    msgtype = "geometry_msgs/VelocityStamped"
+    schema = dedent("""
+        std_msgs/Header header
+        string body_frame_id
+        string reference_frame_id
+        Twist velocity
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/Twist
+        Vector3 linear
+        Vector3 angular
+        ================================================================================
+        MSG: geometry_msgs/Vector3
+        float64 x
+        float64 y
+        float64 z
+    """)
+    with TemporaryDirectory() as temp_dir:
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "test_frame"
+            },
+            "velocity": {
+                "linear": {"x": 1.0, "y": 2.0, "z": 3.0},
+                "angular": {"x": 4.0, "y": 5.0, "z": 6.0}
+            }
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
+        with McapFileReader.from_file(path) as reader:
+            messages = list(reader.messages("/rosbags"))
+    assert len(messages) == 1
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "test_frame"
+    assert messages[0].data.velocity.linear.x == 1.0
+    assert messages[0].data.velocity.linear.y == 2.0
+    assert messages[0].data.velocity.linear.z == 3.0
+    assert messages[0].data.velocity.angular.x == 4.0
+    assert messages[0].data.velocity.angular.y == 5.0
+    assert messages[0].data.velocity.angular.z == 6.0
+
+
 def test_geometry_msgs_wrench():
     msgtype = "geometry_msgs/Wrench"
     schema = dedent("""
-        geometry_msgs/Vector3 force
-        geometry_msgs/Vector3 torque
+        Vector3 force
+        Vector3 torque
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -1267,15 +1406,15 @@ def test_geometry_msgs_wrenchstamped():
     msgtype = "geometry_msgs/WrenchStamped"
     schema = dedent("""
         std_msgs/Header header
-        geometry_msgs/Wrench wrench
+        Wrench wrench
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Wrench
-        geometry_msgs/Vector3 force
-        geometry_msgs/Vector3 torque
+        Vector3 force
+        Vector3 torque
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x

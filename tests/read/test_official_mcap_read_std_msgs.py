@@ -67,14 +67,14 @@ def test_std_msgs_byte():
     assert messages[0].data.data == b'\x2a'
 
 
-def test_std_msgs_bytemultiarray():
+def test_std_msgs_byte_multi_array():
     msgtype = "std_msgs/ByteMultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         byte[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -156,8 +156,7 @@ def test_std_msgs_colorrgba():
 
 def test_std_msgs_empty():
     msgtype = "std_msgs/Empty"
-    schema = dedent("""
-    """)
+    schema = ""
 
     with TemporaryDirectory() as temp_dir:
         msg = {}
@@ -179,7 +178,7 @@ def test_std_msgs_float32():
     """)
 
     with TemporaryDirectory() as temp_dir:
-        msg = {"data": 3.14}
+        msg = {"data": 3.5}
         path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
@@ -189,17 +188,17 @@ def test_std_msgs_float32():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
-    assert abs(messages[0].data.data - 3.14) < 0.001
+    assert messages[0].data.data == 3.5
 
 
-def test_std_msgs_float32multiarray():
+def test_std_msgs_float32_multi_array():
     msgtype = "std_msgs/Float32MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         float32[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -230,8 +229,8 @@ def test_std_msgs_float32multiarray():
     assert messages[0].data.layout.dim[0].size == 2
     assert messages[0].data.layout.dim[0].stride == 2
     assert messages[0].data.layout.data_offset == 0
-    assert abs(messages[0].data.data[0] - 1.5) < 0.001
-    assert abs(messages[0].data.data[1] - 2.5) < 0.001
+    assert messages[0].data.data[0] == 1.5
+    assert messages[0].data.data[1] == 2.5
 
 
 def test_std_msgs_float64():
@@ -254,14 +253,14 @@ def test_std_msgs_float64():
     assert messages[0].data.data == 2.71828
 
 
-def test_std_msgs_float64multiarray():
+def test_std_msgs_float64_multi_array():
     msgtype = "std_msgs/Float64MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         float64[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -289,6 +288,8 @@ def test_std_msgs_float64multiarray():
     assert messages[0].channel_id == 1
     assert len(messages[0].data.layout.dim) == 1
     assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
     assert messages[0].data.layout.data_offset == 0
     assert messages[0].data.data[0] == 3.14159
     assert messages[0].data.data[1] == 2.71828
@@ -340,14 +341,14 @@ def test_std_msgs_int16():
     assert messages[0].data.data == -1234
 
 
-def test_std_msgs_int16multiarray():
+def test_std_msgs_int16_multi_array():
     msgtype = "std_msgs/Int16MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         int16[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -374,6 +375,9 @@ def test_std_msgs_int16multiarray():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 3
+    assert messages[0].data.layout.dim[0].stride == 3
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [-100, 0, 100]
 
@@ -398,14 +402,14 @@ def test_std_msgs_int32():
     assert messages[0].data.data == -123456
 
 
-def test_std_msgs_int32multiarray():
+def test_std_msgs_int32_multi_array():
     msgtype = "std_msgs/Int32MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         int32[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -432,6 +436,10 @@ def test_std_msgs_int32multiarray():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.layout.data_offset == 0
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
     assert list(messages[0].data.data) == [-1000, 2000]
 
 
@@ -455,14 +463,14 @@ def test_std_msgs_int64():
     assert messages[0].data.data == -9876543210
 
 
-def test_std_msgs_int64multiarray():
+def test_std_msgs_int64_multi_array():
     msgtype = "std_msgs/Int64MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         int64[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -488,6 +496,10 @@ def test_std_msgs_int64multiarray():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [-9223372036854775807, 9223372036854775807]
 
@@ -512,14 +524,14 @@ def test_std_msgs_int8():
     assert messages[0].data.data == -42
 
 
-def test_std_msgs_int8multiarray():
+def test_std_msgs_int8_multi_array():
     msgtype = "std_msgs/Int8MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         int8[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -545,11 +557,15 @@ def test_std_msgs_int8multiarray():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 3
+    assert messages[0].data.layout.dim[0].stride == 3
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [-128, 0, 127]
 
 
-def test_std_msgs_multiarraydimension():
+def test_std_msgs_multi_array_dimension():
     msgtype = "std_msgs/MultiArrayDimension"
     schema = dedent("""
         string label
@@ -577,10 +593,10 @@ def test_std_msgs_multiarraydimension():
     assert messages[0].data.stride == 40
 
 
-def test_std_msgs_multiarraylayout():
+def test_std_msgs_multi_array_layout():
     msgtype = "std_msgs/MultiArrayLayout"
     schema = dedent("""
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -656,14 +672,14 @@ def test_std_msgs_uint16():
     assert messages[0].data.data == 1234
 
 
-def test_std_msgs_uint16multiarray():
+def test_std_msgs_uint16_multi_array():
     msgtype = "std_msgs/UInt16MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         uint16[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -689,6 +705,10 @@ def test_std_msgs_uint16multiarray():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [0, 65535]
 
@@ -713,14 +733,14 @@ def test_std_msgs_uint32():
     assert messages[0].data.data == 123456
 
 
-def test_std_msgs_uint32multiarray():
+def test_std_msgs_uint32_multi_array():
     msgtype = "std_msgs/UInt32MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         uint32[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -746,6 +766,10 @@ def test_std_msgs_uint32multiarray():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [0, 4294967295]
 
@@ -770,14 +794,14 @@ def test_std_msgs_uint64():
     assert messages[0].data.data == 9876543210
 
 
-def test_std_msgs_uint64multiarray():
+def test_std_msgs_uint64_multi_array():
     msgtype = "std_msgs/UInt64MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         uint64[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -803,6 +827,10 @@ def test_std_msgs_uint64multiarray():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 2
+    assert messages[0].data.layout.dim[0].stride == 2
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [0, 18446744073709551615]
 
@@ -827,14 +855,14 @@ def test_std_msgs_uint8():
     assert messages[0].data.data == 255
 
 
-def test_std_msgs_uint8multiarray():
+def test_std_msgs_uint8_multi_array():
     msgtype = "std_msgs/UInt8MultiArray"
     schema = dedent("""
-        std_msgs/MultiArrayLayout layout
+        MultiArrayLayout layout
         uint8[] data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        std_msgs/MultiArrayDimension[] dim
+        MultiArrayDimension[] dim
         uint32 data_offset
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
@@ -860,5 +888,9 @@ def test_std_msgs_uint8multiarray():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert len(messages[0].data.layout.dim) == 1
+    assert messages[0].data.layout.dim[0].label == "x"
+    assert messages[0].data.layout.dim[0].size == 3
+    assert messages[0].data.layout.dim[0].stride == 3
     assert messages[0].data.layout.data_offset == 0
     assert list(messages[0].data.data) == [0, 128, 255]

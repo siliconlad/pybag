@@ -27,7 +27,81 @@ def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path
     return path
 
 
-def test_nav_msgs_gridcells():
+def test_nav_msgs_goals():
+    msgtype = "nav_msgs/Goals"
+    schema = dedent("""
+        std_msgs/Header header
+        geometry_msgs/PoseStamped[] goals
+        ================================================================================
+        MSG: std_msgs/Header
+        builtin_interfaces/Time stamp
+        string frame_id
+        ================================================================================
+        MSG: geometry_msgs/PoseStamped
+        std_msgs/Header header
+        Pose pose
+        ================================================================================
+        MSG: geometry_msgs/Pose
+        Point position
+        Quaternion orientation
+        ================================================================================
+        MSG: geometry_msgs/Point
+        float64 x
+        float64 y
+        float64 z
+        ================================================================================
+        MSG: geometry_msgs/Quaternion
+        float64 x
+        float64 y
+        float64 z
+        float64 w
+    """)
+
+    with TemporaryDirectory() as temp_dir:
+        msg = {
+            "header": {
+                "stamp": {"sec": 123, "nanosec": 456789},
+                "frame_id": "map"
+            },
+            "goals": [
+                {
+                    "header": {
+                        "stamp": {"sec": 124, "nanosec": 100000},
+                        "frame_id": "map"
+                    },
+                    "pose": {
+                        "position": {"x": 1.0, "y": 2.0, "z": 3.0},
+                        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
+                    }
+                }
+            ]
+        }
+        path = _write_mcap(temp_dir, msg, msgtype, schema)
+        with McapFileReader.from_file(path) as reader:
+            messages = list(reader.messages("/rosbags"))
+
+    assert len(messages) == 1
+    assert messages[0].log_time == 0
+    assert messages[0].publish_time == 0
+    assert messages[0].sequence == 0
+    assert messages[0].channel_id == 1
+    assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
+    assert messages[0].data.header.frame_id == "map"
+    assert len(messages[0].data.goals) == 1
+    assert messages[0].data.goals[0].header.stamp.sec == 124
+    assert messages[0].data.goals[0].header.stamp.nanosec == 100000
+    assert messages[0].data.goals[0].header.frame_id == "map"
+    assert messages[0].data.goals[0].pose.position.x == 1.0
+    assert messages[0].data.goals[0].pose.position.y == 2.0
+    assert messages[0].data.goals[0].pose.position.z == 3.0
+    assert messages[0].data.goals[0].pose.orientation.x == 0.0
+    assert messages[0].data.goals[0].pose.orientation.y == 0.0
+    assert messages[0].data.goals[0].pose.orientation.z == 0.0
+    assert messages[0].data.goals[0].pose.orientation.w == 1.0
+
+
+def test_nav_msgs_grid_cells():
     msgtype = "nav_msgs/GridCells"
     schema = dedent("""
         std_msgs/Header header
@@ -81,7 +155,7 @@ def test_nav_msgs_gridcells():
     assert messages[0].data.cells[1].z == 0.0
 
 
-def test_nav_msgs_mapmetadata():
+def test_nav_msgs_map_meta_data():
     msgtype = "nav_msgs/MapMetaData"
     schema = dedent("""
         builtin_interfaces/Time map_load_time
@@ -91,8 +165,8 @@ def test_nav_msgs_mapmetadata():
         geometry_msgs/Pose origin
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -140,7 +214,7 @@ def test_nav_msgs_mapmetadata():
     assert messages[0].data.origin.orientation.w == 1.0
 
 
-def test_nav_msgs_occupancygrid():
+def test_nav_msgs_occupancy_grid():
     msgtype = "nav_msgs/OccupancyGrid"
     schema = dedent("""
         std_msgs/Header header
@@ -159,8 +233,8 @@ def test_nav_msgs_occupancygrid():
         geometry_msgs/Pose origin
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -204,11 +278,19 @@ def test_nav_msgs_occupancygrid():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "map"
+    assert messages[0].data.info.map_load_time.sec == 100
+    assert messages[0].data.info.map_load_time.nanosec == 500000
+    assert messages[0].data.info.resolution == 0.05
     assert messages[0].data.info.width == 4
     assert messages[0].data.info.height == 3
-    assert abs(messages[0].data.info.resolution - 0.05) < 0.001
-    assert len(messages[0].data.data) == 12
-    assert list(messages[0].data.data) == [0, -1, 100, 50, 25, 75, 0, -1, 100, 50, 25, 75]
+    assert messages[0].data.info.origin.position.x == 0.0
+    assert messages[0].data.info.origin.position.y == 0.0
+    assert messages[0].data.info.origin.position.z == 0.0
+    assert messages[0].data.info.origin.orientation.x == 0.0
+    assert messages[0].data.info.origin.orientation.y == 0.0
+    assert messages[0].data.info.origin.orientation.z == 0.0
+    assert messages[0].data.info.origin.orientation.w == 1.0
+    assert messages[0].data.data == [0, -1, 100, 50, 25, 75, 0, -1, 100, 50, 25, 75]
 
 
 def test_nav_msgs_odometry():
@@ -224,12 +306,12 @@ def test_nav_msgs_odometry():
         string frame_id
         ================================================================================
         MSG: geometry_msgs/PoseWithCovariance
-        geometry_msgs/Pose pose
+        Pose pose
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -243,12 +325,12 @@ def test_nav_msgs_odometry():
         float64 w
         ================================================================================
         MSG: geometry_msgs/TwistWithCovariance
-        geometry_msgs/Twist twist
+        Twist twist
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Twist
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -294,10 +376,18 @@ def test_nav_msgs_odometry():
     assert messages[0].data.pose.pose.position.x == 1.0
     assert messages[0].data.pose.pose.position.y == 2.0
     assert messages[0].data.pose.pose.position.z == 0.0
+    assert messages[0].data.pose.pose.orientation.x == 0.0
+    assert messages[0].data.pose.pose.orientation.y == 0.0
+    assert messages[0].data.pose.pose.orientation.z == 0.0
+    assert messages[0].data.pose.pose.orientation.w == 1.0
+    assert messages[0].data.pose.covariance == [0.0] * 36
     assert messages[0].data.twist.twist.linear.x == 0.5
+    assert messages[0].data.twist.twist.linear.y == 0.0
+    assert messages[0].data.twist.twist.linear.z == 0.0
+    assert messages[0].data.twist.twist.angular.x == 0.0
+    assert messages[0].data.twist.twist.angular.y == 0.0
     assert messages[0].data.twist.twist.angular.z == 0.1
-    assert len(messages[0].data.pose.covariance) == 36
-    assert len(messages[0].data.twist.covariance) == 36
+    assert messages[0].data.twist.covariance == [0.0] * 36
 
 
 def test_nav_msgs_path():
@@ -312,11 +402,11 @@ def test_nav_msgs_path():
         ================================================================================
         MSG: geometry_msgs/PoseStamped
         std_msgs/Header header
-        geometry_msgs/Pose pose
+        Pose pose
         ================================================================================
         MSG: geometry_msgs/Pose
-        geometry_msgs/Point position
-        geometry_msgs/Quaternion orientation
+        Point position
+        Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
         float64 x
@@ -347,16 +437,6 @@ def test_nav_msgs_path():
                         "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
                     }
                 },
-                {
-                    "header": {
-                        "stamp": {"sec": 125, "nanosec": 200000},
-                        "frame_id": "map"
-                    },
-                    "pose": {
-                        "position": {"x": 1.0, "y": 0.0, "z": 0.0},
-                        "orientation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
-                    }
-                }
             ]
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
@@ -373,8 +453,12 @@ def test_nav_msgs_path():
     assert messages[0].data.header.frame_id == "map"
     assert len(messages[0].data.poses) == 2
     assert messages[0].data.poses[0].header.stamp.sec == 124
+    assert messages[0].data.poses[0].header.stamp.nanosec == 100000
+    assert messages[0].data.poses[0].header.frame_id == "map"
     assert messages[0].data.poses[0].pose.position.x == 0.0
     assert messages[0].data.poses[0].pose.position.y == 0.0
-    assert messages[0].data.poses[1].header.stamp.sec == 125
-    assert messages[0].data.poses[1].pose.position.x == 1.0
-    assert messages[0].data.poses[1].pose.position.y == 0.0
+    assert messages[0].data.poses[0].pose.position.z == 0.0
+    assert messages[0].data.poses[0].pose.orientation.x == 0.0
+    assert messages[0].data.poses[0].pose.orientation.y == 0.0
+    assert messages[0].data.poses[0].pose.orientation.z == 0.0
+    assert messages[0].data.poses[0].pose.orientation.w == 1.0

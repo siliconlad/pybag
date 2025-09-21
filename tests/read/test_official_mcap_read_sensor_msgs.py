@@ -27,30 +27,33 @@ def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path
     return path
 
 
-def test_sensor_msgs_batterystate():
+def test_sensor_msgs_battery_state():
     msgtype = "sensor_msgs/BatteryState"
     schema = dedent("""
-        uint8 POWER_SUPPLY_STATUS_UNKNOWN=0
-        uint8 POWER_SUPPLY_STATUS_CHARGING=1
-        uint8 POWER_SUPPLY_STATUS_DISCHARGING=2
-        uint8 POWER_SUPPLY_STATUS_NOT_CHARGING=3
-        uint8 POWER_SUPPLY_STATUS_FULL=4
-        uint8 POWER_SUPPLY_HEALTH_UNKNOWN=0
-        uint8 POWER_SUPPLY_HEALTH_GOOD=1
-        uint8 POWER_SUPPLY_HEALTH_OVERHEAT=2
-        uint8 POWER_SUPPLY_HEALTH_DEAD=3
-        uint8 POWER_SUPPLY_HEALTH_OVERVOLTAGE=4
-        uint8 POWER_SUPPLY_HEALTH_UNSPEC_FAILURE=5
-        uint8 POWER_SUPPLY_HEALTH_COLD=6
-        uint8 POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE=7
-        uint8 POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE=8
-        uint8 POWER_SUPPLY_TECHNOLOGY_UNKNOWN=0
-        uint8 POWER_SUPPLY_TECHNOLOGY_NIMH=1
-        uint8 POWER_SUPPLY_TECHNOLOGY_LION=2
-        uint8 POWER_SUPPLY_TECHNOLOGY_LIPO=3
-        uint8 POWER_SUPPLY_TECHNOLOGY_LIFE=4
-        uint8 POWER_SUPPLY_TECHNOLOGY_NICD=5
-        uint8 POWER_SUPPLY_TECHNOLOGY_LIMN=6
+        uint8 POWER_SUPPLY_STATUS_UNKNOWN = 0
+        uint8 POWER_SUPPLY_STATUS_CHARGING = 1
+        uint8 POWER_SUPPLY_STATUS_DISCHARGING = 2
+        uint8 POWER_SUPPLY_STATUS_NOT_CHARGING = 3
+        uint8 POWER_SUPPLY_STATUS_FULL = 4
+
+        uint8 POWER_SUPPLY_HEALTH_UNKNOWN = 0
+        uint8 POWER_SUPPLY_HEALTH_GOOD = 1
+        uint8 POWER_SUPPLY_HEALTH_OVERHEAT = 2
+        uint8 POWER_SUPPLY_HEALTH_DEAD = 3
+        uint8 POWER_SUPPLY_HEALTH_OVERVOLTAGE = 4
+        uint8 POWER_SUPPLY_HEALTH_UNSPEC_FAILURE = 5
+        uint8 POWER_SUPPLY_HEALTH_COLD = 6
+        uint8 POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE = 7
+        uint8 POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE = 8
+
+        uint8 POWER_SUPPLY_TECHNOLOGY_UNKNOWN = 0
+        uint8 POWER_SUPPLY_TECHNOLOGY_NIMH = 1
+        uint8 POWER_SUPPLY_TECHNOLOGY_LION = 2
+        uint8 POWER_SUPPLY_TECHNOLOGY_LIPO = 3
+        uint8 POWER_SUPPLY_TECHNOLOGY_LIFE = 4
+        uint8 POWER_SUPPLY_TECHNOLOGY_NICD = 5
+        uint8 POWER_SUPPLY_TECHNOLOGY_LIMN = 6
+
         std_msgs/Header header
         float32 voltage
         float32 temperature
@@ -63,8 +66,10 @@ def test_sensor_msgs_batterystate():
         uint8 power_supply_health
         uint8 power_supply_technology
         bool present
+
         float32[] cell_voltage
         float32[] cell_temperature
+
         string location
         string serial_number
         ================================================================================
@@ -107,21 +112,26 @@ def test_sensor_msgs_batterystate():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "battery"
-    assert abs(messages[0].data.voltage - 12.6) < 0.001
-    assert abs(messages[0].data.temperature - 25.0) < 0.001
-    assert abs(messages[0].data.current - (-2.5)) < 0.001
-    assert abs(messages[0].data.percentage - 90.0) < 0.001
+    assert messages[0].data.voltage == 12.6
+    assert messages[0].data.temperature == 25.0
+    assert messages[0].data.current == -2.5
+    assert messages[0].data.percentage == 90.0
     assert messages[0].data.power_supply_status == 2
     assert messages[0].data.power_supply_health == 1
     assert messages[0].data.power_supply_technology == 2
     assert messages[0].data.present is True
     assert len(messages[0].data.cell_voltage) == 3
+    assert messages[0].data.cell_voltage[0] == 4.2
+    assert messages[0].data.cell_voltage[1] == 4.1
+    assert messages[0].data.cell_voltage[2] == 4.3
     assert len(messages[0].data.cell_temperature) == 3
+    assert messages[0].data.cell_temperature[0] == 24.5
+    assert messages[0].data.cell_temperature[1] == 25.0
     assert messages[0].data.location == "main_battery"
     assert messages[0].data.serial_number == "BAT123456"
 
 
-def test_sensor_msgs_camerainfo():
+def test_sensor_msgs_camera_info():
     msgtype = "sensor_msgs/CameraInfo"
     schema = dedent("""
         std_msgs/Header header
@@ -134,7 +144,7 @@ def test_sensor_msgs_camerainfo():
         float64[12] p
         uint32 binning_x
         uint32 binning_y
-        sensor_msgs/RegionOfInterest roi
+        RegionOfInterest roi
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -186,22 +196,19 @@ def test_sensor_msgs_camerainfo():
     assert messages[0].data.height == 480
     assert messages[0].data.width == 640
     assert messages[0].data.distortion_model == "plumb_bob"
-    assert len(messages[0].data.d) == 5
-    assert abs(messages[0].data.d[0] + 0.1) < 0.001
-    assert len(messages[0].data.k) == 9
-    assert messages[0].data.k[0] == 500.0
-    assert len(messages[0].data.r) == 9
-    assert messages[0].data.r[0] == 1.0
-    assert len(messages[0].data.p) == 12
-    assert messages[0].data.p[0] == 500.0
+    assert messages[0].data.d == [-0.1, 0.05, 0.0, 0.0, 0.0]
+    assert messages[0].data.k == [500.0, 0.0, 320.0, 0.0, 500.0, 240.0, 0.0, 0.0, 1.0]
+    assert messages[0].data.r == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    assert messages[0].data.p == [500.0, 0.0, 320.0, 0.0, 0.0, 500.0, 240.0, 0.0, 0.0, 0.0, 1.0, 0.0]
     assert messages[0].data.binning_x == 1
     assert messages[0].data.binning_y == 1
     assert messages[0].data.roi.x_offset == 0
+    assert messages[0].data.roi.y_offset == 0
     assert messages[0].data.roi.height == 480
     assert messages[0].data.roi.do_rectify == False
 
 
-def test_sensor_msgs_channelfloat32():
+def test_sensor_msgs_channel_float32():
     # values -> valuess because of mcap_ros2 bug
     msgtype = "sensor_msgs/ChannelFloat32"
     schema = dedent("""
@@ -212,7 +219,7 @@ def test_sensor_msgs_channelfloat32():
     with TemporaryDirectory() as temp_dir:
         msg = {
             "name": "intensity",
-            "valuess": [1.0, 2.5, 3.7]
+            "valuess": [1.0, 2.5, 3.5]
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
@@ -224,13 +231,10 @@ def test_sensor_msgs_channelfloat32():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.name == "intensity"
-    assert len(messages[0].data.valuess) == 3
-    assert abs(messages[0].data.valuess[0] - 1.0) < 0.001
-    assert abs(messages[0].data.valuess[1] - 2.5) < 0.001
-    assert abs(messages[0].data.valuess[2] - 3.7) < 0.001
+    assert messages[0].data.valuess == [1.0, 2.5, 3.5]
 
 
-def test_sensor_msgs_compressedimage():
+def test_sensor_msgs_compressed_image():
     msgtype = "sensor_msgs/CompressedImage"
     schema = dedent("""
         std_msgs/Header header
@@ -249,7 +253,7 @@ def test_sensor_msgs_compressedimage():
                 "frame_id": "camera"
             },
             "format": "jpeg",
-            "data": [255, 216, 255, 224, 0, 16, 74, 70, 73, 70]  # Sample JPEG header bytes
+            "data": [255, 216, 255, 224]  # Sample JPEG header bytes
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
@@ -264,11 +268,10 @@ def test_sensor_msgs_compressedimage():
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "camera"
     assert messages[0].data.format == "jpeg"
-    assert len(messages[0].data.data) == 10
-    assert list(messages[0].data.data[:4]) == [255, 216, 255, 224]
+    assert messages[0].data.data == [255, 216, 255, 224]
 
 
-def test_sensor_msgs_fluidpressure():
+def test_sensor_msgs_fluid_pressure():
     msgtype = "sensor_msgs/FluidPressure"
     schema = dedent("""
         std_msgs/Header header
@@ -338,8 +341,8 @@ def test_sensor_msgs_illuminance():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "light_sensor"
-    assert abs(messages[0].data.illuminance - 450.5) < 0.001
-    assert abs(messages[0].data.variance - 2.1) < 0.001
+    assert messages[0].data.illuminance == 450.5
+    assert messages[0].data.variance == 2.1
 
 
 def test_sensor_msgs_image():
@@ -369,7 +372,7 @@ def test_sensor_msgs_image():
             "encoding": "rgb8",
             "is_bigendian": 0,
             "step": 1920,  # width * 3 bytes per pixel for rgb8
-            "data": [255, 0, 0] * 10  # Sample red pixels
+            "data": [255, 0, 0]  # Sample red pixel
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
@@ -388,18 +391,20 @@ def test_sensor_msgs_image():
     assert messages[0].data.encoding == "rgb8"
     assert messages[0].data.is_bigendian == 0
     assert messages[0].data.step == 1920
-    assert len(messages[0].data.data) == 30
-    assert list(messages[0].data.data[:3]) == [255, 0, 0]
+    assert messages[0].data.data == [255, 0, 0]
 
 
 def test_sensor_msgs_imu():
     msgtype = "sensor_msgs/Imu"
     schema = dedent("""
         std_msgs/Header header
+
         geometry_msgs/Quaternion orientation
         float64[9] orientation_covariance
+
         geometry_msgs/Vector3 angular_velocity
         float64[9] angular_velocity_covariance
+
         geometry_msgs/Vector3 linear_acceleration
         float64[9] linear_acceleration_covariance
         ================================================================================
@@ -445,14 +450,21 @@ def test_sensor_msgs_imu():
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "imu_link"
     assert messages[0].data.orientation.x == 0.0
+    assert messages[0].data.orientation.y == 0.0
+    assert messages[0].data.orientation.z == 0.0
     assert messages[0].data.orientation.w == 1.0
-    assert len(messages[0].data.orientation_covariance) == 9
-    assert messages[0].data.orientation_covariance[0] == 0.01
-    assert abs(messages[0].data.angular_velocity.x - 0.1) < 0.001
-    assert abs(messages[0].data.linear_acceleration.z - 9.81) < 0.001
+    assert messages[0].data.orientation_covariance == [0.01] + [0.0] * 8
+    assert messages[0].data.angular_velocity.x == 0.1
+    assert messages[0].data.angular_velocity.y == 0.05
+    assert messages[0].data.angular_velocity.z == 0.02
+    assert messages[0].data.angular_velocity_covariance == [0.01] + [0.0] * 8
+    assert messages[0].data.linear_acceleration.x == 0.0
+    assert messages[0].data.linear_acceleration.y == 0.0
+    assert messages[0].data.linear_acceleration.z == 9.81
+    assert messages[0].data.linear_acceleration_covariance == [0.1] + [0.0] * 8
 
 
-def test_sensor_msgs_jointstate():
+def test_sensor_msgs_joint_state():
     msgtype = "sensor_msgs/JointState"
     schema = dedent("""
         std_msgs/Header header
@@ -489,14 +501,10 @@ def test_sensor_msgs_jointstate():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "robot"
-    assert len(messages[0].data.name) == 3
-    assert messages[0].data.name[0] == "joint_1"
-    assert len(messages[0].data.position) == 3
-    assert abs(messages[0].data.position[0] - 1.57) < 0.001
-    assert len(messages[0].data.velocity) == 3
-    assert abs(messages[0].data.velocity[0] - 0.1) < 0.001
-    assert len(messages[0].data.effort) == 3
-    assert abs(messages[0].data.effort[0] - 10.5) < 0.001
+    assert messages[0].data.name == ["joint_1", "joint_2", "joint_3"]
+    assert messages[0].data.position == [1.57, 0.0, -1.57]
+    assert messages[0].data.velocity == [0.1, 0.0, -0.1]
+    assert messages[0].data.effort == [10.5, 0.0, -5.2]
 
 
 def test_sensor_msgs_joy():
@@ -532,19 +540,16 @@ def test_sensor_msgs_joy():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "joy"
-    assert len(messages[0].data.axes) == 4
-    assert abs(messages[0].data.axes[0] - 0.5) < 0.001
-    assert len(messages[0].data.buttons) == 8
-    assert messages[0].data.buttons[0] == 1
-    assert messages[0].data.buttons[1] == 0
+    assert messages[0].data.axes == [0.5, -0.8, 0.0, 1.0]
+    assert messages[0].data.buttons == [1, 0, 0, 1, 0, 0, 0, 0]
 
 
 def test_sensor_msgs_joyfeedback():
     msgtype = "sensor_msgs/JoyFeedback"
     schema = dedent("""
-        uint8 TYPE_LED=0
-        uint8 TYPE_RUMBLE=1
-        uint8 TYPE_BUZZER=2
+        uint8 TYPE_LED    = 0
+        uint8 TYPE_RUMBLE = 1
+        uint8 TYPE_BUZZER = 2
         uint8 type
         uint8 id
         float32 intensity
@@ -567,18 +572,18 @@ def test_sensor_msgs_joyfeedback():
     assert messages[0].channel_id == 1
     assert messages[0].data.type == 1
     assert messages[0].data.id == 0
-    assert abs(messages[0].data.intensity - 0.7) < 0.001
+    assert messages[0].data.intensity == 0.7
 
 
-def test_sensor_msgs_joyfeedbackarray():
+def test_sensor_msgs_joy_feedback_array():
     msgtype = "sensor_msgs/JoyFeedbackArray"
     schema = dedent("""
-        sensor_msgs/JoyFeedback[] array
+        JoyFeedback[] array
         ================================================================================
         MSG: sensor_msgs/JoyFeedback
-        uint8 TYPE_LED=0
-        uint8 TYPE_RUMBLE=1
-        uint8 TYPE_BUZZER=2
+        uint8 TYPE_LED    = 0
+        uint8 TYPE_RUMBLE = 1
+        uint8 TYPE_BUZZER = 2
         uint8 type
         uint8 id
         float32 intensity
@@ -603,19 +608,20 @@ def test_sensor_msgs_joyfeedbackarray():
     assert len(messages[0].data.array) == 2
     assert messages[0].data.array[0].type == 0
     assert messages[0].data.array[0].id == 0
-    assert abs(messages[0].data.array[0].intensity - 1.0) < 0.001
+    assert messages[0].data.array[0].intensity == 1.0
     assert messages[0].data.array[1].type == 1
-    assert abs(messages[0].data.array[1].intensity - 0.5) < 0.001
+    assert messages[0].data.array[1].id == 1
+    assert messages[0].data.array[1].intensity == 0.5
 
 
-def test_sensor_msgs_laserecho():
+def test_sensor_msgs_laser_echo():
     msgtype = "sensor_msgs/LaserEcho"
     schema = dedent("""
         float32[] echoes
     """)
 
     with TemporaryDirectory() as temp_dir:
-        msg = {"echoes": [1.2, 2.4, 3.6]}
+        msg = {"echoes": [1.25, 2.5, 3.5]}
         path = _write_mcap(temp_dir, msg, msgtype, schema)
         with McapFileReader.from_file(path) as reader:
             messages = list(reader.messages("/rosbags"))
@@ -625,23 +631,24 @@ def test_sensor_msgs_laserecho():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
-    assert len(messages[0].data.echoes) == 3
-    assert abs(messages[0].data.echoes[0] - 1.2) < 0.001
-    assert abs(messages[0].data.echoes[1] - 2.4) < 0.001
-    assert abs(messages[0].data.echoes[2] - 3.6) < 0.001
+    assert messages[0].data.echoes == [1.25, 2.5, 3.5]
 
 
 def test_sensor_msgs_laserscan():
     msgtype = "sensor_msgs/LaserScan"
     schema = dedent("""
         std_msgs/Header header
+
         float32 angle_min
         float32 angle_max
         float32 angle_increment
+
         float32 time_increment
         float32 scan_time
+
         float32 range_min
         float32 range_max
+
         float32[] ranges
         float32[] intensities
         ================================================================================
@@ -676,17 +683,20 @@ def test_sensor_msgs_laserscan():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "laser"
-    assert abs(messages[0].data.angle_min + 1.57) < 0.001
-    assert abs(messages[0].data.angle_max - 1.57) < 0.001
-    assert abs(messages[0].data.range_min - 0.1) < 0.001
-    assert len(messages[0].data.ranges) == 4
-    assert abs(messages[0].data.ranges[0] - 1.5) < 0.001
-    assert len(messages[0].data.intensities) == 4
-    assert abs(messages[0].data.intensities[0] - 100.0) < 0.001
+    assert messages[0].data.angle_min == -1.57
+    assert messages[0].data.angle_max == 1.57
+    assert messages[0].data.angle_increment == 0.017
+    assert messages[0].data.time_increment == 0.0001
+    assert messages[0].data.scan_time == 0.1
+    assert messages[0].data.range_min == 0.1
+    assert messages[0].data.range_max == 10.0
+    assert messages[0].data.ranges == [1.5, 2.0, 2.5, 3.0]
+    assert messages[0].data.intensities == [100.0, 120.0, 110.0, 90.0]
 
 
-def test_sensor_msgs_magneticfield():
+def test_sensor_msgs_magnetic_field():
     msgtype = "sensor_msgs/MagneticField"
     schema = dedent("""
         std_msgs/Header header
@@ -722,15 +732,15 @@ def test_sensor_msgs_magneticfield():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "magnetometer"
-    assert abs(messages[0].data.magnetic_field.x - 2.1e-5) < 1e-7
-    assert abs(messages[0].data.magnetic_field.y - 0.5e-5) < 1e-7
-    assert abs(messages[0].data.magnetic_field.z + 4.2e-5) < 1e-7
-    assert len(messages[0].data.magnetic_field_covariance) == 9
-    assert abs(messages[0].data.magnetic_field_covariance[0] - 1e-12) < 1e-15
+    assert messages[0].data.magnetic_field.x == 2.1e-5
+    assert messages[0].data.magnetic_field.y == 0.5e-5
+    assert messages[0].data.magnetic_field.z == -4.2e-5
+    assert messages[0].data.magnetic_field_covariance == [1e-12] + [0.0] * 8
 
 
-def test_sensor_msgs_multidofjointstate():
+def test_sensor_msgs_multi_dof_joint_state():
     msgtype = "sensor_msgs/MultiDOFJointState"
     schema = dedent("""
         std_msgs/Header header
@@ -744,8 +754,8 @@ def test_sensor_msgs_multidofjointstate():
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Transform
-        geometry_msgs/Vector3 translation
-        geometry_msgs/Quaternion rotation
+        Vector3 translation
+        Quaternion rotation
         ================================================================================
         MSG: geometry_msgs/Vector3
         float64 x
@@ -759,12 +769,12 @@ def test_sensor_msgs_multidofjointstate():
         float64 w
         ================================================================================
         MSG: geometry_msgs/Twist
-        geometry_msgs/Vector3 linear
-        geometry_msgs/Vector3 angular
+        Vector3 linear
+        Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Wrench
-        geometry_msgs/Vector3 force
-        geometry_msgs/Vector3 torque
+        Vector3 force
+        Vector3 torque
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -778,30 +788,18 @@ def test_sensor_msgs_multidofjointstate():
                 {
                     "translation": {"x": 1.0, "y": 0.0, "z": 0.0},
                     "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
-                },
-                {
-                    "translation": {"x": 0.5, "y": 0.5, "z": 0.0},
-                    "rotation": {"x": 0.0, "y": 0.0, "z": 0.707, "w": 0.707}
                 }
             ],
             "twist": [
                 {
                     "linear": {"x": 0.1, "y": 0.0, "z": 0.0},
                     "angular": {"x": 0.0, "y": 0.0, "z": 0.1}
-                },
-                {
-                    "linear": {"x": 0.0, "y": 0.1, "z": 0.0},
-                    "angular": {"x": 0.0, "y": 0.1, "z": 0.0}
                 }
             ],
             "wrench": [
                 {
                     "force": {"x": 10.0, "y": 0.0, "z": 0.0},
                     "torque": {"x": 0.0, "y": 0.0, "z": 1.0}
-                },
-                {
-                    "force": {"x": 0.0, "y": 5.0, "z": 0.0},
-                    "torque": {"x": 0.0, "y": 0.5, "z": 0.0}
                 }
             ]
         }
@@ -815,31 +813,47 @@ def test_sensor_msgs_multidofjointstate():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "robot"
-    assert len(messages[0].data.joint_names) == 2
-    assert messages[0].data.joint_names[0] == "base_joint"
-    assert len(messages[0].data.transforms) == 2
+    assert messages[0].data.joint_names == ["base_joint", "arm_joint"]
     assert messages[0].data.transforms[0].translation.x == 1.0
-    assert abs(messages[0].data.transforms[1].rotation.z - 0.707) < 0.001
-    assert len(messages[0].data.twist) == 2
-    assert abs(messages[0].data.twist[0].linear.x - 0.1) < 0.001
-    assert len(messages[0].data.wrench) == 2
-    assert abs(messages[0].data.wrench[0].force.x - 10.0) < 0.001
+    assert messages[0].data.transforms[0].translation.y == 0.0
+    assert messages[0].data.transforms[0].translation.z == 0.0
+    assert messages[0].data.transforms[0].rotation.x == 0.0
+    assert messages[0].data.transforms[0].rotation.y == 0.0
+    assert messages[0].data.transforms[0].rotation.z == 0.0
+    assert messages[0].data.transforms[0].rotation.w == 1.0
+    assert messages[0].data.twist[0].linear.x == 0.1
+    assert messages[0].data.twist[0].linear.y == 0.0
+    assert messages[0].data.twist[0].linear.z == 0.0
+    assert messages[0].data.twist[0].angular.x == 0.0
+    assert messages[0].data.twist[0].angular.y == 0.0
+    assert messages[0].data.twist[0].angular.z == 0.1
+    assert messages[0].data.wrench[0].force.x == 10.0
+    assert messages[0].data.wrench[0].force.y == 0.0
+    assert messages[0].data.wrench[0].force.z == 0.0
+    assert messages[0].data.wrench[0].torque.x == 0.0
+    assert messages[0].data.wrench[0].torque.y == 0.0
+    assert messages[0].data.wrench[0].torque.z == 1.0
 
 
-def test_sensor_msgs_multiecholaserscan():
+def test_sensor_msgs_multi_echo_laser_scan():
     msgtype = "sensor_msgs/MultiEchoLaserScan"
     schema = dedent("""
         std_msgs/Header header
+
         float32 angle_min
         float32 angle_max
         float32 angle_increment
+
         float32 time_increment
         float32 scan_time
+
         float32 range_min
         float32 range_max
-        sensor_msgs/LaserEcho[] ranges
-        sensor_msgs/LaserEcho[] intensities
+
+        LaserEcho[] ranges
+        LaserEcho[] intensities
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -847,7 +861,6 @@ def test_sensor_msgs_multiecholaserscan():
         ================================================================================
         MSG: sensor_msgs/LaserEcho
         float32[] echoes
-
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -865,11 +878,9 @@ def test_sensor_msgs_multiecholaserscan():
             "range_max": 10.0,
             "ranges": [
                 {"echoes": [1.5, 1.6]},
-                {"echoes": [2.0, 2.1, 2.2]}
             ],
             "intensities": [
                 {"echoes": [100.0, 105.0]},
-                {"echoes": [120.0, 125.0, 130.0]}
             ]
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
@@ -882,28 +893,41 @@ def test_sensor_msgs_multiecholaserscan():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "laser"
-    assert abs(messages[0].data.angle_min + 1.57) < 0.001
-    assert len(messages[0].data.ranges) == 2
-    assert len(messages[0].data.ranges[0].echoes) == 2
-    assert abs(messages[0].data.ranges[0].echoes[0] - 1.5) < 0.001
-    assert len(messages[0].data.intensities) == 2
-    assert abs(messages[0].data.intensities[0].echoes[0] - 100.0) < 0.001
+    assert messages[0].data.angle_min == -1.57
+    assert messages[0].data.angle_max == 1.57
+    assert messages[0].data.angle_increment == 0.017
+    assert messages[0].data.time_increment == 0.0001
+    assert messages[0].data.scan_time == 0.1
+    assert messages[0].data.range_min == 0.1
+    assert messages[0].data.range_max == 10.0
+    assert len(messages[0].data.ranges) == 1
+    assert messages[0].data.ranges[0].echoes == [1.5, 1.6]
+    assert len(messages[0].data.intensities) == 1
+    assert messages[0].data.intensities[0].echoes == [100.0, 105.0]
 
 
 def test_sensor_msgs_navsatfix():
     msgtype = "sensor_msgs/NavSatFix"
     schema = dedent("""
+        std_msgs/Header header
+
+        sensor_msgs/NavSatStatus status
+
+        float64 latitude
+
+        float64 longitude
+
+        float64 altitude
+
+        float64[9] position_covariance
+
         uint8 COVARIANCE_TYPE_UNKNOWN=0
         uint8 COVARIANCE_TYPE_APPROXIMATED=1
         uint8 COVARIANCE_TYPE_DIAGONAL_KNOWN=2
         uint8 COVARIANCE_TYPE_KNOWN=3
-        std_msgs/Header header
-        sensor_msgs/NavSatStatus status
-        float64 latitude
-        float64 longitude
-        float64 altitude
-        float64[9] position_covariance
+
         uint8 position_covariance_type
         ================================================================================
         MSG: std_msgs/Header
@@ -911,17 +935,20 @@ def test_sensor_msgs_navsatfix():
         string frame_id
         ================================================================================
         MSG: sensor_msgs/NavSatStatus
+
         int8 STATUS_NO_FIX=-1
         int8 STATUS_FIX=0
         int8 STATUS_SBAS_FIX=1
         int8 STATUS_GBAS_FIX=2
+
         uint16 SERVICE_GPS=1
         uint16 SERVICE_GLONASS=2
         uint16 SERVICE_COMPASS=4
         uint16 SERVICE_GALILEO=8
-        int8 status
-        uint16 service
 
+        int8 status
+
+        uint16 service
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -947,14 +974,15 @@ def test_sensor_msgs_navsatfix():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "gps"
     assert messages[0].data.status.status == 0
     assert messages[0].data.status.service == 1
-    assert abs(messages[0].data.latitude - 37.7749) < 0.0001
-    assert abs(messages[0].data.longitude + 122.4194) < 0.0001
-    assert abs(messages[0].data.altitude - 10.5) < 0.001
-    assert len(messages[0].data.position_covariance) == 9
-    assert messages[0].data.position_covariance_type == 3
+    assert messages[0].data.latitude == 37.7749
+    assert messages[0].data.longitude == -122.4194
+    assert messages[0].data.altitude == 10.5
+    assert messages[0].data.position_covariance == [1.0] + [0.0] * 8
+    assert messages[0].data.position_covariance_type == 3  # COVARIANCE_TYPE_KNOWN
 
 
 def test_sensor_msgs_navsatstatus():
@@ -964,11 +992,14 @@ def test_sensor_msgs_navsatstatus():
         int8 STATUS_FIX=0
         int8 STATUS_SBAS_FIX=1
         int8 STATUS_GBAS_FIX=2
+
+        int8 status
+
         uint16 SERVICE_GPS=1
         uint16 SERVICE_GLONASS=2
         uint16 SERVICE_COMPASS=4
         uint16 SERVICE_GALILEO=8
-        int8 status
+
         uint16 service
     """)
 
@@ -983,17 +1014,17 @@ def test_sensor_msgs_navsatstatus():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
-    assert messages[0].data.status == 0
-    assert messages[0].data.service == 1
+    assert messages[0].data.status == 0   # STATUS_FIX
+    assert messages[0].data.service == 1  # SERVICE_GPS
 
 
-def test_sensor_msgs_pointcloud():
+def test_sensor_msgs_point_cloud():
     # values -> valuess because of mcap_ros2 bug
     msgtype = "sensor_msgs/PointCloud"
     schema = dedent("""
         std_msgs/Header header
         geometry_msgs/Point32[] points
-        sensor_msgs/ChannelFloat32[] channels
+        ChannelFloat32[] channels
         ================================================================================
         MSG: std_msgs/Header
         builtin_interfaces/Time stamp
@@ -1034,24 +1065,35 @@ def test_sensor_msgs_pointcloud():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "lidar"
     assert len(messages[0].data.points) == 2
     assert messages[0].data.points[0].x == 1.0
+    assert messages[0].data.points[0].y == 2.0
+    assert messages[0].data.points[0].z == 3.0
+    assert messages[0].data.points[1].x == 4.0
+    assert messages[0].data.points[1].y == 5.0
+    assert messages[0].data.points[1].z == 6.0
     assert len(messages[0].data.channels) == 1
     assert messages[0].data.channels[0].name == "intensity"
+    assert messages[0].data.channels[0].values == [100.0, 200.0]
 
 
-def test_sensor_msgs_pointcloud2():
+def test_sensor_msgs_point_cloud2():
     msgtype = "sensor_msgs/PointCloud2"
     schema = dedent("""
         std_msgs/Header header
+
         uint32 height
         uint32 width
-        sensor_msgs/PointField[] fields
+
+        PointField[] fields
+
         bool is_bigendian
         uint32 point_step
         uint32 row_step
         uint8[] data
+
         bool is_dense
         ================================================================================
         MSG: std_msgs/Header
@@ -1067,6 +1109,7 @@ def test_sensor_msgs_pointcloud2():
         uint8 UINT32=6
         uint8 FLOAT32=7
         uint8 FLOAT64=8
+
         string name
         uint32 offset
         uint8 datatype
@@ -1103,13 +1146,27 @@ def test_sensor_msgs_pointcloud2():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "lidar"
     assert messages[0].data.height == 1
     assert messages[0].data.width == 2
     assert len(messages[0].data.fields) == 3
     assert messages[0].data.fields[0].name == "x"
+    assert messages[0].data.fields[0].offset == 0
+    assert messages[0].data.fields[0].datatype == 7  # FLOAT32
+    assert messages[0].data.fields[0].count == 1
+    assert messages[0].data.fields[1].name == "y"
+    assert messages[0].data.fields[1].offset == 4
+    assert messages[0].data.fields[1].datatype == 7  # FLOAT32
+    assert messages[0].data.fields[1].count == 1
+    assert messages[0].data.fields[2].name == "z"
+    assert messages[0].data.fields[2].offset == 8
+    assert messages[0].data.fields[2].datatype == 7  # FLOAT32
+    assert messages[0].data.fields[2].count == 1
+    assert messages[0].data.is_bigendian == False
     assert messages[0].data.point_step == 12
     assert messages[0].data.row_step == 24
+    assert messages[0].data.data == [0] * 24
     assert messages[0].data.is_dense == True
 
 
@@ -1124,6 +1181,7 @@ def test_sensor_msgs_pointfield():
         uint8 UINT32=6
         uint8 FLOAT32=7
         uint8 FLOAT64=8
+
         string name
         uint32 offset
         uint8 datatype
@@ -1148,20 +1206,25 @@ def test_sensor_msgs_pointfield():
     assert messages[0].channel_id == 1
     assert messages[0].data.name == "x"
     assert messages[0].data.offset == 0
-    assert messages[0].data.datatype == 7
+    assert messages[0].data.datatype == 7  # FLOAT32
     assert messages[0].data.count == 1
 
 
 def test_sensor_msgs_range():
     msgtype = "sensor_msgs/Range"
     schema = dedent("""
+        std_msgs/Header header
+
         uint8 ULTRASOUND=0
         uint8 INFRARED=1
-        std_msgs/Header header
+
         uint8 radiation_type
+
         float32 field_of_view
+
         float32 min_range
         float32 max_range
+
         float32 range
         ================================================================================
         MSG: std_msgs/Header
@@ -1191,12 +1254,13 @@ def test_sensor_msgs_range():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "ultrasonic_sensor"
-    assert messages[0].data.radiation_type == 0
-    assert abs(messages[0].data.field_of_view - 0.7854) < 0.001
-    assert abs(messages[0].data.min_range - 0.02) < 0.001
-    assert abs(messages[0].data.max_range - 4.0) < 0.001
-    assert abs(messages[0].data.range - 1.5) < 0.001
+    assert messages[0].data.radiation_type == 0  # ULTRASOUND
+    assert messages[0].data.field_of_view == 0.7854
+    assert messages[0].data.min_range == 0.02
+    assert messages[0].data.max_range == 4.0
+    assert messages[0].data.range == 1.5
 
 
 def test_sensor_msgs_regionofinterest():
@@ -1233,7 +1297,7 @@ def test_sensor_msgs_regionofinterest():
     assert messages[0].data.do_rectify is True
 
 
-def test_sensor_msgs_relativehumidity():
+def test_sensor_msgs_relative_humidity():
     msgtype = "sensor_msgs/RelativeHumidity"
     schema = dedent("""
         std_msgs/Header header
@@ -1251,7 +1315,7 @@ def test_sensor_msgs_relativehumidity():
                 "stamp": {"sec": 123, "nanosec": 456789},
                 "frame_id": "humidity_sensor"
             },
-            "relative_humidity": 45.5,  # 45.5% humidity
+            "relative_humidity": 45.5,
             "variance": 0.1
         }
         path = _write_mcap(temp_dir, msg, msgtype, schema)
@@ -1264,9 +1328,10 @@ def test_sensor_msgs_relativehumidity():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "humidity_sensor"
-    assert abs(messages[0].data.relative_humidity - 45.5) < 0.001
-    assert abs(messages[0].data.variance - 0.1) < 0.001
+    assert messages[0].data.relative_humidity == 45.5
+    assert messages[0].data.variance == 0.1
 
 
 def test_sensor_msgs_temperature():
@@ -1337,6 +1402,7 @@ def test_sensor_msgs_timereference():
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
     assert messages[0].data.header.stamp.sec == 123
+    assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "time_source"
     assert messages[0].data.time_ref.sec == 1234567890
     assert messages[0].data.time_ref.nanosec == 123456789
