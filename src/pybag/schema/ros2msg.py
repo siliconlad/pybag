@@ -180,12 +180,16 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
             return field_raw_name, SchemaConstant(schema_type, default_value)
         return field_raw_name, SchemaField(schema_type, default_value)
 
-    def _add_missing_builtin_schemas(self, sub_schemas: dict[str, Schema]) -> dict[str, Schema]:
+    def _add_missing_builtin_schemas(
+        self,
+        main_schema: SchemaRecord,
+        sub_schemas: dict[str, Schema]
+    ) -> None:
         """Add any missing built-in schemas that are referenced but not defined."""
+        schema_text = main_schema.data.decode('utf-8')
         for builtin_name, builtin_schema in self._builtin_schemas.items():
-            if builtin_name not in sub_schemas:
+            if builtin_name not in sub_schemas and builtin_name in schema_text:
                 sub_schemas[builtin_name] = builtin_schema
-        return sub_schemas
 
     def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
         if schema.id in self._cache:
@@ -226,8 +230,10 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
         # Add any required built-in schemas
-        sub_msg_schemas = self._add_missing_builtin_schemas(sub_msg_schemas)
-        result = Schema(schema.name, msg_schema), sub_msg_schemas
+        main_schema = Schema(schema.name, msg_schema)
+        self._add_missing_builtin_schemas(schema, sub_msg_schemas)
+        result = main_schema, sub_msg_schemas
+
         self._cache[schema.id] = result
         return result
 
