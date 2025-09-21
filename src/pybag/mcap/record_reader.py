@@ -201,9 +201,6 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         self._chunk_indexes: list[ChunkIndexRecord] | None = None
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
-        # Cache for files that do not contain chunks
-        self._messages_without_chunks: dict[int, list[MessageRecord]] | None = None
-
         # Cached schema and channel dictionaries populated on first access
         self._schemas: dict[int, SchemaRecord] | None = None
         self._channels: dict[int, ChannelRecord] | None = None
@@ -399,9 +396,6 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
     def _load_chunk_indexes(self) -> None:
         if self._chunk_indexes is not None:
             return
-        if McapRecordType.CHUNK_INDEX not in self._summary_offset:
-            self._chunk_indexes = []
-            return
 
         self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         self._chunk_indexes = []
@@ -409,46 +403,6 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             chunk_index = McapRecordParser.parse_chunk_index(self._file)
             self._chunk_indexes.append(chunk_index)
         self._chunk_indexes.sort(key=lambda x: x.message_start_time)
-
-    def _load_messages_without_chunks(self) -> None:
-        if self._messages_without_chunks is not None:
-            return
-
-        current_position = self._file.tell()
-        self._messages_without_chunks = {}
-        self._file.seek_from_start(MAGIC_BYTES_SIZE)
-        _ = McapRecordParser.parse_header(self._file)
-
-        while self._file.tell() < self._summary_start:
-            record_type = McapRecordParser.peek_record(self._file)
-
-            if record_type == McapRecordType.MESSAGE:
-                message = McapRecordParser.parse_message(self._file)
-                self._messages_without_chunks.setdefault(message.channel_id, []).append(message)
-                continue
-
-            if record_type == McapRecordType.CHUNK:
-                chunk = McapRecordParser.parse_chunk(self._file)
-                reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-                while reader.peek(1):
-                    inner_type = McapRecordParser.peek_record(reader)
-                    if inner_type == McapRecordType.MESSAGE:
-                        message = McapRecordParser.parse_message(reader)
-                        self._messages_without_chunks.setdefault(message.channel_id, []).append(message)
-                    else:
-                        McapRecordParser.skip_record(reader)
-                continue
-
-            if record_type == McapRecordType.DATA_END:
-                McapRecordParser.parse_data_end(self._file)
-                break
-
-            McapRecordParser.skip_record(self._file)
-
-        for messages in self._messages_without_chunks.values():
-            messages.sort(key=lambda message: message.log_time)
-
-        self._file.seek_from_start(current_position)
 
     def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
         """
@@ -500,16 +454,6 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A MessageRecord object or None if the message does not exist.
         """
-        if McapRecordType.CHUNK_INDEX not in self._summary_offset:
-            self._load_messages_without_chunks()
-            messages = self._messages_without_chunks.get(channel_id, []) if self._messages_without_chunks else []
-            if timestamp is None:
-                return messages[0] if messages else None
-            for message in messages:
-                if message.log_time == timestamp:
-                    return message
-            return None
-
         chunk_indexes = self.get_chunk_indexes(channel_id)
         for chunk_index in chunk_indexes:
             if timestamp is None or (chunk_index.message_start_time <= timestamp <= chunk_index.message_end_time):
@@ -549,16 +493,6 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A generator of MessageRecord objects.
         """
-        if McapRecordType.CHUNK_INDEX not in self._summary_offset:
-            self._load_messages_without_chunks()
-            for message in (self._messages_without_chunks or {}).get(channel_id, []):
-                if start_timestamp is not None and message.log_time < start_timestamp:
-                    continue
-                if end_timestamp is not None and message.log_time > end_timestamp:
-                    continue
-                yield message
-            return
-
         for chunk_index in self.get_chunk_indexes(channel_id):
             # Skip chunk that do not match the timestamp range
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
