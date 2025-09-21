@@ -143,8 +143,13 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
         if not field_raw_name:
             raise Ros2MsgError('Field name cannot be empty')
 
-        if is_constant := '=' in field_raw_name:
-            field_raw_name, raw_default = field_raw_name.split('=', 1)
+        if is_constant := ('=' in field_raw_name or (raw_default and raw_default.startswith('='))):
+            if '=' in field_raw_name:
+                field_raw_name, raw_default = field_raw_name.split('=', 1)
+            else:
+                # TODO: Hack should be made more robust
+                # Handle case where = is separated by spaces: "CONST = value"
+                raw_default = raw_default[1:].strip()  # Remove the '=' and strip spaces
             if not field_raw_name.isupper():
                 raise Ros2MsgError('Constant name must be uppercase')
             if not raw_default:
