@@ -30,10 +30,17 @@ def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path
 def test_geometry_msgs_accel():
     msgtype = "geometry_msgs/Accel"
     schema = dedent("""
+        # This expresses acceleration in free space broken into its linear and angular parts.
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -61,21 +68,36 @@ def test_geometry_msgs_accel():
     assert messages[0].data.angular.z == 6.0
 
 
-def test_geometry_msgs_accelstamped():
+def test_geometry_msgs_accel_stamped():
     msgtype = "geometry_msgs/AccelStamped"
     schema = dedent("""
+        # An accel with reference coordinate frame and timestamp
         std_msgs/Header header
         Accel accel
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Accel
+        # This expresses acceleration in free space broken into its linear and angular parts.
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -112,17 +134,31 @@ def test_geometry_msgs_accelstamped():
     assert messages[0].data.accel.angular.z == 6.0
 
 
-def test_geometry_msgs_accelwithcovariance():
+def test_geometry_msgs_accel_with_covariance():
     msgtype = "geometry_msgs/AccelWithCovariance"
     schema = dedent("""
+        # This expresses acceleration in free space with uncertainty.
+
         Accel accel
+
+        # Row-major representation of the 6x6 covariance matrix
+        # The orientation parameters use a fixed-axis representation.
+        # In order, the parameters are:
+        # (x, y, z, rotation about X axis, rotation about Y axis, rotation about Z axis)
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Accel
+        # This expresses acceleration in free space broken into its linear and angular parts.
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -154,25 +190,47 @@ def test_geometry_msgs_accelwithcovariance():
     assert messages[0].data.covariance == [0.0] * 36
 
 
-def test_geometry_msgs_accelwithcovariancestamped():
+def test_geometry_msgs_accel_with_covariance_stamped():
     msgtype = "geometry_msgs/AccelWithCovarianceStamped"
     schema = dedent("""
+        # An accel with covariance with reference coordinate frame and timestamp
         std_msgs/Header header
         AccelWithCovariance accel
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/AccelWithCovariance
+        # This expresses acceleration in free space with uncertainty.
+
         Accel accel
+
+        # Row-major representation of the 6x6 covariance matrix
+        # The orientation parameters use a fixed-axis representation.
+        # In order, the parameters are:
+        # (x, y, z, rotation about X axis, rotation about Y axis, rotation about Z axis)
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Accel
+        # This expresses acceleration in free space broken into its linear and angular parts.
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -216,8 +274,16 @@ def test_geometry_msgs_accelwithcovariancestamped():
 def test_geometry_msgs_inertia():
     msgtype = "geometry_msgs/Inertia"
     schema = dedent("""
+        # Mass [kg]
         float64 m
+
+        # Center of mass [m]
         geometry_msgs/Vector3 com
+
+        # Inertia Tensor [kg-m^2]
+        #     | ixx ixy ixz |
+        # I = | ixy iyy iyz |
+        #     | ixz iyz izz |
         float64 ixx
         float64 ixy
         float64 ixz
@@ -226,6 +292,12 @@ def test_geometry_msgs_inertia():
         float64 izz
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -263,19 +335,35 @@ def test_geometry_msgs_inertia():
     assert messages[0].data.izz == 3.3
 
 
-def test_geometry_msgs_inertiastamped():
+def test_geometry_msgs_inertia_stamped():
     msgtype = "geometry_msgs/InertiaStamped"
     schema = dedent("""
+        # An inertia with reference coordinate frame and timestamp
         std_msgs/Header header
         Inertia inertia
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Inertia
+        # Mass [kg]
         float64 m
+
+        # Center of mass [m]
         geometry_msgs/Vector3 com
+
+        # Inertia Tensor [kg-m^2]
+        #     | ixx ixy ixz |
+        # I = | ixy iyy iyz |
+        #     | ixz iyz izz |
         float64 ixx
         float64 ixy
         float64 ixz
@@ -284,6 +372,12 @@ def test_geometry_msgs_inertiastamped():
         float64 izz
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -333,6 +427,7 @@ def test_geometry_msgs_inertiastamped():
 def test_geometry_msgs_point():
     msgtype = "geometry_msgs/Point"
     schema = dedent("""
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
@@ -357,6 +452,14 @@ def test_geometry_msgs_point():
 def test_geometry_msgs_point32():
     msgtype = "geometry_msgs/Point32"
     schema = dedent("""
+        # This contains the position of a point in free space(with 32 bits of precision).
+        # It is recommended to use Point wherever possible instead of Point32.
+        #
+        # This recommendation is to promote interoperability.
+        #
+        # This message is designed to take up less space when sending
+        # lots of points at once, as in the case of a PointCloud.
+
         float32 x
         float32 y
         float32 z
@@ -378,17 +481,26 @@ def test_geometry_msgs_point32():
     assert messages[0].data.z == 3.0
 
 
-def test_geometry_msgs_pointstamped():
+def test_geometry_msgs_point_stamped():
     msgtype = "geometry_msgs/PointStamped"
     schema = dedent("""
+        # A Point with reference coordinate frame and timestamp
         std_msgs/Header header
         Point point
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
@@ -422,9 +534,18 @@ def test_geometry_msgs_pointstamped():
 def test_geometry_msgs_polygon():
     msgtype = "geometry_msgs/Polygon"
     schema = dedent("""
+        # A specification of a polygon where the first and last points are assumed to be connected
         Point32[] points
         ================================================================================
         MSG: geometry_msgs/Point32
+        # This contains the position of a point in free space(with 32 bits of precision).
+        # It is recommended to use Point wherever possible instead of Point32.
+        #
+        # This recommendation is to promote interoperability.
+        #
+        # This message is designed to take up less space when sending
+        # lots of points at once, as in the case of a PointCloud.
+
         float32 x
         float32 y
         float32 z
@@ -458,13 +579,23 @@ def test_geometry_msgs_polygon():
 def test_geometry_msgs_polygon_instance():
     msgtype = "geometry_msgs/PolygonInstance"
     schema = dedent("""
+        # A Polygon with an ID for discrimination between multiple polygons
         geometry_msgs/Polygon polygon
         int64 id
         ================================================================================
         MSG: geometry_msgs/Polygon
+        # A specification of a polygon where the first and last points are assumed to be connected
         Point32[] points
         ================================================================================
         MSG: geometry_msgs/Point32
+        # This contains the position of a point in free space(with 32 bits of precision).
+        # It is recommended to use Point wherever possible instead of Point32.
+        #
+        # This recommendation is to promote interoperability.
+        #
+        # This message is designed to take up less space when sending
+        # lots of points at once, as in the case of a PointCloud.
+
         float32 x
         float32 y
         float32 z
@@ -505,12 +636,27 @@ def test_geometry_msgs_polygon_instance_stamped():
         Point32[] points
         ================================================================================
         MSG: geometry_msgs/Point32
+        # This contains the position of a point in free space(with 32 bits of precision).
+        # It is recommended to use Point wherever possible instead of Point32.
+        #
+        # This recommendation is to promote interoperability.
+        #
+        # This message is designed to take up less space when sending
+        # lots of points at once, as in the case of a PointCloud.
+
         float32 x
         float32 y
         float32 z
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
     """)
     with TemporaryDirectory() as temp_dir:
@@ -543,20 +689,35 @@ def test_geometry_msgs_polygon_instance_stamped():
     assert messages[0].data.polygon.polygon.points[0].z == 3.0
 
 
-def test_geometry_msgs_polygonstamped():
+def test_geometry_msgs_polygon_stamped():
     msgtype = "geometry_msgs/PolygonStamped"
     schema = dedent("""
         std_msgs/Header header
         Polygon polygon
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Polygon
         Point32[] points
         ================================================================================
         MSG: geometry_msgs/Point32
+        # This contains the position of a point in free space(with 32 bits of precision).
+        # It is recommended to use Point wherever possible instead of Point32.
+        #
+        # This recommendation is to promote interoperability.
+        #
+        # This message is designed to take up less space when sending
+        # lots of points at once, as in the case of a PointCloud.
+
         float32 x
         float32 y
         float32 z
@@ -599,19 +760,24 @@ def test_geometry_msgs_polygonstamped():
 def test_geometry_msgs_pose():
     msgtype = "geometry_msgs/Pose"
     schema = dedent("""
+        # A representation of pose in free space, composed of position and orientation.
+
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -640,6 +806,14 @@ def test_geometry_msgs_pose():
 def test_geometry_msgs_pose2d():
     msgtype = "geometry_msgs/Pose2D"
     schema = dedent("""
+        # Deprecated as of Foxy and will potentially be removed in any following release.
+        # Please use the full 3D pose.
+
+        # In general our recommendation is to use a full 3D representation of everything and for 2D specific applications make the appropriate projections into the plane for their calculations but optimally will preserve the 3D information during processing.
+
+        # If we have parallel copies of 2D datatypes every UI and other pipeline will end up needing to have dual interfaces to plot everything. And you will end up with not being able to use 3D tools for 2D use cases even if they're completely valid, as you'd have to reimplement it with different inputs and outputs. It's not particularly hard to plot the 2D pose or compute the yaw error for the Pose message and there are already tools and libraries that can do this for you.
+
+        # This expresses a position and orientation on a 2D manifold.
         float64 x
         float64 y
         float64 theta
@@ -668,23 +842,35 @@ def test_geometry_msgs_pose_array():
         Pose[] poses
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of pose in free space, composed of position and orientation.
+
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -725,27 +911,38 @@ def test_geometry_msgs_pose_array():
 def test_geometry_msgs_pose_stamped():
     msgtype = "geometry_msgs/PoseStamped"
     schema = dedent("""
+        # A Pose with reference coordinate frame and timestamp
         std_msgs/Header header
         Pose pose
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of pose in free space, composed of position and orientation.
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -783,23 +980,32 @@ def test_geometry_msgs_pose_stamped():
 def test_geometry_msgs_pose_with_covariance():
     msgtype = "geometry_msgs/PoseWithCovariance"
     schema = dedent("""
+        # This represents a pose in free space with uncertainty.
         Pose pose
+
+        # Row-major representation of the 6x6 covariance matrix
+        # The orientation parameters use a fixed-axis representation.
+        # In order, the parameters are:
+        # (x, y, z, rotation about X axis, rotation about Y axis, rotation about Z axis)
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of pose in free space, composed of position and orientation.
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -836,7 +1042,14 @@ def test_geometry_msgs_pose_with_covariance_stamped():
         PoseWithCovariance pose
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/PoseWithCovariance
@@ -844,19 +1057,24 @@ def test_geometry_msgs_pose_with_covariance_stamped():
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of pose in free space, composed of position and orientation.
+
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -898,6 +1116,7 @@ def test_geometry_msgs_pose_with_covariance_stamped():
 def test_geometry_msgs_quaternion():
     msgtype = "geometry_msgs/Quaternion"
     schema = dedent("""
+        # This represents an orientation in free space in quaternion form.
         float64 x 0
         float64 y 0
         float64 z 0
@@ -928,14 +1147,23 @@ def test_geometry_msgs_quaternion_stamped():
         Quaternion quaternion
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -967,19 +1195,25 @@ def test_geometry_msgs_quaternion_stamped():
 def test_geometry_msgs_transform():
     msgtype = "geometry_msgs/Transform"
     schema = dedent("""
+        # This represents the transform between two coordinate frames in free space.
         Vector3 translation
         Quaternion rotation
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1005,7 +1239,7 @@ def test_geometry_msgs_transform():
     assert messages[0].data.rotation.w == 1.0
 
 
-def test_geometry_msgs_transformstamped():
+def test_geometry_msgs_transform_stamped():
     msgtype = "geometry_msgs/TransformStamped"
     schema = dedent("""
         std_msgs/Header header
@@ -1013,7 +1247,14 @@ def test_geometry_msgs_transformstamped():
         Transform transform
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Transform
@@ -1021,15 +1262,23 @@ def test_geometry_msgs_transformstamped():
         Quaternion rotation
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -1069,10 +1318,18 @@ def test_geometry_msgs_transformstamped():
 def test_geometry_msgs_twist():
     msgtype = "geometry_msgs/Twist"
     schema = dedent("""
+        # This expresses velocity in free space broken into its linear and angular parts.
+
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1100,21 +1357,36 @@ def test_geometry_msgs_twist():
     assert messages[0].data.angular.z == 6.0
 
 
-def test_geometry_msgs_twiststamped():
+def test_geometry_msgs_twist_stamped():
     msgtype = "geometry_msgs/TwistStamped"
     schema = dedent("""
         std_msgs/Header header
         Twist twist
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Twist
+        # This expresses velocity in free space broken into its linear and angular parts.
+
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1151,17 +1423,32 @@ def test_geometry_msgs_twiststamped():
     assert messages[0].data.twist.angular.z == 6.0
 
 
-def test_geometry_msgs_twistwithcovariance():
+def test_geometry_msgs_twist_with_covariance():
     msgtype = "geometry_msgs/TwistWithCovariance"
     schema = dedent("""
+        # This expresses velocity in free space with uncertainty.
+
         Twist twist
+
+        # Row-major representation of the 6x6 covariance matrix
+        # The orientation parameters use a fixed-axis representation.
+        # In order, the parameters are:
+        # (x, y, z, rotation about X axis, rotation about Y axis, rotation about Z axis)
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Twist
+        # This expresses velocity in free space broken into its linear and angular parts.
+
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1193,14 +1480,21 @@ def test_geometry_msgs_twistwithcovariance():
     assert messages[0].data.covariance == [0.0] * 36
 
 
-def test_geometry_msgs_twistwithcovariancestamped():
+def test_geometry_msgs_twist_with_covariance_stamped():
     msgtype = "geometry_msgs/TwistWithCovarianceStamped"
     schema = dedent("""
         std_msgs/Header header
         TwistWithCovariance twist
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/TwistWithCovariance
@@ -1208,10 +1502,18 @@ def test_geometry_msgs_twistwithcovariancestamped():
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Twist
+        # This expresses velocity in free space broken into its linear and angular parts.
+
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1255,6 +1557,12 @@ def test_geometry_msgs_twistwithcovariancestamped():
 def test_geometry_msgs_vector3():
     msgtype = "geometry_msgs/Vector3"
     schema = dedent("""
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1276,17 +1584,30 @@ def test_geometry_msgs_vector3():
     assert messages[0].data.z == 3.0
 
 
-def test_geometry_msgs_vector3stamped():
+def test_geometry_msgs_vector3_stamped():
     msgtype = "geometry_msgs/Vector3Stamped"
     schema = dedent("""
         std_msgs/Header header
         Vector3 vector
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1326,14 +1647,29 @@ def test_geometry_msgs_velocity_stamped():
         Twist velocity
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Twist
+        # This expresses velocity in free space broken into its linear and angular parts.
+
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1371,10 +1707,18 @@ def test_geometry_msgs_velocity_stamped():
 def test_geometry_msgs_wrench():
     msgtype = "geometry_msgs/Wrench"
     schema = dedent("""
+        # This represents force in free space, separated into its linear and angular parts.
+
         Vector3 force
         Vector3 torque
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z
@@ -1402,14 +1746,21 @@ def test_geometry_msgs_wrench():
     assert messages[0].data.torque.z == 6.0
 
 
-def test_geometry_msgs_wrenchstamped():
+def test_geometry_msgs_wrench_stamped():
     msgtype = "geometry_msgs/WrenchStamped"
     schema = dedent("""
         std_msgs/Header header
         Wrench wrench
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Wrench
@@ -1417,6 +1768,12 @@ def test_geometry_msgs_wrenchstamped():
         Vector3 torque
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+
+        # This is semantically different than a point.
+        # A vector is always anchored at the origin.
+        # When a transform is applied to a vector, only the rotational component is applied.
+
         float64 x
         float64 y
         float64 z

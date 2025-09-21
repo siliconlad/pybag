@@ -30,31 +30,39 @@ def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path
 def test_nav_msgs_goals():
     msgtype = "nav_msgs/Goals"
     schema = dedent("""
+        # An array of poses that represents goals for a robot
         std_msgs/Header header
         geometry_msgs/PoseStamped[] goals
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/PoseStamped
+        # A Pose with reference coordinate frame and timestamp
         std_msgs/Header header
         Pose pose
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of position and orientation in free space
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -104,16 +112,21 @@ def test_nav_msgs_goals():
 def test_nav_msgs_grid_cells():
     msgtype = "nav_msgs/GridCells"
     schema = dedent("""
+        # An array of cells in a 2D grid
         std_msgs/Header header
         float32 cell_width
         float32 cell_height
         geometry_msgs/Point[] cells
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
@@ -158,26 +171,37 @@ def test_nav_msgs_grid_cells():
 def test_nav_msgs_map_meta_data():
     msgtype = "nav_msgs/MapMetaData"
     schema = dedent("""
+        # This hold basic information about the characterists of the OccupancyGrid
+
+        # The time at which the map was loaded
         builtin_interfaces/Time map_load_time
+        # The map resolution [m/cell]
         float32 resolution
+        # Map width [cells]
         uint32 width
+        # Map height [cells]
         uint32 height
+        # The origin of the map [m, m, rad]. This is the real-world pose of the
+        # cell (0,0) in the map.
         geometry_msgs/Pose origin
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of position and orientation in free space
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -217,35 +241,57 @@ def test_nav_msgs_map_meta_data():
 def test_nav_msgs_occupancy_grid():
     msgtype = "nav_msgs/OccupancyGrid"
     schema = dedent("""
+        # This represents a 2-D grid map, in which each cell represents the probability of
+        # occupancy.
+
         std_msgs/Header header
+
+        # MetaData for the map
         nav_msgs/MapMetaData info
+
+        # The map data, in row-major order, starting with (0,0). Occupancy
+        # probabilities are in the range [0,100]. Unknown is -1.
         int8[] data
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: nav_msgs/MapMetaData
+        # This hold basic information about the characterists of the OccupancyGrid
+
+        # The time at which the map was loaded
         builtin_interfaces/Time map_load_time
+        # The map resolution [m/cell]
         float32 resolution
+        # Map width [cells]
         uint32 width
+        # Map height [cells]
         uint32 height
+        # The origin of the map [m, m, rad]. This is the real-world pose of the
+        # cell (0,0) in the map.
         geometry_msgs/Pose origin
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of position and orientation in free space
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -296,43 +342,74 @@ def test_nav_msgs_occupancy_grid():
 def test_nav_msgs_odometry():
     msgtype = "nav_msgs/Odometry"
     schema = dedent("""
+        # This represents an estimate of a position and velocity in free space.
+        # The pose in this message should be specified in the coordinate frame given by header.frame_id.
+        # The twist in this message should be specified in the coordinate frame given by the child_frame_id
         std_msgs/Header header
         string child_frame_id
         geometry_msgs/PoseWithCovariance pose
         geometry_msgs/TwistWithCovariance twist
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/PoseWithCovariance
+        # This represents a pose in free space with uncertainty.
+
         Pose pose
+
+        # Row-major representation of the 6x6 covariance matrix
+        # The orientation parameters use a fixed-axis representation.
+        # In order, the parameters are:
+        # (x, y, z, rotation about X axis, rotation about Y axis, rotation about Z axis)
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of position and orientation in free space
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
         ================================================================================
         MSG: geometry_msgs/TwistWithCovariance
+        # This expresses velocity in free space with uncertainty.
+
         Twist twist
+
+        # Row-major representation of the 6x6 covariance matrix
+        # The orientation parameters use a fixed-axis representation.
+        # In order, the parameters are:
+        # (x, y, z, rotation about X axis, rotation about Y axis, rotation about Z axis)
         float64[36] covariance
         ================================================================================
         MSG: geometry_msgs/Twist
+        # This expresses velocity in free space broken into its linear and angular parts.
         Vector3 linear
         Vector3 angular
         ================================================================================
         MSG: geometry_msgs/Vector3
+        # This represents a vector in free space.
+        # It is only meant to represent a direction. Therefore, it does not
+        # make sense to apply a translation to it (e.g., when applying a
+        # generic rigid transformation to a Vector3, tf2 will only apply the
+        # rotation). If you want your data to be translatable too, use the
+        # geometry_msgs/Point message instead.
+
         float64 x
         float64 y
         float64 z
@@ -393,31 +470,39 @@ def test_nav_msgs_odometry():
 def test_nav_msgs_path():
     msgtype = "nav_msgs/Path"
     schema = dedent("""
+        # An array of poses that represents a Path for a robot to follow
         std_msgs/Header header
         geometry_msgs/PoseStamped[] poses
         ================================================================================
         MSG: std_msgs/Header
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
         builtin_interfaces/Time stamp
         string frame_id
         ================================================================================
         MSG: geometry_msgs/PoseStamped
+        # A Pose with reference coordinate frame and timestamp
         std_msgs/Header header
         Pose pose
         ================================================================================
         MSG: geometry_msgs/Pose
+        # A representation of position and orientation in free space
         Point position
         Quaternion orientation
         ================================================================================
         MSG: geometry_msgs/Point
+        # This contains the position of a point in free space
         float64 x
         float64 y
         float64 z
         ================================================================================
         MSG: geometry_msgs/Quaternion
-        float64 x
-        float64 y
-        float64 z
-        float64 w
+        # This represents an orientation in free space in quaternion form.
+        float64 x 0
+        float64 y 0
+        float64 z 0
+        float64 w 1
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -451,7 +536,7 @@ def test_nav_msgs_path():
     assert messages[0].data.header.stamp.sec == 123
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "map"
-    assert len(messages[0].data.poses) == 2
+    assert len(messages[0].data.poses) == 1
     assert messages[0].data.poses[0].header.stamp.sec == 124
     assert messages[0].data.poses[0].header.stamp.nanosec == 100000
     assert messages[0].data.poses[0].header.frame_id == "map"

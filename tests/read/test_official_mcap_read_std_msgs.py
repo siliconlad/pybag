@@ -30,6 +30,11 @@ def _write_mcap(temp_dir: str, msg: Any, msgtype: str, schema_text: str) -> Path
 def test_std_msgs_bool():
     msgtype = "std_msgs/Bool"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         bool data
     """)
 
@@ -50,6 +55,11 @@ def test_std_msgs_bool():
 def test_std_msgs_byte():
     msgtype = "std_msgs/Byte"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         byte data
     """)
 
@@ -70,17 +80,59 @@ def test_std_msgs_byte():
 def test_std_msgs_byte_multi_array():
     msgtype = "std_msgs/ByteMultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        byte[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        byte[]            data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -111,6 +163,11 @@ def test_std_msgs_byte_multi_array():
 def test_std_msgs_char():
     msgtype = "std_msgs/Char"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         char data
     """)
 
@@ -169,11 +226,17 @@ def test_std_msgs_empty():
     assert messages[0].publish_time == 0
     assert messages[0].sequence == 0
     assert messages[0].channel_id == 1
+    assert messages[0].data is None
 
 
 def test_std_msgs_float32():
     msgtype = "std_msgs/Float32"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         float32 data
     """)
 
@@ -194,17 +257,59 @@ def test_std_msgs_float32():
 def test_std_msgs_float32_multi_array():
     msgtype = "std_msgs/Float32MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        float32[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        float32[]         data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -236,6 +341,11 @@ def test_std_msgs_float32_multi_array():
 def test_std_msgs_float64():
     msgtype = "std_msgs/Float64"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         float64 data
     """)
 
@@ -256,17 +366,59 @@ def test_std_msgs_float64():
 def test_std_msgs_float64_multi_array():
     msgtype = "std_msgs/Float64MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        float64[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        float64[]         data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -298,7 +450,14 @@ def test_std_msgs_float64_multi_array():
 def test_std_msgs_header():
     msgtype = "std_msgs/Header"
     schema = dedent("""
+        # Standard metadata for higher-level stamped data types.
+        # This is generally used to communicate timestamped data
+        # in a particular coordinate frame.
+
+        # Two-integer timestamp that is expressed as seconds and nanoseconds.
         builtin_interfaces/Time stamp
+
+        # Transform frame with which this data is associated.
         string frame_id
     """)
 
@@ -324,6 +483,11 @@ def test_std_msgs_header():
 def test_std_msgs_int16():
     msgtype = "std_msgs/Int16"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         int16 data
     """)
 
@@ -344,17 +508,59 @@ def test_std_msgs_int16():
 def test_std_msgs_int16_multi_array():
     msgtype = "std_msgs/Int16MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        int16[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        int16[]           data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -385,6 +591,11 @@ def test_std_msgs_int16_multi_array():
 def test_std_msgs_int32():
     msgtype = "std_msgs/Int32"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         int32 data
     """)
 
@@ -405,17 +616,59 @@ def test_std_msgs_int32():
 def test_std_msgs_int32_multi_array():
     msgtype = "std_msgs/Int32MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        int32[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        int32[]           data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -446,6 +699,11 @@ def test_std_msgs_int32_multi_array():
 def test_std_msgs_int64():
     msgtype = "std_msgs/Int64"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         int64 data
     """)
 
@@ -466,17 +724,59 @@ def test_std_msgs_int64():
 def test_std_msgs_int64_multi_array():
     msgtype = "std_msgs/Int64MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        int64[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        int64[]           data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -507,6 +807,11 @@ def test_std_msgs_int64_multi_array():
 def test_std_msgs_int8():
     msgtype = "std_msgs/Int8"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         int8 data
     """)
 
@@ -527,17 +832,59 @@ def test_std_msgs_int8():
 def test_std_msgs_int8_multi_array():
     msgtype = "std_msgs/Int8MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        int8[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        int8[]            data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -568,9 +915,14 @@ def test_std_msgs_int8_multi_array():
 def test_std_msgs_multi_array_dimension():
     msgtype = "std_msgs/MultiArrayDimension"
     schema = dedent("""
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -596,13 +948,47 @@ def test_std_msgs_multi_array_dimension():
 def test_std_msgs_multi_array_layout():
     msgtype = "std_msgs/MultiArrayLayout"
     schema = dedent("""
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -635,6 +1021,11 @@ def test_std_msgs_multi_array_layout():
 def test_std_msgs_string():
     msgtype = "std_msgs/String"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         string data
     """)
 
@@ -655,6 +1046,11 @@ def test_std_msgs_string():
 def test_std_msgs_uint16():
     msgtype = "std_msgs/UInt16"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         uint16 data
     """)
 
@@ -675,17 +1071,59 @@ def test_std_msgs_uint16():
 def test_std_msgs_uint16_multi_array():
     msgtype = "std_msgs/UInt16MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        uint16[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        uint16[]            data        # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -716,6 +1154,11 @@ def test_std_msgs_uint16_multi_array():
 def test_std_msgs_uint32():
     msgtype = "std_msgs/UInt32"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         uint32 data
     """)
 
@@ -736,17 +1179,59 @@ def test_std_msgs_uint32():
 def test_std_msgs_uint32_multi_array():
     msgtype = "std_msgs/UInt32MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        uint32[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        uint32[]          data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -777,6 +1262,11 @@ def test_std_msgs_uint32_multi_array():
 def test_std_msgs_uint64():
     msgtype = "std_msgs/UInt64"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         uint64 data
     """)
 
@@ -797,17 +1287,59 @@ def test_std_msgs_uint64():
 def test_std_msgs_uint64_multi_array():
     msgtype = "std_msgs/UInt64MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        uint64[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        uint64[]          data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
@@ -838,6 +1370,11 @@ def test_std_msgs_uint64_multi_array():
 def test_std_msgs_uint8():
     msgtype = "std_msgs/UInt8"
     schema = dedent("""
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
         uint8 data
     """)
 
@@ -858,17 +1395,59 @@ def test_std_msgs_uint8():
 def test_std_msgs_uint8_multi_array():
     msgtype = "std_msgs/UInt8MultiArray"
     schema = dedent("""
-        MultiArrayLayout layout
-        uint8[] data
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # Please look at the MultiArrayLayout message definition for
+        # documentation on all multiarrays.
+
+        MultiArrayLayout  layout        # specification of data layout
+        uint8[]           data          # array of data
         ================================================================================
         MSG: std_msgs/MultiArrayLayout
-        MultiArrayDimension[] dim
-        uint32 data_offset
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        # The multiarray declares a generic multi-dimensional array of a
+        # particular data type.  Dimensions are ordered from outer most
+        # to inner most.
+        #
+        # Accessors should ALWAYS be written in terms of dimension stride
+        # and specified outer-most dimension first.
+        #
+        # multiarray(i,j,k) = data[data_offset + dim_stride[1]*i + dim_stride[2]*j + k]
+        #
+        # A standard, 3-channel 640x480 image with interleaved color channels
+        # would be specified as:
+        #
+        # dim[0].label  = "height"
+        # dim[0].size   = 480
+        # dim[0].stride = 3*640*480 = 921600  (note dim[0] stride is just size of image)
+        # dim[1].label  = "width"
+        # dim[1].size   = 640
+        # dim[1].stride = 3*640 = 1920
+        # dim[2].label  = "channel"
+        # dim[2].size   = 3
+        # dim[2].stride = 3
+        #
+        # multiarray(i,j,k) refers to the ith row, jth column, and kth channel.
+
+        MultiArrayDimension[] dim # Array of dimension properties
+        uint32 data_offset        # padding bytes at front of data
         ================================================================================
         MSG: std_msgs/MultiArrayDimension
-        string label
-        uint32 size
-        uint32 stride
+        # This was originally provided as an example message.
+        # It is deprecated as of Foxy
+        # It is recommended to create your own semantically meaningful message.
+        # However if you would like to continue using this please use the equivalent in example_msgs.
+
+        string label   # label of given dimension
+        uint32 size    # size of given dimension (in type units)
+        uint32 stride  # stride of given dimension
     """)
 
     with TemporaryDirectory() as temp_dir:
