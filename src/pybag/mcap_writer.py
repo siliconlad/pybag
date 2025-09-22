@@ -181,6 +181,8 @@ class McapFileWriter:
         if self._chunk_size is not None:
             if self._current_chunk_start_time is None:
                 self._current_chunk_start_time = timestamp
+            else:
+                self._current_chunk_start_time = min(self._current_chunk_start_time, timestamp)
             self._current_chunk_end_time = max(self._current_chunk_end_time or timestamp, timestamp)
             offset = self._current_chunk_buffer.size()
             McapRecordWriter.write_message(self._current_chunk_buffer, record)
@@ -226,6 +228,7 @@ class McapFileWriter:
         message_index_offsets = {}
         message_index_start_offset = self._writer.tell()
         for cid, records in self._current_message_index.items():
+            records.sort(key=lambda item: (item[0], item[1]))
             message_index_offsets[cid] = self._writer.tell()
             message_index_record = MessageIndexRecord(channel_id=cid, records=records)
             McapRecordWriter.write_message_index(self._writer, message_index_record)
