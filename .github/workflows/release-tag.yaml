@@ -3,9 +3,15 @@ name: Release Tag
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Release version (e.g. 0.3.0 or v0.3.0)'
+      release_type:
+        description: 'Semantic version bump to apply before tagging'
         required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
       release_notes:
         description: 'Release notes for the GitHub release'
         required: false
@@ -18,29 +24,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Prepare version
-        id: version
-        shell: bash
-        run: |
-          RAW_VERSION="${{ inputs.version }}"
-          CLEAN_VERSION="${RAW_VERSION#v}"
-          if [ -z "$CLEAN_VERSION" ]; then
-            echo "Version cannot be empty after removing optional 'v' prefix" >&2
-            exit 1
-          fi
-          echo "version=$CLEAN_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$CLEAN_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
         with:
           version: latest
 
-      - name: Update project version files
-        run: uv run python scripts/update_version.py "${{ steps.version.outputs.version }}"
+      - name: Prepare version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv version --bump ${{ inputs.release_type }}
+          CLEAN_VERSION="$(uv version --short)"
+          if [ -z "$CLEAN_VERSION" ]; then
+            echo "Version cannot be empty after bump" >&2
+            exit 1
+          fi
+          echo "version=$CLEAN_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$CLEAN_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push version bump
         shell: bash
@@ -53,8 +55,8 @@ jobs:
             echo "No changes detected after version update."
             exit 1
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "siliconlad"
+          git config user.email "siliconlad@protonmail.com"
           git commit -am "chore: release $VERSION"
           git tag -a "$TAG" -m "Release $TAG"
           git push origin HEAD
