@@ -1,5 +1,7 @@
 import argparse
 
+from . import mcap_filter
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -11,7 +13,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # In the future subcommands will be added here.
+    mcap_parser = subparsers.add_parser("mcap", help="Utilities for MCAP files")
+    mcap_subparsers = mcap_parser.add_subparsers(dest="mcap_command")
+
+    mcap_filter.add_parser(mcap_subparsers)
 
     parser.set_defaults(func=lambda args: parser.print_help())
     return parser
