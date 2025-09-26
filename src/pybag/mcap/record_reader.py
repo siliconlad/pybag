@@ -396,6 +396,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
     def _load_chunk_indexes(self) -> None:
         if self._chunk_indexes is not None:
             return
+
         self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         self._chunk_indexes = []
         while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
