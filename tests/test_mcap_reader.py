@@ -1,6 +1,6 @@
 """Tests for the MCAP reader."""
-import random
 import logging
+import random
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
