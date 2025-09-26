@@ -1,4 +1,7 @@
 import argparse
+from pathlib import Path
+
+from pybag.cli.structure import structure_command
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -11,7 +14,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
-    # In the future subcommands will be added here.
+    structure_parser = subparsers.add_parser(
+        "structure",
+        help="Display a visual representation of the records contained in an MCAP file.",
+    )
+    structure_parser.add_argument(
+        "mcap",
+        type=Path,
+        help="Path to the MCAP file to inspect.",
+    )
+    structure_parser.set_defaults(func=structure_command)
+
 
     parser.set_defaults(func=lambda args: parser.print_help())
     return parser

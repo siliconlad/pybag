@@ -397,6 +397,10 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         if self._chunk_indexes is not None:
             return
 
+        if McapRecordType.CHUNK_INDEX not in self._summary_offset:
+            self._chunk_indexes = []
+            return
+
         self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         self._chunk_indexes = []
         while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
@@ -494,8 +498,13 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A generator of MessageRecord objects.
         """
-        for chunk_index in self.get_chunk_indexes(channel_id):
-            # Skip chunk that do not match the timestamp range
+        chunk_indexes = self.get_chunk_indexes(channel_id)
+        if not chunk_indexes:
+            yield from self._iterate_messages_without_chunks(channel_id, start_timestamp, end_timestamp)
+            return
+
+        entries: list[tuple[int, ChunkIndexRecord, int]] = []
+        for chunk_index in chunk_indexes:
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
                 continue
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
@@ -504,26 +513,93 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index).values()
             else:
-                message_indexes = [self.get_message_index(chunk_index, channel_id)]
-            if not message_indexes:
-                continue
+                message_index = self.get_message_index(chunk_index, channel_id)
+                message_indexes = [message_index] if message_index is not None else []
 
-            offsets: list[tuple[int, int]] = []
             for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
-                    offsets.append((timestamp, offset))
-            if not offsets:
-                continue
+                    entries.append((timestamp, chunk_index, offset))
 
-            chunk = self.get_chunk(chunk_index)
-            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for _timestamp, offset in offsets:
-                reader.seek_from_start(offset)
-                yield McapRecordParser.parse_message(reader)
+        entries.sort(key=lambda item: (item[0], item[1].chunk_start_offset, item[2]))
+
+        chunk_readers: dict[int, BytesReader] = {}
+        for _, chunk_index, offset in entries:
+            reader = chunk_readers.get(chunk_index.chunk_start_offset)
+            if reader is None:
+                chunk = self.get_chunk(chunk_index)
+                reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+                chunk_readers[chunk_index.chunk_start_offset] = reader
+            reader.seek_from_start(offset)
+            yield McapRecordParser.parse_message(reader)
+
+    def _iterate_messages_without_chunks(
+        self,
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        position = self._file.tell()
+        messages: list[MessageRecord] = []
+        try:
+            self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while True:
+                record_type_value = McapRecordParser.peek_record(self._file)
+                if record_type_value == 0:
+                    break
+                record_type = McapRecordType(record_type_value)
+                if record_type == McapRecordType.DATA_END:
+                    McapRecordParser.parse_data_end(self._file)
+                    break
+                if record_type == McapRecordType.MESSAGE:
+                    message = McapRecordParser.parse_message(self._file)
+                    if channel_id is not None and message.channel_id != channel_id:
+                        continue
+                    if start_timestamp is not None and message.log_time < start_timestamp:
+                        continue
+                    if end_timestamp is not None and message.log_time > end_timestamp:
+                        continue
+                    messages.append(message)
+                    continue
+                if record_type == McapRecordType.CHUNK:
+                    chunk = McapRecordParser.parse_chunk(self._file)
+                    messages.extend(
+                        self._messages_from_chunk(chunk, channel_id, start_timestamp, end_timestamp)
+                    )
+                    continue
+                McapRecordParser.skip_record(self._file)
+        finally:
+            self._file.seek_from_start(position)
+
+        messages.sort(key=lambda msg: (msg.log_time, msg.publish_time, msg.sequence))
+        for message in messages:
+            yield message
+
+    def _messages_from_chunk(
+        self,
+        chunk: ChunkRecord,
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> list[MessageRecord]:
+        chunk_messages: list[MessageRecord] = []
+        chunk_reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+        for inner_type_value, inner_record in McapRecordParser.parse_record(chunk_reader):
+            inner_type = McapRecordType(inner_type_value)
+            if inner_type != McapRecordType.MESSAGE:
+                continue
+            message: MessageRecord = inner_record
+            if channel_id is not None and message.channel_id != channel_id:
+                continue
+            if start_timestamp is not None and message.log_time < start_timestamp:
+                continue
+            if end_timestamp is not None and message.log_time > end_timestamp:
+                continue
+            chunk_messages.append(message)
+        return chunk_messages
 
     # TODO: Low Priority
     # - Metadata Index
