@@ -159,7 +159,7 @@ class BaseMcapRecordReader(ABC):
         ...
 
 
-class McapRecordRandomAccessReader(BaseMcapRecordReader):
+class McapChunkedReader(BaseMcapRecordReader):
     """Class to efficiently get records from an MCAP file.
 
     Args:
@@ -208,18 +208,18 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
     # Helpful Constructors
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapRecordRandomAccessReader':
+    def from_file(file_path: Path | str) -> 'McapChunkedReader':
         """
         Create a new MCAP reader from a file.
         """
-        return McapRecordRandomAccessReader(FileReader(file_path))
+        return McapChunkedReader(FileReader(file_path))
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapRecordRandomAccessReader':
+    def from_bytes(data: bytes) -> 'McapChunkedReader':
         """
         Create a new MCAP reader from a bytes object.
         """
-        return McapRecordRandomAccessReader(BytesReader(data))
+        return McapChunkedReader(BytesReader(data))
 
     # Destructors
 
@@ -229,7 +229,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     # Context Managers
 
-    def __enter__(self) -> 'McapRecordRandomAccessReader':
+    def __enter__(self) -> 'McapChunkedReader':
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -537,11 +537,11 @@ class McapRecordReaderFactory:
     """Factory to create a McapFileSequentialReader or McapFileRandomAccessReader."""
 
     @staticmethod
-    def from_file(file_path: Path | str) -> McapRecordRandomAccessReader:
+    def from_file(file_path: Path | str) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file."""
         try:
             # Try to create a random access reader first
-            return McapRecordRandomAccessReader.from_file(file_path)
+            return McapChunkedReader.from_file(file_path)
         except McapNoSummarySectionError:
             # If no summary section exists, fall back to sequential reader
             # TODO: Implement the sequential reader
@@ -554,11 +554,11 @@ class McapRecordReaderFactory:
             raise NotImplementedError('Sequential readers are not implemented yet')
 
     @staticmethod
-    def from_bytes(data: bytes) -> McapRecordRandomAccessReader:
+    def from_bytes(data: bytes) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a bytes object."""
         try:
             # Try to create a random access reader first
-            return McapRecordRandomAccessReader.from_bytes(data)
+            return McapChunkedReader.from_bytes(data)
         except McapNoSummarySectionError:
             # If no summary section exists, fall back to sequential reader
             # TODO: Implement the sequential reader
