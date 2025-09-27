@@ -7,6 +7,7 @@ from typing import Generator
 from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.error import (
+    McapNoChunkIndexError,
     McapNoStatisticsError,
     McapNoSummaryIndexError,
     McapNoSummarySectionError,
@@ -56,6 +57,14 @@ def decompress_chunk(chunk: ChunkRecord, *, check_crc: bool = False) -> bytes:
 
 # TODO: Is this the minimal set of methods needed?
 class BaseMcapRecordReader(ABC):
+    @abstractmethod
+    def __enter__(self) -> 'BaseMcapRecordReader':
+        ...
+
+    @abstractmethod
+    def __exit__(self, exc_type, exc_value, traceback):
+        ...
+
     @abstractmethod
     def close(self) -> None:
         """Close the MCAP file and release all resources."""
@@ -160,10 +169,11 @@ class BaseMcapRecordReader(ABC):
 
 
 class McapChunkedReader(BaseMcapRecordReader):
-    """Class to efficiently get records from an MCAP file.
+    """Class to efficiently get records from a chunked MCAP file.
 
     Args:
         file: The file to read from.
+        check_crc: Whether to validate the crc values in the mcap
     """
 
     def __init__(self, file: BaseReader, *, check_crc: bool = False):
@@ -197,8 +207,19 @@ class McapChunkedReader(BaseMcapRecordReader):
             record = McapRecordParser.parse_summary_offset(self._file)
             self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
-        # Caches for chunk and message indexes
-        self._chunk_indexes: list[ChunkIndexRecord] | None = None
+        # Load chunk indexes
+        self._chunk_indexes: list[ChunkIndexRecord] = []
+        chunk_summary_offset = self._summary_offset.get(McapRecordType.CHUNK_INDEX)
+        if chunk_summary_offset is None:
+            error_msg = 'No chunk index records founds in mcap'
+            raise McapNoChunkIndexError(error_msg)
+        self._file.seek_from_start(chunk_summary_offset.group_start)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+            chunk_index = McapRecordParser.parse_chunk_index(self._file)
+            self._chunk_indexes.append(chunk_index)
+        self._chunk_indexes.sort(key=lambda x: x.message_start_time)
+
+        # Caches for message indexes
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
         # Cached schema and channel dictionaries populated on first access
@@ -559,6 +580,11 @@ class McapRecordReaderFactory:
         try:
             # Try to create a random access reader first
             return McapChunkedReader.from_bytes(data)
+        except McapNoChunkIndexError:
+            # If no chunks exists, fall back to the non-chunked reader
+            # TODO: Implement the Non-Chunked Reader
+            logger.warning('No chunk indexes detected, performance will be degraded')
+            raise NotImplementedError('Non-chunked readers are not implemented yet')
         except McapNoSummarySectionError:
             # If no summary section exists, fall back to sequential reader
             # TODO: Implement the sequential reader

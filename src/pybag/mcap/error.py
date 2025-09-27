@@ -2,6 +2,12 @@ class McapError(Exception):
     """Base exception for all MCAP errors."""
 
 
+class McapNoChunkIndexError(McapError):
+    """Exception raised when a MCAP file has no chunk index records."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 class McapNoSummarySectionError(McapError):
     """Exception raised when a MCAP file has no summary section."""
     def __init__(self, message: str):
