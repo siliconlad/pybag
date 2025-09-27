@@ -397,8 +397,8 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         if self._chunk_indexes is not None:
             return
 
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         self._chunk_indexes = []
+        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
             chunk_index = McapRecordParser.parse_chunk_index(self._file)
             self._chunk_indexes.append(chunk_index)
@@ -503,8 +503,11 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index).values()
+            elif message_index := self.get_message_index(chunk_index, channel_id):
+                message_indexes = [message_index]
             else:
-                message_indexes = [self.get_message_index(chunk_index, channel_id)]
+                message_indexes = None
+
             if not message_indexes:
                 continue
 
