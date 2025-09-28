@@ -179,6 +179,44 @@ def test_random_ordered_messages(chunk_size):
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
 
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_duplicate_timestamps(chunk_size):
+    """Test that multiple messages with the same log time are all returned."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "duplicate_timestamps.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Ensure we have messages split across different chunks if enabled
+            timestamp = 1000
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_0"))
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_1"))
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_2"))
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
+            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+
+        # Read messages with pybag
+        with McapFileReader.from_file(path) as reader:
+            # Check that we have multiple chunks if configured to do so
+            chunk_indexes = reader._reader.get_chunk_indexes()
+            logging.info(f'Number of chunks: {len(chunk_indexes)}')
+            assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
+
+            messages = list(reader.messages("/test"))
+            logging.info(f'pybag: {[msg.log_time for msg in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            for i, message in enumerate(messages):
+                assert message.data.data == f"msg_{i}"
+
 #############################################
 # Compatibility with Official MCAP Library  #
 #############################################
