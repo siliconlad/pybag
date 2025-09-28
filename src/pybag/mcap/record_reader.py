@@ -515,13 +515,64 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A generator of MessageRecord objects.
         """
+        relevant_chunks = []
         for chunk_index in self.get_chunk_indexes(channel_id):
             # Skip chunk that do not match the timestamp range
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
                 continue
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
                 continue
+            relevant_chunks.append(chunk_index)
 
+        if not relevant_chunks:
+            return
+
+        # Check if chunks have overlapping time ranges - if so, use overlap-safe approach
+        has_overlaps = self._has_overlapping_chunks(relevant_chunks)
+
+        if has_overlaps:
+            # Warn user about performance impact
+            logger.warning(
+                "Detected overlapping chunks with random message ordering. "
+                "Reading performance is affected because multiple chunks need to be processed to maintain temporal order."
+            )
+            # Use overlap-safe reading approach
+            yield from self._get_messages_with_overlaps(
+                relevant_chunks, channel_id, start_timestamp, end_timestamp
+            )
+        else:
+            # Use fast sequential reading approach
+            yield from self._get_messages_sequential(
+                relevant_chunks, channel_id, start_timestamp, end_timestamp
+            )
+
+    def _has_overlapping_chunks(self, chunks: list[ChunkIndexRecord]) -> bool:
+        """Check if chunks have overlapping time ranges."""
+        if len(chunks) <= 1:
+            return False
+
+        # Sort chunks by start time for overlap detection
+        sorted_chunks = sorted(chunks, key=lambda x: x.message_start_time)
+
+        for i in range(len(sorted_chunks) - 1):
+            current_chunk = sorted_chunks[i]
+            next_chunk = sorted_chunks[i + 1]
+
+            # Check if current chunk's end time overlaps with next chunk's start time
+            if current_chunk.message_end_time >= next_chunk.message_start_time:
+                return True
+
+        return False
+
+    def _get_messages_sequential(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Fast sequential reading for non-overlapping chunks (original implementation)."""
+        for chunk_index in chunks:
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index).values()
             elif message_index := self.get_message_index(chunk_index, channel_id):
@@ -548,6 +599,84 @@ class McapChunkedReader(BaseMcapRecordReader):
             for _timestamp, offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
+
+    def _get_messages_with_overlaps(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Streaming overlap-safe reading using heap-based merge of per-chunk iterators."""
+        import heapq
+        from typing import Iterator
+
+        def chunk_message_iterator(
+            chunk_index: ChunkIndexRecord
+        ) -> Iterator[tuple[int, MessageRecord]]:
+            """Create an iterator that yields (timestamp, message) tuples for a chunk."""
+            if channel_id is None:
+                message_indexes = self.get_message_indexes(chunk_index).values()
+            elif message_index := self.get_message_index(chunk_index, channel_id):
+                message_indexes = [message_index]
+            else:
+                message_indexes = None
+
+            if not message_indexes:
+                return
+
+            # Collect and sort message references for this chunk
+            message_refs = []
+            for message_index in message_indexes:
+                for timestamp, offset in message_index.records:
+                    if start_timestamp is not None and timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp > end_timestamp:
+                        continue
+                    message_refs.append((timestamp, offset))
+
+            if not message_refs:
+                return
+
+            # Sort by timestamp for this chunk
+            message_refs.sort(key=lambda x: x[0])
+
+            # Load the chunk once and parse messages as needed
+            chunk = self.get_chunk(chunk_index)
+            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+
+            for timestamp, offset in message_refs:
+                reader.seek_from_start(offset)
+                message = McapRecordParser.parse_message(reader)
+                yield timestamp, message
+
+        # Create iterators for each chunk
+        chunk_iterators = []
+        for i, chunk_index in enumerate(chunks):
+            iterator = chunk_message_iterator(chunk_index)
+            try:
+                timestamp, message = next(iterator)
+                # Use (timestamp, iterator_id, message, iterator) to break ties consistently
+                heapq.heappush(chunk_iterators, (timestamp, i, message, iterator))
+            except StopIteration:
+                # Skip empty chunks
+                continue
+
+        # Merge iterators using heap for timestamp ordering
+        while chunk_iterators:
+            timestamp, iterator_id, message, iterator = heapq.heappop(chunk_iterators)
+
+            # Yield the message with the earliest timestamp
+            yield message
+
+            # Try to get the next message from this iterator
+            try:
+                next_timestamp, next_message = next(iterator)
+                heapq.heappush(chunk_iterators, (next_timestamp, iterator_id, next_message, iterator))
+            except StopIteration:
+                # This iterator is exhausted, don't push it back
+                continue
+
 
     # TODO: Low Priority
     # - Metadata Index
