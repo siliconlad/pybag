@@ -609,7 +609,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         # Build message index by scanning through the data section
         self._message_index = self._build_message_index()
 
-    def _build_message_index(self) -> dict[int, dict[int, int]]:
+    def _build_message_index(self) -> dict[int, dict[int, list[int]]]:
         """Build an index of all messages in the file by scanning the data section."""
         logger.debug('Building message index for non-chunked MCAP')
 
@@ -618,7 +618,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         _ = McapRecordParser.parse_header(self._file)
 
         message_count = 0
-        message_index: dict[int, dict[int, int]] = {}
+        message_index: dict[int, dict[int, list[int]]] = {}
 
         while True:
             current_pos = self._file.tell()
@@ -633,7 +633,9 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
                 if record_type == McapRecordType.MESSAGE:
                     message = McapRecordParser.parse_message(self._file)
-                    message_index.setdefault(message.channel_id, {})[message.log_time] = current_pos
+                    channel_message_indexes = message_index.setdefault(message.channel_id, {})
+                    channel_log_time_offsets = channel_message_indexes.setdefault(message.log_time, [])
+                    channel_log_time_offsets.append(current_pos)
                     message_count += 1
                 else:
                     # Skip non-message records in data section
@@ -870,19 +872,19 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
         if timestamp is None:  # Return first
             first_time = min(list(messages.keys()))
-            offset = messages[first_time]
+            offsets = messages[first_time]
         else:
             # Find exact timestamp match
-            exact_times = [offset for ts, offset in messages.items() if ts == timestamp]
-            if not exact_times:
+            offsets = [offset for ts, offset in messages.items() if ts == timestamp]
+            offsets = [o for offset in offsets for o in offset]  # unpack list
+            if not offsets:
                 logger.warning(f'No message with time {timestamp} found')
                 return None
-            if len(exact_times) > 1:
+            if len(offsets) > 1:
                 logger.warning('Multiple records with the same log time found, choosing one.')
-            offset = exact_times[0]  # Choose first one
 
         # Read message from file
-        self._file.seek_from_start(offset)
+        self._file.seek_from_start(offsets[0])
         return McapRecordParser.parse_message(self._file)
 
     def get_messages(
@@ -916,7 +918,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         logger.debug(f'Channels requested: {channels_to_process}')
 
         # Collect all matching message offsets with timestamps
-        message_offsets: list[tuple[int, int]] = []
+        message_offsets: list[tuple[int, list[int]]] = []
         for cid in channels_to_process:
             logger.debug(f'{len(self._message_index[cid])} messages for channel {cid}')
             for timestamp, offset in self._message_index[cid].items():
@@ -932,9 +934,10 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         logger.debug(f'Found {len(message_offsets)} messages')
 
         # Yield messages
-        for _, offset in message_offsets:
-            self._file.seek_from_start(offset)
-            yield McapRecordParser.parse_message(self._file)
+        for _, offsets in message_offsets:
+            for offset in offsets:
+                self._file.seek_from_start(offset)
+                yield McapRecordParser.parse_message(self._file)
 
     # TODO: Low Priority
     # - Metadata Index
