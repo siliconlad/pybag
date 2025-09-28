@@ -89,7 +89,8 @@ def test_ordered_messages(chunk_size):
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
             messages = list(reader.messages("/unordered"))
-            logging.info(f'Timestamps: {[message.log_time for message in messages]}')
+            logging.info(f'pybag: {[message.log_time for message in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
             assert [msg.log_time for msg in messages] == list(range(8))
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
@@ -129,8 +130,9 @@ def test_reverse_ordered_messages(chunk_size):
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
             messages = list(reader.messages("/unordered"))
-            logging.info(f'Timestamps: {[message.log_time for message in messages]}')
-            assert [msg.log_time for msg in messages] == list(range(8))[::-1]
+            logging.info(f'pybag: {[message.log_time for message in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            assert [msg.log_time for msg in messages] == list(range(8))
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
 
@@ -172,6 +174,7 @@ def test_random_ordered_messages(chunk_size):
 
             messages = list(reader.messages("/overlapping"))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
             assert [msg.log_time for msg in messages] == sorted_timestamps
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
