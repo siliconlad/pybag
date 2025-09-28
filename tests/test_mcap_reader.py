@@ -156,8 +156,8 @@ def test_random_ordered_messages(chunk_size):
         logging.info(f'Shuffled timestamps: {shuffled_timestamps}')
 
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            for i, time in enumerate(shuffled_timestamps):
-                writer.write_message("/overlapping", time, std_msgs.String(data=f"msg_{i}"))
+            for time in shuffled_timestamps:
+                writer.write_message("/overlapping", time, std_msgs.String(data=f"msg_{time}"))
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
@@ -190,7 +190,6 @@ def test_random_ordered_messages(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-@pytest.mark.skip(reason="mcap writer incorrectly orders the messages")
 def test_random_ordered_messages_from_official_mcap(chunk_size):
     random.seed(42)  # Make tests reproducible
 
@@ -207,11 +206,11 @@ def test_random_ordered_messages_from_official_mcap(chunk_size):
             writer = McapWriter(f) if chunk_size is None else McapWriter(f, chunk_size=chunk_size)
             try:
                 schema_id = writer.register_msgdef('std_msgs/String', 'string data\n')
-                for i, timestamp in enumerate(shuffled_timestamps):
+                for timestamp in shuffled_timestamps:
                     writer.write_message(
                         topic='/overlapping',
                         schema=schema_id,
-                        message={'data': f'msg_{i}'},
+                        message={'data': f'msg_{timestamp}'},
                         log_time=timestamp,
                         publish_time=timestamp,
                     )
