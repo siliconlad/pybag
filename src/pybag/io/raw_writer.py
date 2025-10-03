@@ -9,17 +9,17 @@ class BaseWriter(ABC):
     @abstractmethod
     def write(self, data: bytes) -> int:
         """Write bytes."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def tell(self) -> int:
         """Get the current position in the writer."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def close(self) -> None:
         """Close the writer."""
-        ...
+        ...  # pragma: no cover
 
 
 class FileWriter(BaseWriter):

@@ -13,7 +13,7 @@ from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
-from pybag.mcap.record_reader import McapRecordRandomAccessReader
+from pybag.mcap.record_reader import McapChunkedReader
 from pybag.mcap.records import RecordType
 from pybag.mcap_writer import McapFileWriter
 from pybag.serialize import MessageSerializerFactory
@@ -225,7 +225,7 @@ def test_chunk_roundtrip() -> None:
             assert msgs == ["a", "b"]
 
         # Check we can read the chunk indexes correctly
-        with McapRecordRandomAccessReader.from_file(path) as random_reader:
+        with McapChunkedReader.from_file(path) as random_reader:
             chunk_indexes = random_reader.get_chunk_indexes()
             assert len(chunk_indexes) == 2
             assert all(c.compression == "lz4" for c in chunk_indexes)

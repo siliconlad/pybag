@@ -79,8 +79,8 @@ class McapFileReader:
     def messages(
         self,
         topic: str,
-        start_time: float | None = None,
-        end_time: float | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
     ) -> Generator[DecodedMessage, None, None]:
         """
@@ -97,9 +97,11 @@ class McapFileReader:
         """
         channel_id = self._reader.get_channel_id(topic)
         if channel_id is None:
-            raise McapUnknownEncodingError(f'Topic {topic} not found in MCAP file')
-
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP file')
         channel_record = self._reader.get_channel(channel_id)
+        if channel_record is None:
+            raise McapUnknownTopicError(f'Channel {channel_id} not found in MCAP file')
+
         if (message_schema := self._reader.get_channel_schema(channel_id)) is None:
             raise McapUnknownSchemaError(f'Unknown schema for channel {channel_id}')
 
