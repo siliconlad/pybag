@@ -1,8 +1,9 @@
+import heapq
 import logging
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterator
 
 from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
@@ -527,21 +528,12 @@ class McapChunkedReader(BaseMcapRecordReader):
         if not relevant_chunks:
             return
 
-        # Check if chunks have overlapping time ranges - if so, use overlap-safe approach
-        has_overlaps = self._has_overlapping_chunks(relevant_chunks)
-
-        if has_overlaps:
-            # Warn user about performance impact
-            logger.warning(
-                "Detected overlapping chunks with random message ordering. "
-                "Reading performance is affected because multiple chunks need to be processed to maintain temporal order."
-            )
-            # Use overlap-safe reading approach
+        if self._has_overlapping_chunks(relevant_chunks):
+            logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
             yield from self._get_messages_with_overlaps(
                 relevant_chunks, channel_id, start_timestamp, end_timestamp
             )
         else:
-            # Use fast sequential reading approach
             yield from self._get_messages_sequential(
                 relevant_chunks, channel_id, start_timestamp, end_timestamp
             )
@@ -551,15 +543,11 @@ class McapChunkedReader(BaseMcapRecordReader):
         if len(chunks) <= 1:
             return False
 
-        # Sort chunks by start time for overlap detection
-        sorted_chunks = sorted(chunks, key=lambda x: x.message_start_time)
-
-        for i in range(len(sorted_chunks) - 1):
-            current_chunk = sorted_chunks[i]
-            next_chunk = sorted_chunks[i + 1]
-
-            # Check if current chunk's end time overlaps with next chunk's start time
-            if current_chunk.message_end_time >= next_chunk.message_start_time:
+        # Chunks should already be sorted by message_start_time
+        for i in range(len(chunks) - 1):
+            current_chunk_end_time = chunks[i].message_end_time
+            next_chunk_start_time = chunks[i + 1].message_start_time
+            if current_chunk_end_time >= next_chunk_start_time:
                 return True
 
         return False
@@ -583,20 +571,20 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not message_indexes:
                 continue
 
-            offsets: list[tuple[int, int]] = []
+            offsets: list[int] = []
             for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
-                    offsets.append((timestamp, offset))
+                    offsets.append(offset)
             if not offsets:
                 continue
 
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for _, offset in offsets:
+            for offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
@@ -608,8 +596,6 @@ class McapChunkedReader(BaseMcapRecordReader):
         end_timestamp: int | None,
     ) -> Generator[MessageRecord, None, None]:
         """Streaming overlap-safe reading using heap-based merge of per-chunk iterators."""
-        import heapq
-        from typing import Iterator
 
         def chunk_message_iterator(
             chunk_index: ChunkIndexRecord
