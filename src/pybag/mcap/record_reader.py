@@ -62,94 +62,94 @@ def decompress_chunk(chunk: ChunkRecord, *, check_crc: bool = False) -> bytes:
 class BaseMcapRecordReader(ABC):
     @abstractmethod
     def __enter__(self) -> 'BaseMcapRecordReader':
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def __exit__(self, exc_type, exc_value, traceback):
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def close(self) -> None:
         """Close the MCAP file and release all resources."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_header(self) -> HeaderRecord:
         """Get the header record from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_footer(self) -> FooterRecord:
         """Get the footer record from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     # Schema Management
 
     @abstractmethod
     def get_schemas(self) -> dict[int, SchemaRecord]:
         """Get all schemas defined in the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """Get a schema by its ID."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
         """Get the schema for a given channel ID."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
         """Get the schema for a given message."""
-        ...
+        ...  # pragma: no cover
 
     # Channel Management
 
     @abstractmethod
     def get_channels(self) -> dict[int, ChannelRecord]:
         """Get all channels/topics in the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """Get a channel by its ID."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_channel_id(self, topic: str) -> int | None:
         """Get a channel ID by its topic."""
-        ...
+        ...  # pragma: no cover
 
     # Message Index Management
 
     @abstractmethod
     def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
         """Get all message indexes from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
         """Get a message index for a given channel ID."""
-        ...
+        ...  # pragma: no cover
 
     # Chunk Management
 
     @abstractmethod
     def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
         """Get all chunk indexes from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
         """Get a chunk by its index."""
-        ...
+        ...  # pragma: no cover
 
     # Message Management
 
@@ -159,7 +159,7 @@ class BaseMcapRecordReader(ABC):
         channel_id: int,
         timestamp: int | None = None,
     ) -> MessageRecord | None:
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_messages(
@@ -168,7 +168,7 @@ class BaseMcapRecordReader(ABC):
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
-        ...
+        ...  # pragma: no cover
 
 
 class McapChunkedReader(BaseMcapRecordReader):
