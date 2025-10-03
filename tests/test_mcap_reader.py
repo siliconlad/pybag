@@ -104,11 +104,10 @@ def test_ordered_messages(chunk_size, in_log_time_order: bool):
             messages = list(reader.messages("/unordered", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[message.log_time for message in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+
             expected_log_times = list(range(8))
             assert [msg.log_time for msg in messages] == expected_log_times
-            assert [msg.data.data for msg in messages] == [
-                f"msg_{time}" for time in expected_log_times
-            ]
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -148,11 +147,10 @@ def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool):
             messages = list(reader.messages("/unordered", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[message.log_time for message in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+
             expected_log_times = list(range(8)) if in_log_time_order else list(reversed(range(8)))
             assert [msg.log_time for msg in messages] == expected_log_times
-            assert [msg.data.data for msg in messages] == [
-                f"msg_{time}" for time in expected_log_times
-            ]
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -194,11 +192,10 @@ def test_random_ordered_messages(chunk_size, in_log_time_order: bool):
             messages = list(reader.messages("/overlapping", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+
             expected_log_times = sorted_timestamps if in_log_time_order else shuffled_timestamps
             assert [msg.log_time for msg in messages] == expected_log_times
-            assert [msg.data.data for msg in messages] == [
-                f"msg_{time}" for time in expected_log_times
-            ]
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -236,6 +233,7 @@ def test_duplicate_timestamps(chunk_size, in_log_time_order: bool):
             messages = list(reader.messages("/test", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+
             assert [msg.log_time for msg in messages] == [timestamp] * 3
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
@@ -338,11 +336,10 @@ def test_random_ordered_messages_from_official_mcap(
             messages = list(reader.messages("/overlapping", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+
             expected_log_times = sorted_timestamps if in_log_time_order else shuffled_timestamps
             assert [msg.log_time for msg in messages] == expected_log_times
-            assert [msg.data.data for msg in messages] == [
-                f"msg_{time}" for time in expected_log_times
-            ]
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
