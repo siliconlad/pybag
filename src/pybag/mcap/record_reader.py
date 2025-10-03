@@ -636,8 +636,9 @@ class McapChunkedReader(BaseMcapRecordReader):
                 yield timestamp, chunk_index_id, message
 
         chunk_iterators = [
-            chunk_message_iterator(i, chunk_index)
+            iterator
             for i, chunk_index in enumerate(chunks)
+            if (iterator := chunk_message_iterator(i, chunk_index)) is not None
         ]
         # Sort by the timestamp and break ties with the order of the chunk
         for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
