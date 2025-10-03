@@ -598,8 +598,9 @@ class McapChunkedReader(BaseMcapRecordReader):
         """Streaming overlap-safe reading using heap-based merge of per-chunk iterators."""
 
         def chunk_message_iterator(
+            chunk_index_id: int,
             chunk_index: ChunkIndexRecord
-        ) -> Iterator[tuple[int, MessageRecord]]:
+        ) -> Iterator[tuple[int, int, MessageRecord]]:
             """Create an iterator that yields (timestamp, message) tuples for a chunk."""
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index).values()
@@ -612,6 +613,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 return
 
             # Collect and sort message references for this chunk
+            # The records should already by sorted by timestamp + offset
             message_refs = []
             for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
@@ -624,9 +626,6 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not message_refs:
                 return
 
-            # Sort by timestamp for this chunk
-            message_refs.sort(key=lambda x: x[0])
-
             # Load the chunk once and parse messages as needed
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
@@ -634,34 +633,15 @@ class McapChunkedReader(BaseMcapRecordReader):
             for timestamp, offset in message_refs:
                 reader.seek_from_start(offset)
                 message = McapRecordParser.parse_message(reader)
-                yield timestamp, message
+                yield timestamp, chunk_index_id, message
 
-        # Create iterators for each chunk
-        chunk_iterators = []
-        for i, chunk_index in enumerate(chunks):
-            iterator = chunk_message_iterator(chunk_index)
-            try:
-                timestamp, message = next(iterator)
-                # Use (timestamp, iterator_id, message, iterator) to break ties consistently
-                heapq.heappush(chunk_iterators, (timestamp, i, message, iterator))
-            except StopIteration:
-                # Skip empty chunks
-                continue
-
-        # Merge iterators using heap for timestamp ordering
-        while chunk_iterators:
-            timestamp, iterator_id, message, iterator = heapq.heappop(chunk_iterators)
-
-            # Yield the message with the earliest timestamp
+        chunk_iterators = [
+            chunk_message_iterator(i, chunk_index)
+            for i, chunk_index in enumerate(chunks)
+        ]
+        # Sort by the timestamp and break ties with the order of the chunk
+        for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
             yield message
-
-            # Try to get the next message from this iterator
-            try:
-                next_timestamp, next_message = next(iterator)
-                heapq.heappush(chunk_iterators, (next_timestamp, iterator_id, next_message, iterator))
-            except StopIteration:
-                # This iterator is exhausted, don't push it back
-                continue
 
 
     # TODO: Low Priority
