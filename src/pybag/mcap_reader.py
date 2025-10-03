@@ -36,22 +36,36 @@ class DecodedMessage():
 class McapFileReader:
     """Class to read MCAP file"""
 
-    def __init__(self, reader: BaseMcapRecordReader):
+    def __init__(
+        self,
+        reader: BaseMcapRecordReader,
+        *,
+        is_log_time_order: bool = True,
+    ):
         self._reader = reader
+        self._is_log_time_order = is_log_time_order
 
         header = self._reader.get_header()
         self._profile = header.profile
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapFileReader':
+    def from_file(
+        file_path: Path | str,
+        *,
+        is_log_time_order: bool = True,
+    ) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_file(file_path)
-        return McapFileReader(reader)
+        return McapFileReader(reader, is_log_time_order=is_log_time_order)
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapFileReader':
+    def from_bytes(
+        data: bytes,
+        *,
+        is_log_time_order: bool = True,
+    ) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_bytes(data)
-        return McapFileReader(reader)
+        return McapFileReader(reader, is_log_time_order=is_log_time_order)
 
     def get_topics(self) -> list[str]:
         """Get all topics in the MCAP file."""
@@ -113,7 +127,12 @@ class McapFileReader:
             raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
 
         deserialize = message_deserializer.deserialize_message
-        for message in self._reader.get_messages(channel_id, start_time, end_time):
+        for message in self._reader.get_messages(
+            channel_id,
+            start_time,
+            end_time,
+            is_log_time_order=self._is_log_time_order,
+        ):
             decoded = DecodedMessage(
                 message.channel_id,
                 message.sequence,
