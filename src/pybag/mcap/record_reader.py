@@ -622,6 +622,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
                     message_refs.append((timestamp, offset))
+            message_refs.sort()  # Sort to make sure timestamps are in correct order
 
             if not message_refs:
                 return
