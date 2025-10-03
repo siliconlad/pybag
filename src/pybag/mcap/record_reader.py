@@ -168,7 +168,7 @@ class BaseMcapRecordReader(ABC):
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
         *,
-        is_log_time_order: bool = True,
+        in_log_time_order: bool = True,
     ) -> Generator[MessageRecord, None, None]:
         ...  # pragma: no cover
 
@@ -504,7 +504,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
         *,
-        is_log_time_order: bool = True,
+        in_log_time_order: bool = True,
     ) -> Generator[MessageRecord, None, None]:
         """
         Get messages from the MCAP file.
@@ -532,7 +532,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         if not relevant_chunks:
             return
 
-        if not is_log_time_order:
+        if not in_log_time_order:
             yield from self._get_messages_write_order(
                 relevant_chunks,
                 channel_id,
@@ -1043,7 +1043,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
         *,
-        is_log_time_order: bool = True,
+        in_log_time_order: bool = True,
     ) -> Generator[MessageRecord, None, None]:
         """
         Get messages from the MCAP file.
@@ -1055,6 +1055,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             channel_id: Optional channel ID to filter by. If None, all channels are included.
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
+            in_log_time_order: Return records in log time order if true, else in the order they appear in the file
 
         Returns:
             A generator of MessageRecord objects.
@@ -1082,7 +1083,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 for offset in offsets:
                     entries.append((timestamp, offset))
 
-        if is_log_time_order:
+        if in_log_time_order:
             entries.sort(key=lambda x: (x[0], x[1]))
         else:
             entries.sort(key=lambda x: x[1])

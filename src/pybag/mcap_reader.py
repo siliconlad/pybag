@@ -120,7 +120,7 @@ class McapFileReader:
             channel_id,
             start_time,
             end_time,
-            is_log_time_order=in_log_time_order
+            in_log_time_order=in_log_time_order
         ):
             decoded = DecodedMessage(
                 message.channel_id,
