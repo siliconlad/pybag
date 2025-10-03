@@ -596,7 +596,7 @@ class McapChunkedReader(BaseMcapRecordReader):
 
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for _timestamp, offset in offsets:
+            for _, offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
