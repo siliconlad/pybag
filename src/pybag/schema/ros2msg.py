@@ -201,7 +201,6 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
             return self._cache[schema.id]
 
         assert schema.encoding == "ros2msg"
-        logger.debug(f"Parsing schema: {schema.name}")
 
         package_name = schema.name.split('/')[0]
         msg = schema.data.decode('utf-8')

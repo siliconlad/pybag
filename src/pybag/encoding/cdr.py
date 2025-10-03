@@ -15,7 +15,6 @@ class CdrDecoder(MessageDecoder):
 
         # Get endianness from second byte
         self._is_little_endian = bool(data[1])
-        logger.debug(f'Little endian: {self._is_little_endian}')
 
         # Skip first 4 bytes
         self._data = BytesReader(data[4:])

@@ -1,8 +1,9 @@
+import heapq
 import logging
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterator
 
 from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
@@ -515,13 +516,51 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A generator of MessageRecord objects.
         """
+        relevant_chunks = []
         for chunk_index in self.get_chunk_indexes(channel_id):
             # Skip chunk that do not match the timestamp range
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
                 continue
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
                 continue
+            relevant_chunks.append(chunk_index)
 
+        if not relevant_chunks:
+            return
+
+        if self._has_overlapping_chunks(relevant_chunks):
+            logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
+            yield from self._get_messages_with_overlaps(
+                relevant_chunks, channel_id, start_timestamp, end_timestamp
+            )
+        else:
+            yield from self._get_messages_sequential(
+                relevant_chunks, channel_id, start_timestamp, end_timestamp
+            )
+
+    def _has_overlapping_chunks(self, chunks: list[ChunkIndexRecord]) -> bool:
+        """Check if chunks have overlapping time ranges."""
+        if len(chunks) <= 1:
+            return False
+
+        # Chunks should already be sorted by message_start_time
+        for i in range(len(chunks) - 1):
+            current_chunk_end_time = chunks[i].message_end_time
+            next_chunk_start_time = chunks[i + 1].message_start_time
+            if current_chunk_end_time >= next_chunk_start_time:
+                return True
+
+        return False
+
+    def _get_messages_sequential(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Fast sequential reading for non-overlapping chunks (original implementation)."""
+        for chunk_index in chunks:
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index).values()
             elif message_index := self.get_message_index(chunk_index, channel_id):
@@ -532,22 +571,80 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not message_indexes:
                 continue
 
-            offsets: list[tuple[int, int]] = []
+            offsets: list[int] = []
             for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
-                    offsets.append((timestamp, offset))
+                    offsets.append(offset)
             if not offsets:
                 continue
 
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for _timestamp, offset in offsets:
+            for offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
+
+    def _get_messages_with_overlaps(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Streaming overlap-safe reading using heap-based merge of per-chunk iterators."""
+
+        def chunk_message_iterator(
+            chunk_index_id: int,
+            chunk_index: ChunkIndexRecord
+        ) -> Iterator[tuple[int, int, MessageRecord]]:
+            """Create an iterator that yields (timestamp, message) tuples for a chunk."""
+            if channel_id is None:
+                message_indexes = self.get_message_indexes(chunk_index).values()
+            elif message_index := self.get_message_index(chunk_index, channel_id):
+                message_indexes = [message_index]
+            else:
+                message_indexes = None
+
+            if not message_indexes:
+                return
+
+            # Collect and sort message references for this chunk
+            # The records should already by sorted by timestamp + offset
+            message_refs = []
+            for message_index in message_indexes:
+                for timestamp, offset in message_index.records:
+                    if start_timestamp is not None and timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp > end_timestamp:
+                        continue
+                    message_refs.append((timestamp, offset))
+            message_refs.sort()  # Sort to make sure timestamps are in correct order
+
+            if not message_refs:
+                return
+
+            # Load the chunk once and parse messages as needed
+            chunk = self.get_chunk(chunk_index)
+            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+
+            for timestamp, offset in message_refs:
+                reader.seek_from_start(offset)
+                message = McapRecordParser.parse_message(reader)
+                yield timestamp, chunk_index_id, message
+
+        chunk_iterators = [
+            iterator
+            for i, chunk_index in enumerate(chunks)
+            if (iterator := chunk_message_iterator(i, chunk_index)) is not None
+        ]
+        # Sort by the timestamp and break ties with the order of the chunk
+        for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
+            yield message
+
 
     # TODO: Low Priority
     # - Metadata Index
