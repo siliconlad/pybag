@@ -1,12 +1,31 @@
 import logging
 import struct
+from dataclasses import dataclass
 from typing import Any
 
 from pybag.encoding import MessageDecoder, MessageEncoder
 from pybag.io.raw_reader import BytesReader
-from pybag.io.raw_writer import BytesWriter
+from pybag.io.raw_writer import BaseWriter, BytesWriter
 
 logger = logging.getLogger(__name__)
+
+@dataclass(slots=True)
+class SerializedMessage:
+    header: bytes
+    payload: memoryview
+
+    def __len__(self) -> int:
+        return len(self.header) + len(self.payload)
+
+    def write(self, writer: BaseWriter) -> None:
+        writer.write(self.header)
+        writer.write(self.payload)
+
+    def to_bytes(self) -> bytes:
+        return self.header + self.payload.tobytes()
+
+    def __bytes__(self) -> bytes:  # pragma: no cover - convenience
+        return self.to_bytes()
 
 
 class CdrDecoder(MessageDecoder):
@@ -149,6 +168,9 @@ class CdrEncoder(MessageEncoder):
     def encoding(cls) -> str:
         return "cdr"
 
+    def reset(self) -> None:
+        self._payload.clear()
+
     def encode(self, type_str: str, value: Any) -> None:
         """Encode ``value`` based on ``type_str``."""
         getattr(self, type_str)(value)
@@ -156,6 +178,10 @@ class CdrEncoder(MessageEncoder):
     def save(self) -> bytes:
         """Return the encoded byte stream."""
         return self._header + self._payload.as_bytes()
+
+    def save_view(self) -> SerializedMessage:
+        """Return a zero-copy representation of the encoded stream."""
+        return SerializedMessage(self._header, self._payload.as_memoryview())
 
     # Primitive encoders -------------------------------------------------
 
@@ -264,7 +290,9 @@ if __name__ == '__main__':
         publish_time=1748182265345264928,
         data=b'\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x08@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xf0?\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00\x08@\x00\x00\x00\x00\x00\x00\x10@\x00\x00\x00\x00\x00\x00\x14@\x00\x00\x00\x00\x00\x00\x18@\x00\x00\x00\x00\x00\x00\x1c@\x00\x00\x00\x00\x00\x00 @\x00\x00\x00\x00\x00\x00"@\x00\x00\x00\x00\x00\x00$@\x00\x00\x00\x00\x00\x00&@\x00\x00\x00\x00\x00\x00(@\x00\x00\x00\x00\x00\x00*@\x00\x00\x00\x00\x00\x00,@\x00\x00\x00\x00\x00\x00.@\x00\x00\x00\x00\x00\x000@\x00\x00\x00\x00\x00\x001@\x00\x00\x00\x00\x00\x002@\x00\x00\x00\x00\x00\x003@\x00\x00\x00\x00\x00\x004@\x00\x00\x00\x00\x00\x005@\x00\x00\x00\x00\x00\x006@\x00\x00\x00\x00\x00\x007@\x00\x00\x00\x00\x00\x008@\x00\x00\x00\x00\x00\x009@\x00\x00\x00\x00\x00\x00:@\x00\x00\x00\x00\x00\x00;@\x00\x00\x00\x00\x00\x00<@\x00\x00\x00\x00\x00\x00=@\x00\x00\x00\x00\x00\x00>@\x00\x00\x00\x00\x00\x00?@\x00\x00\x00\x00\x00\x00@@\x00\x00\x00\x00\x00\x80@@\x00\x00\x00\x00\x00\x00A@\x00\x00\x00\x00\x00\x80A@'
     )
-    cdr = CdrDecoder(pose_with_covariance_msg.data)
+    pose_data = pose_with_covariance_msg.data
+    assert isinstance(pose_data, bytes)
+    cdr = CdrDecoder(pose_data)
     print(cdr.parse('float64'))
     print(cdr.parse('float64'))
     print(cdr.parse('float64'))

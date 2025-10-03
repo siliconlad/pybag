@@ -66,6 +66,9 @@ class BytesWriter(BaseWriter):
     def as_bytes(self) -> bytes:
         return bytes(self._buffer)
 
+    def as_memoryview(self) -> memoryview:
+        return memoryview(self._buffer)
+
     def clear(self) -> None:
         self._buffer.clear()
 
