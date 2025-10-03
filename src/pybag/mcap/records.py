@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
+from pybag.encoding.cdr import SerializedMessage
+
 
 @dataclass
 class HeaderRecord:
@@ -38,7 +40,7 @@ class MessageRecord:
     sequence: int
     log_time: int
     publish_time: int
-    data: bytes
+    data: bytes | SerializedMessage
 
 
 @dataclass

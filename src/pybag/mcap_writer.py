@@ -26,6 +26,8 @@ from pybag.types import Message
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024
+
 
 class McapFileWriter:
     """High level writer for producing MCAP files."""
@@ -35,7 +37,7 @@ class McapFileWriter:
         writer: BaseWriter,
         *,
         profile: str = "ros2",
-        chunk_size: int | None = None,
+        chunk_size: int | None = DEFAULT_CHUNK_SIZE,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
     ) -> None:
         self._writer = CrcWriter(writer)
@@ -86,16 +88,17 @@ class McapFileWriter:
         file_path: str | Path,
         *,
         profile: str = "ros2",
-        chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
+        chunk_size: int | None = DEFAULT_CHUNK_SIZE,
+        chunk_compression: Literal["lz4", "zstd"] | None = None,
     ) -> "McapFileWriter":
         """Create a writer backed by a file on disk.
 
         Args:
             file_path: The path to the file to write to.
             profile: The profile to use for the MCAP file.
-            chunk_size: The size of the chunk to write to in bytes.
-            chunk_compression: The compression to use for the chunk.
+            chunk_size: The target chunk size in bytes. Pass ``None`` to disable
+                chunking.
+            chunk_compression: Optional compression to apply to each chunk.
 
         Returns:
             A writer backed by a file on disk.

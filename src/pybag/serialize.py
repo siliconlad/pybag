@@ -2,7 +2,7 @@ from dataclasses import is_dataclass
 from typing import Callable
 
 from pybag.encoding import MessageEncoder
-from pybag.encoding.cdr import CdrEncoder
+from pybag.encoding.cdr import CdrEncoder, SerializedMessage
 from pybag.mcap.records import ChannelRecord, SchemaRecord
 from pybag.schema import SchemaEncoder
 from pybag.schema.compiler import compile_serializer
@@ -21,6 +21,7 @@ class MessageSerializer:
         self._schema_encoder = schema_encoder
         self._message_encoder = message_encoder
         self._compiled: dict[type[Message], Callable[[MessageEncoder, Message], None]] = {}
+        self._encoders: dict[tuple[type[Message], bool], CdrEncoder] = {}
 
     @property
     def schema_encoding(self) -> str:
@@ -31,6 +32,15 @@ class MessageSerializer:
         return self._message_encoder.encoding()
 
     def serialize_message(self, message: Message, *, little_endian: bool = True) -> bytes:
+        serialized = self.serialize_message_view(message, little_endian=little_endian)
+        return serialized.to_bytes()
+
+    def serialize_message_view(
+        self,
+        message: Message,
+        *,
+        little_endian: bool = True,
+    ) -> SerializedMessage:
         if not is_dataclass(message):  # pragma: no cover - defensive programming
             raise TypeError("Expected a dataclass instance")
 
@@ -40,7 +50,15 @@ class MessageSerializer:
             serializer = compile_serializer(schema, sub_schemas)
             self._compiled[message_type] = serializer
 
-        encoder = self._message_encoder(little_endian=little_endian)
+        key = (message_type, little_endian)
+        encoder = self._encoders.get(key)
+        if encoder is None:
+            encoder = self._message_encoder(little_endian=little_endian)  # type: ignore[call-arg]
+            self._encoders[key] = encoder
+            # Cache is keyed by endianness, so the header stays valid.
+        else:
+            encoder.reset()
+
         serializer(encoder, message)
         return encoder.save()
 

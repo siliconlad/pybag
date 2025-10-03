@@ -88,7 +88,7 @@ class MessageEncoder(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
-    def save(self) -> bytes:
+    def save(self) -> Any:
         ...  # pragma: no cover
 
     # Primitive encoders -------------------------------------------------
