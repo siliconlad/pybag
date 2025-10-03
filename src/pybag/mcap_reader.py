@@ -82,6 +82,8 @@ class McapFileReader:
         start_time: int | None = None,
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
+        *,
+        in_log_time_order: bool = True
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -91,6 +93,7 @@ class McapFileReader:
             start_time: Start time to filter by. If None, start from the beginning of the file.
             end_time: End time to filter by. If None, read to the end of the file.
             filter: Callable used to filter messages. If None, all messages are returned.
+            in_log_time_order: Return messages in log time order if true, otherwise in the order they appear in the file.
 
         Returns:
             An iterator over DecodedMessage objects.
@@ -113,7 +116,12 @@ class McapFileReader:
             raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
 
         deserialize = message_deserializer.deserialize_message
-        for message in self._reader.get_messages(channel_id, start_time, end_time):
+        for message in self._reader.get_messages(
+            channel_id,
+            start_time,
+            end_time,
+            in_log_time_order=in_log_time_order
+        ):
             decoded = DecodedMessage(
                 message.channel_id,
                 message.sequence,

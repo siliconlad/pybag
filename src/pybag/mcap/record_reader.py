@@ -167,6 +167,8 @@ class BaseMcapRecordReader(ABC):
         channel_id: int | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
+        *,
+        in_log_time_order: bool = True,
     ) -> Generator[MessageRecord, None, None]:
         ...  # pragma: no cover
 
@@ -501,6 +503,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         channel_id: int | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
+        *,
+        in_log_time_order: bool = True,
     ) -> Generator[MessageRecord, None, None]:
         """
         Get messages from the MCAP file.
@@ -526,6 +530,15 @@ class McapChunkedReader(BaseMcapRecordReader):
             relevant_chunks.append(chunk_index)
 
         if not relevant_chunks:
+            return
+
+        if not in_log_time_order:
+            yield from self._get_messages_write_order(
+                relevant_chunks,
+                channel_id,
+                start_timestamp,
+                end_timestamp,
+            )
             return
 
         if self._has_overlapping_chunks(relevant_chunks):
@@ -644,6 +657,46 @@ class McapChunkedReader(BaseMcapRecordReader):
         # Sort by the timestamp and break ties with the order of the chunk
         for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
             yield message
+
+    def _get_messages_write_order(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Read messages preserving the order they were written to the file."""
+
+        for chunk_index in sorted(chunks, key=lambda ci: ci.chunk_start_offset):
+            if channel_id is None:
+                message_indexes = self.get_message_indexes(chunk_index).values()
+            elif message_index := self.get_message_index(chunk_index, channel_id):
+                message_indexes = [message_index]
+            else:
+                message_indexes = None
+
+            if not message_indexes:
+                continue
+
+            entries: list[tuple[int, int]] = []
+            for message_index in message_indexes:
+                for timestamp, offset in message_index.records:
+                    if start_timestamp is not None and timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp > end_timestamp:
+                        continue
+                    entries.append((timestamp, offset))
+
+            if not entries:
+                continue
+
+            entries.sort(key=lambda x: x[1])
+
+            chunk = self.get_chunk(chunk_index)
+            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+            for _, offset in entries:
+                reader.seek_from_start(offset)
+                yield McapRecordParser.parse_message(reader)
 
 
     # TODO: Low Priority
@@ -989,6 +1042,8 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         channel_id: int | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
+        *,
+        in_log_time_order: bool = True,
     ) -> Generator[MessageRecord, None, None]:
         """
         Get messages from the MCAP file.
@@ -1000,6 +1055,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             channel_id: Optional channel ID to filter by. If None, all channels are included.
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
+            in_log_time_order: Return records in log time order if true, else in the order they appear in the file
 
         Returns:
             A generator of MessageRecord objects.
@@ -1015,26 +1071,28 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         logger.debug(f'Channels requested: {channels_to_process}')
 
         # Collect all matching message offsets with timestamps
-        message_offsets: list[tuple[int, list[int]]] = []
+        entries: list[tuple[int, int]] = []
         for cid in channels_to_process:
             logger.debug(f'{len(self._message_index[cid])} messages for channel {cid}')
-            for timestamp, offset in self._message_index[cid].items():
+            for timestamp, offsets in self._message_index[cid].items():
                 # Apply timestamp filtering
                 if start_timestamp is not None and timestamp < start_timestamp:
                     continue
                 if end_timestamp is not None and timestamp > end_timestamp:
                     continue
-                message_offsets.append((timestamp, offset))
+                for offset in offsets:
+                    entries.append((timestamp, offset))
 
-        # Sort by timestamp to return messages in chronological order
-        message_offsets.sort(key=lambda x: x[0])
-        logger.debug(f'Found {len(message_offsets)} messages')
+        if in_log_time_order:
+            entries.sort(key=lambda x: (x[0], x[1]))
+        else:
+            entries.sort(key=lambda x: x[1])
 
-        # Yield messages
-        for _, offsets in message_offsets:
-            for offset in offsets:
-                self._file.seek_from_start(offset)
-                yield McapRecordParser.parse_message(self._file)
+        logger.debug(f'Found {len(entries)} messages')
+
+        for _, offset in entries:
+            self._file.seek_from_start(offset)
+            yield McapRecordParser.parse_message(self._file)
 
     # TODO: Low Priority
     # - Metadata Index

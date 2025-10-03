@@ -29,7 +29,8 @@ def typestore(request):
 #  Pybag tests  #
 #################
 
-def test_messages_filter(typestore: Typestore):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_messages_filter(typestore: Typestore, in_log_time_order: bool):
     # Write a temporary mcap file
     Int32 = typestore.types["std_msgs/msg/Int32"]
     with TemporaryDirectory() as temp_dir:
@@ -44,16 +45,24 @@ def test_messages_filter(typestore: Typestore):
 
         mcap_file = _find_mcap_file(temp_dir)
         with McapFileReader.from_file(mcap_file) as reader:
-            all_messages = list(reader.messages("/rosbags"))
+            all_messages = list(reader.messages("/rosbags", in_log_time_order=in_log_time_order))
             assert len(all_messages) == 2
             assert all_messages[0].data.data == 1
             assert all_messages[1].data.data == -1
 
-            positive = list(reader.messages("/rosbags", filter=lambda msg: msg.data.data > 0))
+            positive = list(reader.messages(
+                "/rosbags",
+                filter=lambda msg: msg.data.data > 0,
+                in_log_time_order=in_log_time_order
+            ))
             assert len(positive) == 1
             assert positive[0].data.data == 1
 
-            negative = list(reader.messages("/rosbags", filter=lambda msg: msg.data.data < 0))
+            negative = list(reader.messages(
+                "/rosbags",
+                filter=lambda msg: msg.data.data < 0,
+                in_log_time_order=in_log_time_order
+            ))
             assert len(negative) == 1
             assert negative[0].data.data == -1
 
@@ -65,7 +74,8 @@ def test_messages_filter(typestore: Typestore):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_ordered_messages(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_ordered_messages(chunk_size, in_log_time_order: bool):
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
@@ -91,12 +101,13 @@ def test_ordered_messages(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            messages = list(reader.messages("/unordered"))
+            messages = list(reader.messages("/unordered", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[message.log_time for message in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
-            assert [msg.log_time for msg in messages] == list(range(8))
-            for i, message in enumerate(messages):
-                assert message.data.data == f"msg_{i}"
+
+            expected_log_times = list(range(8))
+            assert [msg.log_time for msg in messages] == expected_log_times
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -106,7 +117,8 @@ def test_ordered_messages(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_reverse_ordered_messages(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool):
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
@@ -132,12 +144,13 @@ def test_reverse_ordered_messages(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            messages = list(reader.messages("/unordered"))
+            messages = list(reader.messages("/unordered", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[message.log_time for message in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
-            assert [msg.log_time for msg in messages] == list(range(8))
-            for i, message in enumerate(messages):
-                assert message.data.data == f"msg_{i}"
+
+            expected_log_times = list(range(8)) if in_log_time_order else list(reversed(range(8)))
+            assert [msg.log_time for msg in messages] == expected_log_times
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -147,7 +160,8 @@ def test_reverse_ordered_messages(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_random_ordered_messages(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_random_ordered_messages(chunk_size, in_log_time_order: bool):
     random.seed(42)  # Make tests reproducible
 
     with TemporaryDirectory() as temp_dir:
@@ -175,12 +189,13 @@ def test_random_ordered_messages(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            messages = list(reader.messages("/overlapping"))
+            messages = list(reader.messages("/overlapping", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
-            assert [msg.log_time for msg in messages] == sorted_timestamps
-            for i, message in enumerate(messages):
-                assert message.data.data == f"msg_{i}"
+
+            expected_log_times = sorted_timestamps if in_log_time_order else shuffled_timestamps
+            assert [msg.log_time for msg in messages] == expected_log_times
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -190,7 +205,8 @@ def test_random_ordered_messages(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_duplicate_timestamps(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_duplicate_timestamps(chunk_size, in_log_time_order: bool):
     """Test that multiple messages with the same log time are all returned."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "duplicate_timestamps.mcap"
@@ -214,9 +230,11 @@ def test_duplicate_timestamps(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            messages = list(reader.messages("/test"))
+            messages = list(reader.messages("/test", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+
+            assert [msg.log_time for msg in messages] == [timestamp] * 3
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
 
@@ -228,7 +246,8 @@ def test_duplicate_timestamps(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_multi_topic_out_of_order(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool):
     ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
     behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
     expected_per_topic = {"/ahead": ahead_messages, "/behind": behind_messages}
@@ -254,7 +273,7 @@ def test_multi_topic_out_of_order(chunk_size):
         # Read each topic from the bag file
         with McapFileReader.from_file(path) as reader:
             for topic, expected in expected_per_topic.items():
-                messages = list(reader.messages(topic))
+                messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
                 assert [msg.data.data for msg in messages] == [data for _, data in expected]
 
@@ -269,7 +288,11 @@ def test_multi_topic_out_of_order(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_random_ordered_messages_from_official_mcap(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_random_ordered_messages_from_official_mcap(
+    chunk_size,
+    in_log_time_order: bool,
+):
     random.seed(42)  # Make tests reproducible
 
     with TemporaryDirectory() as temp_dir:
@@ -310,12 +333,13 @@ def test_random_ordered_messages_from_official_mcap(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            messages = list(reader.messages("/overlapping"))
+            messages = list(reader.messages("/overlapping", in_log_time_order=in_log_time_order))
             logging.info(f'pybag: {[msg.log_time for msg in messages]}')
             logging.info(f'pybag: {[msg.data.data for msg in messages]}')
-            assert [msg.log_time for msg in messages] == sorted_timestamps
-            for i, message in enumerate(messages):
-                assert message.data.data == f"msg_{i}"
+
+            expected_log_times = sorted_timestamps if in_log_time_order else shuffled_timestamps
+            assert [msg.log_time for msg in messages] == expected_log_times
+            assert [msg.data.data for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
 
 @pytest.mark.parametrize(
@@ -325,7 +349,11 @@ def test_random_ordered_messages_from_official_mcap(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_multi_topic_out_of_order_from_official_mcap(chunk_size):
+@pytest.mark.parametrize("in_log_time_order", [True, False])
+def test_multi_topic_out_of_order_from_official_mcap(
+    chunk_size,
+    in_log_time_order: bool,
+):
     ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
     behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
     expected_per_topic = {"/ahead": ahead_messages, "/behind": behind_messages}
@@ -368,6 +396,6 @@ def test_multi_topic_out_of_order_from_official_mcap(chunk_size):
         # Read each topic from the bag file
         with McapFileReader.from_file(path) as reader:
             for topic, expected in expected_per_topic.items():
-                messages = list(reader.messages(topic))
+                messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
                 assert [msg.data.data for msg in messages] == [data for _, data in expected]
