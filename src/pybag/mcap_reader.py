@@ -44,13 +44,13 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_file(file_path)
+    def from_file(file_path: Path | str, *, is_log_time_order: bool = True) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_file(file_path, is_log_time_order=is_log_time_order)
         return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_bytes(data)
+    def from_bytes(data: bytes, *, is_log_time_order: bool = True) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_bytes(data, is_log_time_order=is_log_time_order)
         return McapFileReader(reader)
 
     def get_topics(self) -> list[str]:
@@ -82,7 +82,6 @@ class McapFileReader:
         start_time: int | None = None,
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
-        is_log_time_order: bool = True,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -92,7 +91,6 @@ class McapFileReader:
             start_time: Start time to filter by. If None, start from the beginning of the file.
             end_time: End time to filter by. If None, read to the end of the file.
             filter: Callable used to filter messages. If None, all messages are returned.
-            is_log_time_order: Whether to return the messages in log time order or in the order they are read
 
         Returns:
             An iterator over DecodedMessage objects.
@@ -115,12 +113,7 @@ class McapFileReader:
             raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
 
         deserialize = message_deserializer.deserialize_message
-        for message in self._reader.get_messages(
-            channel_id,
-            start_time,
-            end_time,
-            is_log_time_order=is_log_time_order,
-        ):
+        for message in self._reader.get_messages(channel_id, start_time, end_time):
             decoded = DecodedMessage(
                 message.channel_id,
                 message.sequence,
