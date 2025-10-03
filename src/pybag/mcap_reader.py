@@ -36,36 +36,22 @@ class DecodedMessage():
 class McapFileReader:
     """Class to read MCAP file"""
 
-    def __init__(
-        self,
-        reader: BaseMcapRecordReader,
-        *,
-        is_log_time_order: bool = True,
-    ):
+    def __init__(self, reader: BaseMcapRecordReader):
         self._reader = reader
-        self._is_log_time_order = is_log_time_order
 
         header = self._reader.get_header()
         self._profile = header.profile
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(
-        file_path: Path | str,
-        *,
-        is_log_time_order: bool = True,
-    ) -> 'McapFileReader':
+    def from_file(file_path: Path | str) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_file(file_path)
-        return McapFileReader(reader, is_log_time_order=is_log_time_order)
+        return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(
-        data: bytes,
-        *,
-        is_log_time_order: bool = True,
-    ) -> 'McapFileReader':
+    def from_bytes(data: bytes) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_bytes(data)
-        return McapFileReader(reader, is_log_time_order=is_log_time_order)
+        return McapFileReader(reader)
 
     def get_topics(self) -> list[str]:
         """Get all topics in the MCAP file."""
@@ -96,6 +82,7 @@ class McapFileReader:
         start_time: int | None = None,
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
+        is_log_time_order: bool = True,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -105,6 +92,7 @@ class McapFileReader:
             start_time: Start time to filter by. If None, start from the beginning of the file.
             end_time: End time to filter by. If None, read to the end of the file.
             filter: Callable used to filter messages. If None, all messages are returned.
+            is_log_time_order: Whether to return the messages in log time order or in the order they are read
 
         Returns:
             An iterator over DecodedMessage objects.
@@ -131,7 +119,7 @@ class McapFileReader:
             channel_id,
             start_time,
             end_time,
-            is_log_time_order=self._is_log_time_order,
+            is_log_time_order=is_log_time_order,
         ):
             decoded = DecodedMessage(
                 message.channel_id,
