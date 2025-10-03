@@ -1,15 +1,19 @@
+import heapq
 import logging
 from abc import ABC, abstractmethod
 from collections import namedtuple
 from pathlib import Path
-from typing import Generator
+from typing import Generator, Iterator
 
 from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.error import (
+    McapNoChunkError,
+    McapNoChunkIndexError,
     McapNoStatisticsError,
     McapNoSummaryIndexError,
     McapNoSummarySectionError,
+    McapUnexpectedChunkIndexError,
     McapUnknownCompressionError,
     McapUnknownSchemaError
 )
@@ -57,87 +61,95 @@ def decompress_chunk(chunk: ChunkRecord, *, check_crc: bool = False) -> bytes:
 # TODO: Is this the minimal set of methods needed?
 class BaseMcapRecordReader(ABC):
     @abstractmethod
+    def __enter__(self) -> 'BaseMcapRecordReader':
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def __exit__(self, exc_type, exc_value, traceback):
+        ...  # pragma: no cover
+
+    @abstractmethod
     def close(self) -> None:
         """Close the MCAP file and release all resources."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_header(self) -> HeaderRecord:
         """Get the header record from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_footer(self) -> FooterRecord:
         """Get the footer record from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     # Schema Management
 
     @abstractmethod
     def get_schemas(self) -> dict[int, SchemaRecord]:
         """Get all schemas defined in the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """Get a schema by its ID."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
         """Get the schema for a given channel ID."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
         """Get the schema for a given message."""
-        ...
+        ...  # pragma: no cover
 
     # Channel Management
 
     @abstractmethod
     def get_channels(self) -> dict[int, ChannelRecord]:
         """Get all channels/topics in the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """Get a channel by its ID."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_channel_id(self, topic: str) -> int | None:
         """Get a channel ID by its topic."""
-        ...
+        ...  # pragma: no cover
 
     # Message Index Management
 
     @abstractmethod
     def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
         """Get all message indexes from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
         """Get a message index for a given channel ID."""
-        ...
+        ...  # pragma: no cover
 
     # Chunk Management
 
     @abstractmethod
     def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
         """Get all chunk indexes from the MCAP file."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
         """Get a chunk by its index."""
-        ...
+        ...  # pragma: no cover
 
     # Message Management
 
@@ -147,7 +159,7 @@ class BaseMcapRecordReader(ABC):
         channel_id: int,
         timestamp: int | None = None,
     ) -> MessageRecord | None:
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def get_messages(
@@ -156,14 +168,15 @@ class BaseMcapRecordReader(ABC):
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
     ) -> Generator[MessageRecord, None, None]:
-        ...
+        ...  # pragma: no cover
 
 
-class McapRecordRandomAccessReader(BaseMcapRecordReader):
-    """Class to efficiently get records from an MCAP file.
+class McapChunkedReader(BaseMcapRecordReader):
+    """Class to efficiently get records from a chunked MCAP file.
 
     Args:
         file: The file to read from.
+        check_crc: Whether to validate the crc values in the mcap
     """
 
     def __init__(self, file: BaseReader, *, check_crc: bool = False):
@@ -177,14 +190,12 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
         # Summary section start
         self._summary_start = footer.summary_start
-        logger.debug(f'Summary start: {self._summary_start}')
         if self._summary_start == 0:
             error_msg = 'No summary section detected in MCAP'
             raise McapNoSummarySectionError(error_msg)
 
         # Summary offset section start
         self._summary_offset_start = footer.summary_offset_start
-        logger.debug(f'Summary offset start: {self._summary_offset_start}')
         if self._summary_offset_start == 0:
             error_msg = 'No summary offset section detected in MCAP'
             raise McapNoSummaryIndexError(error_msg)
@@ -197,8 +208,19 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
             record = McapRecordParser.parse_summary_offset(self._file)
             self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
 
-        # Caches for chunk and message indexes
-        self._chunk_indexes: list[ChunkIndexRecord] | None = None
+        # Load chunk indexes
+        self._chunk_indexes: list[ChunkIndexRecord] = []
+        chunk_summary_offset = self._summary_offset.get(McapRecordType.CHUNK_INDEX)
+        if chunk_summary_offset is None:
+            error_msg = 'No chunk index records founds in mcap'
+            raise McapNoChunkIndexError(error_msg)
+        self._file.seek_from_start(chunk_summary_offset.group_start)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+            chunk_index = McapRecordParser.parse_chunk_index(self._file)
+            self._chunk_indexes.append(chunk_index)
+        self._chunk_indexes.sort(key=lambda x: x.message_start_time)
+
+        # Caches for message indexes
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
         # Cached schema and channel dictionaries populated on first access
@@ -208,18 +230,18 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
     # Helpful Constructors
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapRecordRandomAccessReader':
+    def from_file(file_path: Path | str) -> 'McapChunkedReader':
         """
         Create a new MCAP reader from a file.
         """
-        return McapRecordRandomAccessReader(FileReader(file_path))
+        return McapChunkedReader(FileReader(file_path))
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapRecordRandomAccessReader':
+    def from_bytes(data: bytes) -> 'McapChunkedReader':
         """
         Create a new MCAP reader from a bytes object.
         """
-        return McapRecordRandomAccessReader(BytesReader(data))
+        return McapChunkedReader(BytesReader(data))
 
     # Destructors
 
@@ -229,7 +251,7 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
 
     # Context Managers
 
-    def __enter__(self) -> 'McapRecordRandomAccessReader':
+    def __enter__(self) -> 'McapChunkedReader':
         return self
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -397,8 +419,8 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         if self._chunk_indexes is not None:
             return
 
-        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         self._chunk_indexes = []
+        self._file.seek_from_start(self._summary_offset[McapRecordType.CHUNK_INDEX].group_start)
         while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
             chunk_index = McapRecordParser.parse_chunk_index(self._file)
             self._chunk_indexes.append(chunk_index)
@@ -494,36 +516,525 @@ class McapRecordRandomAccessReader(BaseMcapRecordReader):
         Returns:
             A generator of MessageRecord objects.
         """
+        relevant_chunks = []
         for chunk_index in self.get_chunk_indexes(channel_id):
             # Skip chunk that do not match the timestamp range
             if start_timestamp is not None and chunk_index.message_end_time < start_timestamp:
                 continue
             if end_timestamp is not None and chunk_index.message_start_time > end_timestamp:
                 continue
+            relevant_chunks.append(chunk_index)
 
+        if not relevant_chunks:
+            return
+
+        if self._has_overlapping_chunks(relevant_chunks):
+            logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
+            yield from self._get_messages_with_overlaps(
+                relevant_chunks, channel_id, start_timestamp, end_timestamp
+            )
+        else:
+            yield from self._get_messages_sequential(
+                relevant_chunks, channel_id, start_timestamp, end_timestamp
+            )
+
+    def _has_overlapping_chunks(self, chunks: list[ChunkIndexRecord]) -> bool:
+        """Check if chunks have overlapping time ranges."""
+        if len(chunks) <= 1:
+            return False
+
+        # Chunks should already be sorted by message_start_time
+        for i in range(len(chunks) - 1):
+            current_chunk_end_time = chunks[i].message_end_time
+            next_chunk_start_time = chunks[i + 1].message_start_time
+            if current_chunk_end_time >= next_chunk_start_time:
+                return True
+
+        return False
+
+    def _get_messages_sequential(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Fast sequential reading for non-overlapping chunks (original implementation)."""
+        for chunk_index in chunks:
             if channel_id is None:
                 message_indexes = self.get_message_indexes(chunk_index).values()
+            elif message_index := self.get_message_index(chunk_index, channel_id):
+                message_indexes = [message_index]
             else:
-                message_indexes = [self.get_message_index(chunk_index, channel_id)]
+                message_indexes = None
+
             if not message_indexes:
                 continue
 
-            offsets: list[tuple[int, int]] = []
+            offsets: list[int] = []
             for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
-                    offsets.append((timestamp, offset))
+                    offsets.append(offset)
             if not offsets:
                 continue
 
             chunk = self.get_chunk(chunk_index)
             reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-            for _timestamp, offset in offsets:
+            for offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
+
+    def _get_messages_with_overlaps(
+        self,
+        chunks: list[ChunkIndexRecord],
+        channel_id: int | None,
+        start_timestamp: int | None,
+        end_timestamp: int | None,
+    ) -> Generator[MessageRecord, None, None]:
+        """Streaming overlap-safe reading using heap-based merge of per-chunk iterators."""
+
+        def chunk_message_iterator(
+            chunk_index_id: int,
+            chunk_index: ChunkIndexRecord
+        ) -> Iterator[tuple[int, int, MessageRecord]]:
+            """Create an iterator that yields (timestamp, message) tuples for a chunk."""
+            if channel_id is None:
+                message_indexes = self.get_message_indexes(chunk_index).values()
+            elif message_index := self.get_message_index(chunk_index, channel_id):
+                message_indexes = [message_index]
+            else:
+                message_indexes = None
+
+            if not message_indexes:
+                return
+
+            # Collect and sort message references for this chunk
+            # The records should already by sorted by timestamp + offset
+            message_refs = []
+            for message_index in message_indexes:
+                for timestamp, offset in message_index.records:
+                    if start_timestamp is not None and timestamp < start_timestamp:
+                        continue
+                    if end_timestamp is not None and timestamp > end_timestamp:
+                        continue
+                    message_refs.append((timestamp, offset))
+            message_refs.sort()  # Sort to make sure timestamps are in correct order
+
+            if not message_refs:
+                return
+
+            # Load the chunk once and parse messages as needed
+            chunk = self.get_chunk(chunk_index)
+            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+
+            for timestamp, offset in message_refs:
+                reader.seek_from_start(offset)
+                message = McapRecordParser.parse_message(reader)
+                yield timestamp, chunk_index_id, message
+
+        chunk_iterators = [
+            iterator
+            for i, chunk_index in enumerate(chunks)
+            if (iterator := chunk_message_iterator(i, chunk_index)) is not None
+        ]
+        # Sort by the timestamp and break ties with the order of the chunk
+        for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
+            yield message
+
+
+    # TODO: Low Priority
+    # - Metadata Index
+    # - Attachment Index
+
+
+class McapNonChunkedReader(BaseMcapRecordReader):
+    """Class to efficiently get records from an mcap file with no chunks.
+
+    This reader handles MCAP files that don't contain chunks but have a proper
+    summary section. It builds an index of message locations during initialization
+    to enable efficient random access without loading the entire file into memory.
+
+    Args:
+        file: The file to read from.
+        check_crc: Whether to validate the crc values in the mcap
+    """
+
+
+    def __init__(self, file: BaseReader, *, check_crc: bool = False):
+        self._file = file
+        self._check_crc = check_crc
+
+        # Parse file structure
+        self._version = McapRecordParser.parse_magic_bytes(self._file)
+        logger.debug(f'MCAP version: {self._version}')
+
+        footer = self.get_footer()
+
+        # Summary section start
+        self._summary_start = footer.summary_start
+        if self._summary_start == 0:
+            error_msg = 'No summary section detected in MCAP'
+            raise McapNoSummarySectionError(error_msg)
+
+        # Summary offset section start
+        self._summary_offset_start = footer.summary_offset_start
+        if self._summary_offset_start == 0:
+            error_msg = 'No summary offset section detected in MCAP'
+            raise McapNoSummaryIndexError(error_msg)
+
+        # Load summary offsets
+        Offset = namedtuple('Offset', ['group_start', 'group_length'])
+        self._summary_offset: dict[int, Offset] = {}
+        self._file.seek_from_start(self._summary_offset_start)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
+            record = McapRecordParser.parse_summary_offset(self._file)
+            self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
+
+        # Check if this is indeed a non-chunked file
+        if McapRecordType.CHUNK_INDEX in self._summary_offset:
+            error_msg = 'MCAP file contains chunks, use McapChunkedReader instead'
+            raise McapUnexpectedChunkIndexError(error_msg)
+
+        # Cached schema and channel dictionaries populated on first access
+        self._schemas: dict[int, SchemaRecord] | None = None
+        self._channels: dict[int, ChannelRecord] | None = None
+
+        # Build message index by scanning through the data section
+        self._message_index = self._build_message_index()
+
+    def _build_message_index(self) -> dict[int, dict[int, list[int]]]:
+        """Build an index of all messages in the file by scanning the data section."""
+        logger.debug('Building message index for non-chunked MCAP')
+
+        # Start after header, end before summary section
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        _ = McapRecordParser.parse_header(self._file)
+
+        message_count = 0
+        message_index: dict[int, dict[int, list[int]]] = {}
+
+        while True:
+            current_pos = self._file.tell()
+
+            if current_pos >= self._summary_start:
+                break  # Stop if we've reached the summary section
+
+            try:
+                record_type = McapRecordParser.peek_record(self._file)
+                if record_type == 0:  # EOF
+                    break
+
+                if record_type == McapRecordType.MESSAGE:
+                    message = McapRecordParser.parse_message(self._file)
+                    channel_message_indexes = message_index.setdefault(message.channel_id, {})
+                    channel_log_time_offsets = channel_message_indexes.setdefault(message.log_time, [])
+                    channel_log_time_offsets.append(current_pos)
+                    message_count += 1
+                else:
+                    # Skip non-message records in data section
+                    McapRecordParser.skip_record(self._file)
+            except Exception as e:
+                logger.warning(f'Error parsing record at position {current_pos}: {e}')
+                break
+        logger.debug(f'Built message index with {message_count} messages across {len(message_index)} channels')
+
+        return message_index
+
+    # Helpful Constructors
+
+    @staticmethod
+    def from_file(file_path: Path | str) -> 'McapNonChunkedReader':
+        """
+        Create a new MCAP reader from a file.
+        """
+        return McapNonChunkedReader(FileReader(file_path))
+
+    @staticmethod
+    def from_bytes(data: bytes) -> 'McapNonChunkedReader':
+        """
+        Create a new MCAP reader from a bytes object.
+        """
+        return McapNonChunkedReader(BytesReader(data))
+
+    # Destructors
+
+    def close(self) -> None:
+        """Close the MCAP file and release all resources."""
+        self._file.close()
+
+    # Context Managers
+
+    def __enter__(self) -> 'McapNonChunkedReader':
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    # Getters for records
+
+    def get_header(self) -> HeaderRecord:
+        """Get the header record from the MCAP file."""
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_header(self._file)
+
+    def get_footer(self) -> FooterRecord:
+        """Get the footer record from the MCAP file."""
+        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_footer(self._file)
+
+    def get_statistics(self) -> StatisticsRecord:
+        """Get the statistics record from the MCAP file."""
+        if McapRecordType.STATISTICS not in self._summary_offset:
+            raise McapNoStatisticsError('No statistics section detected in MCAP')
+        self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS].group_start)
+        return McapRecordParser.parse_statistics(self._file)
+
+    # Schema Management
+
+    def get_schemas(self) -> dict[int, SchemaRecord]:
+        """
+        Get all schemas defined in the MCAP file.
+
+        Returns:
+            A dictionary mapping schema IDs to SchemaInfo objects.
+        """
+        if self._schemas is None:
+            if McapRecordType.SCHEMA not in self._summary_offset:
+                self._schemas = {}
+                return self._schemas
+
+            schemas: dict[int, SchemaRecord] = {}
+            self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA].group_start)
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+                schema = McapRecordParser.parse_schema(self._file)
+                if schema is None:  # Invalid schema, should be ignored
+                    continue
+                schemas[schema.id] = schema
+            self._schemas = schemas
+        return self._schemas
+
+    def get_schema(self, schema_id: int) -> SchemaRecord | None:
+        """
+        Get a schema by its ID.
+
+        Args:
+            schema_id: The ID of the schema.
+
+        Returns:
+            The schema or None if the schema does not exist.
+        """
+        return self.get_schemas().get(schema_id)
+
+    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
+        """
+        Get the schema for a given channel ID.
+
+        Args:
+            channel_id: The ID of the channel.
+
+        Returns:
+            The schema of the channel or None if the channel/schema does not exist.
+        """
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            return None
+        return self.get_schema(channel.schema_id)
+
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
+        """
+        Get the schema for a given message.
+
+        Args:
+            message: The message to get the schema for.
+
+        Returns:
+            The schema for the message.
+        """
+        schema = self.get_channel_schema(message.channel_id)
+        if schema is None:
+            raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
+        return schema
+
+    # Channel Management
+
+    def get_channels(self) -> dict[int, ChannelRecord]:
+        """
+        Get all channels/topics in the MCAP file.
+
+        Returns:
+            A dictionary mapping channel IDs to channel information.
+        """
+        if self._channels is None:
+            if McapRecordType.CHANNEL not in self._summary_offset:
+                self._channels = {}
+                return self._channels
+
+            channels: dict[int, ChannelRecord] = {}
+            self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL].group_start)
+            while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+                channel = McapRecordParser.parse_channel(self._file)
+                channels[channel.id] = channel
+            self._channels = channels
+        return self._channels
+
+    def get_channel(self, channel_id: int) -> ChannelRecord | None:
+        """
+        Get channel information by its ID.
+
+        Args:
+            channel_id: The ID of the channel.
+
+        Returns:
+            The channel information or None if the channel does not exist.
+        """
+        return self.get_channels().get(channel_id)
+
+    def get_channel_id(self, topic: str) -> int | None:
+        """Get a channel ID by its topic."""
+        for channel in self.get_channels().values():
+            if channel.topic == topic:
+                return channel.id
+        return None
+
+    # Message Index Management (placeholders for compatibility)
+
+    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
+        """
+        Get all message indexes from the MCAP file.
+
+        Note: Non-chunked files don't have chunk indexes or message indexes.
+        This method is provided for interface compatibility.
+        """
+        return {}
+
+    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
+        """
+        Get a message index for a given channel ID.
+
+        Note: Non-chunked files don't have chunk indexes or message indexes.
+        This method is provided for interface compatibility.
+        """
+        return None
+
+    # Chunk Management (placeholders for compatibility)
+
+    def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
+        """
+        Get all chunk indexes from the MCAP file.
+
+        Note: Non-chunked files don't have chunks.
+        This method is provided for interface compatibility.
+        """
+        return []
+
+    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
+        """
+        Get a chunk by its index.
+
+        Note: Non-chunked files don't have chunks.
+        This method is provided for interface compatibility.
+        """
+        raise McapNoChunkError('Non-chunked MCAP files do not have chunks')
+
+    # Message Management
+
+    def get_message(
+        self,
+        channel_id: int,
+        timestamp: int | None = None,
+    ) -> MessageRecord | None:
+        """
+        Get a message from a given channel at a given timestamp.
+
+        If the timestamp is not provided, the first message in the channel is returned.
+
+        Args:
+            channel_id: The ID of the channel.
+            timestamp: The timestamp of the message.
+
+        Returns:
+            A MessageRecord object or None if the message does not exist.
+        """
+        if channel_id not in self._message_index:
+            return None
+
+        messages = self._message_index.get(channel_id)
+        if messages is None:
+            logger.warning('Channel ID not in MCAP!')
+            return None
+
+        if timestamp is None:  # Return first
+            first_time = min(list(messages.keys()))
+            offsets = messages[first_time]
+        else:
+            # Find exact timestamp match
+            offsets = [offset for ts, offset in messages.items() if ts == timestamp]
+            offsets = [o for offset in offsets for o in offset]  # unpack list
+            if not offsets:
+                logger.warning(f'No message with time {timestamp} found')
+                return None
+            if len(offsets) > 1:
+                logger.warning('Multiple records with the same log time found, choosing one.')
+
+        # Read message from file
+        self._file.seek_from_start(offsets[0])
+        return McapRecordParser.parse_message(self._file)
+
+    def get_messages(
+        self,
+        channel_id: int | None = None,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        """
+        Get messages from the MCAP file.
+
+        If no channel is provided, messages from all channels are returned.
+        If the start and end timestamps are not provided, the entire available range is returned.
+
+        Args:
+            channel_id: Optional channel ID to filter by. If None, all channels are included.
+            start_timestamp: The start timestamp to filter by. If None, no filtering is done.
+            end_timestamp: The end timestamp to filter by. If None, no filtering is done.
+
+        Returns:
+            A generator of MessageRecord objects.
+        """
+        # Determine which channels to process
+        if channel_id is not None:
+            if channel_id not in self._message_index:
+                logger.warning('Channel ID not in MCAP!')
+                return
+            channels_to_process = [channel_id]
+        else:
+            channels_to_process = list(self._message_index.keys())
+        logger.debug(f'Channels requested: {channels_to_process}')
+
+        # Collect all matching message offsets with timestamps
+        message_offsets: list[tuple[int, list[int]]] = []
+        for cid in channels_to_process:
+            logger.debug(f'{len(self._message_index[cid])} messages for channel {cid}')
+            for timestamp, offset in self._message_index[cid].items():
+                # Apply timestamp filtering
+                if start_timestamp is not None and timestamp < start_timestamp:
+                    continue
+                if end_timestamp is not None and timestamp > end_timestamp:
+                    continue
+                message_offsets.append((timestamp, offset))
+
+        # Sort by timestamp to return messages in chronological order
+        message_offsets.sort(key=lambda x: x[0])
+        logger.debug(f'Found {len(message_offsets)} messages')
+
+        # Yield messages
+        for _, offsets in message_offsets:
+            for offset in offsets:
+                self._file.seek_from_start(offset)
+                yield McapRecordParser.parse_message(self._file)
 
     # TODO: Low Priority
     # - Metadata Index
@@ -534,11 +1045,16 @@ class McapRecordReaderFactory:
     """Factory to create a McapFileSequentialReader or McapFileRandomAccessReader."""
 
     @staticmethod
-    def from_file(file_path: Path | str) -> McapRecordRandomAccessReader:
+    def from_file(file_path: Path | str) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file."""
         try:
-            # Try to create a random access reader first
-            return McapRecordRandomAccessReader.from_file(file_path)
+            # Try to create a chunked reader first
+            return McapChunkedReader.from_file(file_path)
+        except McapNoChunkIndexError:
+            # If no chunks exist, use the non-chunked reader
+            # TODO: Handle chunked MCAP files that lack chunk indexes by decoding CHUNK records directly.
+            logger.warning('No chunk indexes detected, using non-chunked reader')
+            return McapNonChunkedReader.from_file(file_path)
         except McapNoSummarySectionError:
             # If no summary section exists, fall back to sequential reader
             # TODO: Implement the sequential reader
@@ -551,11 +1067,15 @@ class McapRecordReaderFactory:
             raise NotImplementedError('Sequential readers are not implemented yet')
 
     @staticmethod
-    def from_bytes(data: bytes) -> McapRecordRandomAccessReader:
+    def from_bytes(data: bytes) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a bytes object."""
         try:
-            # Try to create a random access reader first
-            return McapRecordRandomAccessReader.from_bytes(data)
+            # Try to create a chunked reader first
+            return McapChunkedReader.from_bytes(data)
+        except McapNoChunkIndexError:
+            # If no chunks exist, use the non-chunked reader
+            logger.warning('No chunk indexes detected, using non-chunked reader')
+            return McapNonChunkedReader.from_bytes(data)
         except McapNoSummarySectionError:
             # If no summary section exists, fall back to sequential reader
             # TODO: Implement the sequential reader

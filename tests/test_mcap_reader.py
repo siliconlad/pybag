@@ -62,7 +62,48 @@ def test_messages_filter(typestore: Typestore):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_reverse_order_messages(chunk_size):
+def test_ordered_messages(chunk_size):
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "unordered.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            writer.write_message("/unordered", 0, std_msgs.String(data=f"msg_{0}"))
+            writer.write_message("/unordered", 1, std_msgs.String(data=f"msg_{1}"))
+            writer.write_message("/unordered", 2, std_msgs.String(data=f"msg_{2}"))
+            writer.write_message("/unordered", 3, std_msgs.String(data=f"msg_{3}"))
+            writer.write_message("/unordered", 4, std_msgs.String(data=f"msg_{4}"))
+            writer.write_message("/unordered", 5, std_msgs.String(data=f"msg_{5}"))
+            writer.write_message("/unordered", 6, std_msgs.String(data=f"msg_{6}"))
+            writer.write_message("/unordered", 7, std_msgs.String(data=f"msg_{7}"))
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
+            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+
+        # Read messages with pybag
+        with McapFileReader.from_file(path) as reader:
+            # Check that we have multiple chunks if configured to do so
+            chunk_indexes = reader._reader.get_chunk_indexes()
+            logging.info(f'Number of chunks: {len(chunk_indexes)}')
+            assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
+
+            messages = list(reader.messages("/unordered"))
+            logging.info(f'pybag: {[message.log_time for message in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            assert [msg.log_time for msg in messages] == list(range(8))
+            for i, message in enumerate(messages):
+                assert message.data.data == f"msg_{i}"
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_reverse_ordered_messages(chunk_size):
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
@@ -75,6 +116,13 @@ def test_reverse_order_messages(chunk_size):
             writer.write_message("/unordered", 1, std_msgs.String(data=f"msg_{1}"))
             writer.write_message("/unordered", 0, std_msgs.String(data=f"msg_{0}"))
 
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
+            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+
+        # Read messages with pybag
         with McapFileReader.from_file(path) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
@@ -82,9 +130,10 @@ def test_reverse_order_messages(chunk_size):
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
             messages = list(reader.messages("/unordered"))
-            logging.info(f'Timestamps: {[message.log_time for message in messages]}')
+            logging.info(f'pybag: {[message.log_time for message in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            assert [msg.log_time for msg in messages] == list(range(8))
             for i, message in enumerate(messages):
-                assert message.log_time == i
                 assert message.data.data == f"msg_{i}"
 
 
@@ -95,7 +144,7 @@ def test_reverse_order_messages(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_random_order_messages_from_pybag(chunk_size):
+def test_random_ordered_messages(chunk_size):
     random.seed(42)  # Make tests reproducible
 
     with TemporaryDirectory() as temp_dir:
@@ -107,8 +156,14 @@ def test_random_order_messages_from_pybag(chunk_size):
         logging.info(f'Shuffled timestamps: {shuffled_timestamps}')
 
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            for i, time in enumerate(shuffled_timestamps):
-                writer.write_message("/overlapping", time, std_msgs.String(data=f"msg_{i}"))
+            for time in shuffled_timestamps:
+                writer.write_message("/overlapping", time, std_msgs.String(data=f"msg_{time}"))
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
+            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
         # Read messages with pybag
         with McapFileReader.from_file(path) as reader:
@@ -117,19 +172,12 @@ def test_random_order_messages_from_pybag(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            pybag_messages = list(reader.messages("/overlapping"))
-            logging.info(f'pybag: {[msg.log_time for msg in pybag_messages]}')
-            assert len(pybag_messages) == len(sorted_timestamps)
-
-        # Read messages with official mcap library
-        with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
-            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
-            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
-
-        # Check results at the end (so we see all logging)
-        assert [msg.log_time for msg in pybag_messages] == sorted_timestamps
-        assert [msg[-2].log_time for msg in official_mcap_messages] == sorted_timestamps
+            messages = list(reader.messages("/overlapping"))
+            logging.info(f'pybag: {[msg.log_time for msg in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            assert [msg.log_time for msg in messages] == sorted_timestamps
+            for i, message in enumerate(messages):
+                assert message.data.data == f"msg_{i}"
 
 
 @pytest.mark.parametrize(
@@ -139,8 +187,48 @@ def test_random_order_messages_from_pybag(chunk_size):
         pytest.param(64, id="with_chunks"),
     ],
 )
-def test_random_order_messages_from_official_mcap(chunk_size):
-    """Test that pybag, rosbags, and official mcap library all return messages in the same order."""
+def test_duplicate_timestamps(chunk_size):
+    """Test that multiple messages with the same log time are all returned."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "duplicate_timestamps.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Ensure we have messages split across different chunks if enabled
+            timestamp = 1000
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_0"))
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_1"))
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_2"))
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
+            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+
+        # Read messages with pybag
+        with McapFileReader.from_file(path) as reader:
+            # Check that we have multiple chunks if configured to do so
+            chunk_indexes = reader._reader.get_chunk_indexes()
+            logging.info(f'Number of chunks: {len(chunk_indexes)}')
+            assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
+
+            messages = list(reader.messages("/test"))
+            logging.info(f'pybag: {[msg.log_time for msg in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            for i, message in enumerate(messages):
+                assert message.data.data == f"msg_{i}"
+
+#############################################
+# Compatibility with Official MCAP Library  #
+#############################################
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_random_ordered_messages_from_official_mcap(chunk_size):
     random.seed(42)  # Make tests reproducible
 
     with TemporaryDirectory() as temp_dir:
@@ -156,16 +244,23 @@ def test_random_order_messages_from_official_mcap(chunk_size):
             writer = McapWriter(f) if chunk_size is None else McapWriter(f, chunk_size=chunk_size)
             try:
                 schema_id = writer.register_msgdef('std_msgs/String', 'string data\n')
-                for i, timestamp in enumerate(shuffled_timestamps):
+                for timestamp in shuffled_timestamps:
                     writer.write_message(
                         topic='/overlapping',
                         schema=schema_id,
-                        message={'data': f'msg_{i}'},
+                        message={'data': f'msg_{timestamp}'},
                         log_time=timestamp,
                         publish_time=timestamp,
                     )
             finally:
                 writer.finish()
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
+            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+            logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
 
         # Read messages with pybag
         with McapFileReader.from_file(path) as reader:
@@ -174,16 +269,9 @@ def test_random_order_messages_from_official_mcap(chunk_size):
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
             assert chunk_size is None or len(chunk_indexes) > 1, "Expected multiple chunks"
 
-            pybag_messages = list(reader.messages("/overlapping"))
-            logging.info(f'pybag: {[msg.log_time for msg in pybag_messages]}')
-            assert len(pybag_messages) == len(sorted_timestamps)
-
-        # Read messages with official mcap library
-        with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
-            official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
-            logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
-
-        # Check results at the end (so we see all logging)
-        assert [msg.log_time for msg in pybag_messages] == sorted_timestamps
-        assert [msg[-2].log_time for msg in official_mcap_messages] == sorted_timestamps
+            messages = list(reader.messages("/overlapping"))
+            logging.info(f'pybag: {[msg.log_time for msg in messages]}')
+            logging.info(f'pybag: {[msg.data.data for msg in messages]}')
+            assert [msg.log_time for msg in messages] == sorted_timestamps
+            for i, message in enumerate(messages):
+                assert message.data.data == f"msg_{i}"

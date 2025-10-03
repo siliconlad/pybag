@@ -170,7 +170,6 @@ class McapRecordParser:
     ) -> tuple[int, list]:
         array_length_bytes, array_length = cls._parse_uint32(file)
         original_length = array_length
-        logger.debug(f'Array length: {array_length}')
 
         array = []
         while array_length > 0:
