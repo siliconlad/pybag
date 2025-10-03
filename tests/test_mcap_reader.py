@@ -25,6 +25,9 @@ def _find_mcap_file(temp_dir: str) -> Path:
 def typestore(request):
     return get_typestore(request.param)
 
+#################
+#  Pybag tests  #
+#################
 
 def test_messages_filter(typestore: Typestore):
     # Write a temporary mcap file
@@ -217,6 +220,44 @@ def test_duplicate_timestamps(chunk_size):
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
 
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_multi_topic_out_of_order(chunk_size):
+    ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
+    behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
+    expected_per_topic = {"/ahead": ahead_messages, "/behind": behind_messages}
+
+    # Write messages to a bag file
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "multi_topic_pybag.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            for log_time, data in ahead_messages:
+                writer.write_message("/ahead", log_time, std_msgs.String(data=data))
+
+            for log_time, data in behind_messages:
+                writer.write_message("/behind", log_time, std_msgs.String(data=data))
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            for topic in expected_per_topic:
+                official_mcap_messages = list(reader.iter_decoded_messages([topic], log_time_order=True))
+                logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+                logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
+
+        # Read each topic from the bag file
+        with McapFileReader.from_file(path) as reader:
+            for topic, expected in expected_per_topic.items():
+                messages = list(reader.messages(topic))
+                assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
+                assert [msg.data.data for msg in messages] == [data for _, data in expected]
+
 #############################################
 # Compatibility with Official MCAP Library  #
 #############################################
@@ -275,3 +316,58 @@ def test_random_ordered_messages_from_official_mcap(chunk_size):
             assert [msg.log_time for msg in messages] == sorted_timestamps
             for i, message in enumerate(messages):
                 assert message.data.data == f"msg_{i}"
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(1, id="tiny_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_multi_topic_out_of_order_from_official_mcap(chunk_size):
+    ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
+    behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
+    expected_per_topic = {"/ahead": ahead_messages, "/behind": behind_messages}
+
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "multi_topic_official.mcap"
+        with open(path, "wb") as handle:
+            writer = McapWriter(handle) if chunk_size is None else McapWriter(handle, chunk_size=chunk_size)
+            try:
+                schema = writer.register_msgdef("std_msgs/String", "string data\n")
+
+                for log_time, data in ahead_messages:
+                    writer.write_message(
+                        topic="/ahead",
+                        schema=schema,
+                        message={"data": data},
+                        log_time=log_time,
+                        publish_time=log_time,
+                    )
+
+                for log_time, data in behind_messages:
+                    writer.write_message(
+                        topic="/behind",
+                        schema=schema,
+                        message={"data": data},
+                        log_time=log_time,
+                        publish_time=log_time,
+                    )
+            finally:
+                writer.finish()
+
+        # Read messages with official mcap library
+        with open(path, 'rb') as f:
+            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            for topic in expected_per_topic:
+                official_mcap_messages = list(reader.iter_decoded_messages([topic], log_time_order=True))
+                logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
+                logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
+
+        # Read each topic from the bag file
+        with McapFileReader.from_file(path) as reader:
+            for topic, expected in expected_per_topic.items():
+                messages = list(reader.messages(topic))
+                assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
+                assert [msg.data.data for msg in messages] == [data for _, data in expected]

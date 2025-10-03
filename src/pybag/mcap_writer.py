@@ -179,8 +179,7 @@ class McapFileWriter:
         )
 
         if self._chunk_size is not None:
-            if self._current_chunk_start_time is None:
-                self._current_chunk_start_time = timestamp
+            self._current_chunk_start_time = min(self._current_chunk_start_time or timestamp, timestamp)
             self._current_chunk_end_time = max(self._current_chunk_end_time or timestamp, timestamp)
             offset = self._current_chunk_buffer.size()
             McapRecordWriter.write_message(self._current_chunk_buffer, record)

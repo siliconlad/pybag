@@ -91,6 +91,7 @@ class SchemaDecoder(ABC):
     @abstractmethod
     def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
         """Decode a schema into a Python object."""
+        ...  # pragma: no cover
 
 
 class SchemaEncoder(ABC):
@@ -98,11 +99,14 @@ class SchemaEncoder(ABC):
     @abstractmethod
     def encoding(cls) -> str:
         """The encoding to use for the schema."""
+        ...  # pragma: no cover
 
     @abstractmethod
     def encode(self, schema: Schema) -> bytes:
         """Encode a schema into a bytes object."""
+        ...  # pragma: no cover
 
     @abstractmethod
     def parse_schema(self, schema: Any) -> tuple[Schema, dict[str, Schema]]:
         """Parse a schema into a Python object."""
+        ...  # pragma: no cover

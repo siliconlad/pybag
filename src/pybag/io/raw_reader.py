@@ -14,37 +14,37 @@ class BaseReader(ABC):
     @abstractmethod
     def peek(self, size: int) -> bytes:
         """Peek at the next bytes in the reader."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def read(self, size: int | None = None) -> bytes:
         """Read the next bytes in the reader."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def seek_from_start(self, offset: int) -> int:
         """Seek from the start of the reader."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def seek_from_end(self, offset: int) -> int:
         """Seek from the end of the reader."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def seek_from_current(self, offset: int) -> int:
         """Seek from the current position of the reader."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def tell(self) -> int:
         """Get the current position in the reader."""
-        ...
+        ...  # pragma: no cover
 
     @abstractmethod
     def close(self) -> None:
         """Close the reader and release all resources."""
-        ...
+        ...  # pragma: no cover
 
 
 class FileReader(BaseReader):
