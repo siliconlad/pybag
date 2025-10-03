@@ -175,8 +175,12 @@ class CdrEncoder(MessageEncoder):
         """Encode ``value`` based on ``type_str``."""
         getattr(self, type_str)(value)
 
-    def save(self) -> SerializedMessage:
+    def save(self) -> bytes:
         """Return the encoded byte stream."""
+        return self._header + self._payload.as_bytes()
+
+    def save_view(self) -> SerializedMessage:
+        """Return a zero-copy representation of the encoded stream."""
         return SerializedMessage(self._header, self._payload.as_memoryview())
 
     # Primitive encoders -------------------------------------------------
