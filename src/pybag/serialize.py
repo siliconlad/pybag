@@ -1,6 +1,7 @@
 from dataclasses import is_dataclass
-from typing import Any
+from typing import Any, Callable
 
+from pybag.compiler import compile_schemas
 from pybag.encoding import MessageEncoder
 from pybag.encoding.cdr import CdrEncoder
 from pybag.mcap.records import ChannelRecord, SchemaRecord
@@ -14,7 +15,7 @@ from pybag.schema.ros2msg import (
     SchemaConstant,
     SchemaField,
     Sequence,
-    String
+    String,
 )
 from pybag.types import Message
 
@@ -29,6 +30,7 @@ class MessageSerializer:
     ) -> None:
         self._schema_encoder = schema_encoder
         self._message_encoder = message_encoder
+        self._compiled: dict[str, Callable[[MessageEncoder, Message], None]] = {}
 
     @property
     def schema_encoding(self) -> str:
@@ -125,7 +127,13 @@ class MessageSerializer:
         schema, sub_schemas = self._schema_encoder.parse_schema(message)
         if isinstance(schema, Complex):
             schema = sub_schemas[schema.type]
-        self._encode_message(encoder, message, schema, sub_schemas)
+        try:
+            if schema.name not in self._compiled:
+                compiled = compile_schemas(schema, sub_schemas)
+                self._compiled.update(compiled)
+            self._compiled[schema.name](encoder, message)
+        except Exception:  # pragma: no cover - fallback for unsupported types
+            self._encode_message(encoder, message, schema, sub_schemas)
         return encoder.save()
 
     def serialize_schema(self, schema: type[Message]) -> bytes:
