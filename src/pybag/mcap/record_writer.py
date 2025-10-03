@@ -149,7 +149,7 @@ class McapRecordWriter:
         struct.pack_into("<I", header, 11, record.sequence)
         struct.pack_into("<Q", header, 15, record.log_time)
         struct.pack_into("<Q", header, 23, record.publish_time)
-        writer.write(header)
+        writer.write(bytes(header))
         if isinstance(record.data, SerializedMessage):
             record.data.write(writer)
         else:
