@@ -1,6 +1,6 @@
+import logging
 import math
 import random
-import logging
 from pathlib import Path
 
 import numpy as np
