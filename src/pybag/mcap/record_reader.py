@@ -34,8 +34,15 @@ from pybag.mcap.records import (
     SchemaRecord,
     StatisticsRecord
 )
+from pybag.mcap.summary_reconstructor import (
+    ReconstructedSummary,
+    SummaryReconstructor
+)
 
 logger = logging.getLogger(__name__)
+
+
+SummaryOffset = namedtuple('SummaryOffset', ['group_start', 'group_length'])
 
 
 def decompress_chunk(chunk: ChunkRecord, *, check_crc: bool = False) -> bytes:
@@ -179,53 +186,82 @@ class McapChunkedReader(BaseMcapRecordReader):
         check_crc: Whether to validate the crc values in the mcap
     """
 
-    def __init__(self, file: BaseReader, *, check_crc: bool = False):
+    def __init__(
+        self,
+        file: BaseReader,
+        *,
+        check_crc: bool = False,
+        summary_override: ReconstructedSummary | None = None,
+    ):
         self._file = file
         self._check_crc = check_crc
+        self._statistics_cache: StatisticsRecord | None = None
 
         self._version = McapRecordParser.parse_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
 
         footer = self.get_footer()
-
-        # Summary section start
+        self._summary_offset: dict[int, SummaryOffset] = {}
         self._summary_start = footer.summary_start
-        if self._summary_start == 0:
-            error_msg = 'No summary section detected in MCAP'
-            raise McapNoSummarySectionError(error_msg)
-
-        # Summary offset section start
         self._summary_offset_start = footer.summary_offset_start
-        if self._summary_offset_start == 0:
-            error_msg = 'No summary offset section detected in MCAP'
-            raise McapNoSummaryIndexError(error_msg)
 
-        # Load summary offsets
-        Offset = namedtuple('Offset', ['group_start', 'group_length'])
-        self._summary_offset: dict[int, Offset] = {}
-        self._file.seek_from_start(self._summary_offset_start)
-        while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
-            record = McapRecordParser.parse_summary_offset(self._file)
-            self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
+        if summary_override is None:
+            # Summary section start
+            if self._summary_start == 0:
+                error_msg = 'No summary section detected in MCAP'
+                raise McapNoSummarySectionError(error_msg)
 
-        # Load chunk indexes
-        self._chunk_indexes: list[ChunkIndexRecord] = []
-        chunk_summary_offset = self._summary_offset.get(McapRecordType.CHUNK_INDEX)
-        if chunk_summary_offset is None:
-            error_msg = 'No chunk index records founds in mcap'
-            raise McapNoChunkIndexError(error_msg)
-        self._file.seek_from_start(chunk_summary_offset.group_start)
-        while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
-            chunk_index = McapRecordParser.parse_chunk_index(self._file)
-            self._chunk_indexes.append(chunk_index)
-        self._chunk_indexes.sort(key=lambda x: x.message_start_time)
+            # Summary offset section start
+            if self._summary_offset_start == 0:
+                error_msg = 'No summary offset section detected in MCAP'
+                raise McapNoSummaryIndexError(error_msg)
 
-        # Caches for message indexes
-        self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
+            # Load summary offsets
+            self._summary_offset = {}
+            self._file.seek_from_start(self._summary_offset_start)
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
+                record = McapRecordParser.parse_summary_offset(self._file)
+                self._summary_offset[record.group_opcode] = SummaryOffset(
+                    record.group_start,
+                    record.group_length,
+                )
 
-        # Cached schema and channel dictionaries populated on first access
-        self._schemas: dict[int, SchemaRecord] | None = None
-        self._channels: dict[int, ChannelRecord] | None = None
+            # Load chunk indexes
+            self._chunk_indexes: list[ChunkIndexRecord] = []
+            chunk_summary_offset = self._summary_offset.get(McapRecordType.CHUNK_INDEX)
+            if chunk_summary_offset is None:
+                error_msg = 'No chunk index records founds in mcap'
+                raise McapNoChunkIndexError(error_msg)
+            self._file.seek_from_start(chunk_summary_offset.group_start)
+            while McapRecordParser.peek_record(self._file) == McapRecordType.CHUNK_INDEX:
+                chunk_index = McapRecordParser.parse_chunk_index(self._file)
+                self._chunk_indexes.append(chunk_index)
+            self._chunk_indexes.sort(key=lambda x: x.message_start_time)
+
+            # Caches for message indexes
+            self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
+
+            # Cached schema and channel dictionaries populated on first access
+            self._schemas: dict[int, SchemaRecord] | None = None
+            self._channels: dict[int, ChannelRecord] | None = None
+        else:
+            self._summary_offset = {}
+            self._chunk_indexes = sorted(
+                summary_override.chunk_indexes,
+                key=lambda chunk_index: chunk_index.message_start_time,
+            )
+            if not self._chunk_indexes:
+                raise McapNoChunkIndexError('No chunk index records founds in mcap')
+            self._message_indexes = {
+                chunk_index.chunk_start_offset: summary_override.chunk_message_indexes.get(
+                    chunk_index.chunk_start_offset,
+                    {},
+                )
+                for chunk_index in self._chunk_indexes
+            }
+            self._schemas = summary_override.schemas or {}
+            self._channels = summary_override.channels or {}
+            self._statistics_cache = summary_override.statistics
 
     # Helpful Constructors
 
@@ -271,10 +307,14 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
+        if self._statistics_cache is not None:
+            return self._statistics_cache
         if McapRecordType.STATISTICS not in self._summary_offset:
             raise McapNoStatisticsError('No statistics section detected in MCAP')
         self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS].group_start)
-        return McapRecordParser.parse_statistics(self._file)
+        statistics = McapRecordParser.parse_statistics(self._file)
+        self._statistics_cache = statistics
+        return statistics
 
     # Schema Management
 
@@ -664,47 +704,59 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     """
 
 
-    def __init__(self, file: BaseReader, *, check_crc: bool = False):
+    def __init__(
+        self,
+        file: BaseReader,
+        *,
+        check_crc: bool = False,
+        summary_override: ReconstructedSummary | None = None,
+    ):
         self._file = file
         self._check_crc = check_crc
+        self._statistics_cache: StatisticsRecord | None = None
 
         # Parse file structure
         self._version = McapRecordParser.parse_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
 
         footer = self.get_footer()
-
-        # Summary section start
         self._summary_start = footer.summary_start
-        if self._summary_start == 0:
-            error_msg = 'No summary section detected in MCAP'
-            raise McapNoSummarySectionError(error_msg)
-
-        # Summary offset section start
         self._summary_offset_start = footer.summary_offset_start
-        if self._summary_offset_start == 0:
-            error_msg = 'No summary offset section detected in MCAP'
-            raise McapNoSummaryIndexError(error_msg)
 
-        # Load summary offsets
-        Offset = namedtuple('Offset', ['group_start', 'group_length'])
-        self._summary_offset: dict[int, Offset] = {}
-        self._file.seek_from_start(self._summary_offset_start)
-        while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
-            record = McapRecordParser.parse_summary_offset(self._file)
-            self._summary_offset[record.group_opcode] = Offset(record.group_start, record.group_length)
+        if summary_override is None:
+            if self._summary_start == 0:
+                error_msg = 'No summary section detected in MCAP'
+                raise McapNoSummarySectionError(error_msg)
 
-        # Check if this is indeed a non-chunked file
-        if McapRecordType.CHUNK_INDEX in self._summary_offset:
-            error_msg = 'MCAP file contains chunks, use McapChunkedReader instead'
-            raise McapUnexpectedChunkIndexError(error_msg)
+            if self._summary_offset_start == 0:
+                error_msg = 'No summary offset section detected in MCAP'
+                raise McapNoSummaryIndexError(error_msg)
 
-        # Cached schema and channel dictionaries populated on first access
-        self._schemas: dict[int, SchemaRecord] | None = None
-        self._channels: dict[int, ChannelRecord] | None = None
+            self._summary_offset: dict[int, SummaryOffset] = {}
+            self._file.seek_from_start(self._summary_offset_start)
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
+                record = McapRecordParser.parse_summary_offset(self._file)
+                self._summary_offset[record.group_opcode] = SummaryOffset(
+                    record.group_start,
+                    record.group_length,
+                )
 
-        # Build message index by scanning through the data section
-        self._message_index = self._build_message_index()
+            if McapRecordType.CHUNK_INDEX in self._summary_offset:
+                error_msg = 'MCAP file contains chunks, use McapChunkedReader instead'
+                raise McapUnexpectedChunkIndexError(error_msg)
+
+            self._schemas: dict[int, SchemaRecord] | None = None
+            self._channels: dict[int, ChannelRecord] | None = None
+            self._message_index = self._build_message_index()
+        else:
+            self._summary_offset = {}
+            if summary_override.chunk_indexes:
+                error_msg = 'MCAP file contains chunks, use McapChunkedReader instead'
+                raise McapUnexpectedChunkIndexError(error_msg)
+            self._schemas = summary_override.schemas or {}
+            self._channels = summary_override.channels or {}
+            self._message_index = summary_override.non_chunked_message_index
+            self._statistics_cache = summary_override.statistics
 
     def _build_message_index(self) -> dict[int, dict[int, list[int]]]:
         """Build an index of all messages in the file by scanning the data section."""
@@ -788,10 +840,14 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
+        if self._statistics_cache is not None:
+            return self._statistics_cache
         if McapRecordType.STATISTICS not in self._summary_offset:
             raise McapNoStatisticsError('No statistics section detected in MCAP')
         self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS].group_start)
-        return McapRecordParser.parse_statistics(self._file)
+        statistics = McapRecordParser.parse_statistics(self._file)
+        self._statistics_cache = statistics
+        return statistics
 
     # Schema Management
 
@@ -1055,16 +1111,10 @@ class McapRecordReaderFactory:
             # TODO: Handle chunked MCAP files that lack chunk indexes by decoding CHUNK records directly.
             logger.warning('No chunk indexes detected, using non-chunked reader')
             return McapNonChunkedReader.from_file(file_path)
-        except McapNoSummarySectionError:
-            # If no summary section exists, fall back to sequential reader
-            # TODO: Implement the sequential reader
-            logger.warning('No summary section exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
-        except McapNoSummaryIndexError:
-            # If no summary index exists, fall back to sequential reader
-            # TODO: Use sequential reader? Or just create the index?
-            logger.warning('No summary index exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
+        except (McapNoSummarySectionError, McapNoSummaryIndexError):
+            logger.warning('No summary information detected in MCAP, reconstructing summary')
+            data = Path(file_path).read_bytes()
+            return McapRecordReaderFactory._from_reconstructed_bytes(data)
 
     @staticmethod
     def from_bytes(data: bytes) -> BaseMcapRecordReader:
@@ -1076,13 +1126,13 @@ class McapRecordReaderFactory:
             # If no chunks exist, use the non-chunked reader
             logger.warning('No chunk indexes detected, using non-chunked reader')
             return McapNonChunkedReader.from_bytes(data)
-        except McapNoSummarySectionError:
-            # If no summary section exists, fall back to sequential reader
-            # TODO: Implement the sequential reader
-            logger.warning('No summary section exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
-        except McapNoSummaryIndexError:
-            # If no summary index exists, fall back to sequential reader
-            # TODO: Use sequential reader? Or just create the index?
-            logger.warning('No summary index exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
+        except (McapNoSummarySectionError, McapNoSummaryIndexError):
+            logger.warning('No summary information detected in MCAP, reconstructing summary')
+            return McapRecordReaderFactory._from_reconstructed_bytes(data)
+
+    @staticmethod
+    def _from_reconstructed_bytes(data: bytes) -> BaseMcapRecordReader:
+        summary = SummaryReconstructor.from_bytes(data)
+        if summary.is_chunked:
+            return McapChunkedReader(BytesReader(data), summary_override=summary)
+        return McapNonChunkedReader(BytesReader(data), summary_override=summary)
