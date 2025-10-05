@@ -73,7 +73,7 @@ jobs:
 
       - name: Merge PR
         env:
-          GITHUB_TOKEN: ${{ secrets.PERSONAL_PR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pr_number=$(gh pr list --state open --limit 1 --label version --json number --jq '.[0].number')
           gh pr merge $pr_number --merge --delete-branch --admin
