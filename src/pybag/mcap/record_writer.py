@@ -1,6 +1,7 @@
 import struct
 from typing import Any, Callable
 
+from pybag.encoding.cdr import SerializedMessage
 from pybag.io.raw_writer import BaseWriter
 from pybag.mcap.records import (
     AttachmentIndexRecord,
@@ -137,14 +138,22 @@ class McapRecordWriter:
 
     @classmethod
     def write_message(cls, writer: BaseWriter, record: MessageRecord) -> None:
-        payload = (
-              cls._encode_uint16(record.channel_id)
-            + cls._encode_uint32(record.sequence)
-            + cls._encode_timestamp(record.log_time)
-            + cls._encode_timestamp(record.publish_time)
-            + record.data
-        )
-        cls._write_record(writer, RecordType.MESSAGE, payload)
+        # Avoid creating a large temporary payload buffer which would copy the
+        # message data by constructing the fixed-size header in-place and
+        # writing it before the pre-serialized message bytes.
+        payload_length = 2 + 4 + 8 + 8 + len(record.data)
+        header = bytearray(1 + 8 + 2 + 4 + 8 + 8)
+        struct.pack_into("<B", header, 0, int(RecordType.MESSAGE))
+        struct.pack_into("<Q", header, 1, payload_length)
+        struct.pack_into("<H", header, 9, record.channel_id)
+        struct.pack_into("<I", header, 11, record.sequence)
+        struct.pack_into("<Q", header, 15, record.log_time)
+        struct.pack_into("<Q", header, 23, record.publish_time)
+        writer.write(bytes(header))
+        if isinstance(record.data, SerializedMessage):
+            record.data.write(writer)
+        else:
+            writer.write(record.data)
 
     @classmethod
     def write_chunk(cls, writer: BaseWriter, record: ChunkRecord) -> None:
