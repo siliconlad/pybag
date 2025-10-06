@@ -14,7 +14,7 @@ from pybag.mcap.records import (
     ChunkRecord,
     MessageIndexRecord,
     SchemaRecord,
-    StatisticsRecord,
+    StatisticsRecord
 )
 
 

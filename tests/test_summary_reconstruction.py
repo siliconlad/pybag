@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 import pybag.ros2.humble.std_msgs as std_msgs
+from pybag.mcap.record_parser import FOOTER_SIZE, MAGIC_BYTES_SIZE
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
-from pybag.mcap.record_parser import FOOTER_SIZE, MAGIC_BYTES_SIZE
 
 
 def _strip_summary(path: Path) -> None:
