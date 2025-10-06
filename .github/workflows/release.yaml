@@ -42,7 +42,7 @@ jobs:
         run: |
           git checkout -b bot/version-bump
         shell: bash
-          
+
       - name: Prepare version
         id: version
         shell: bash
