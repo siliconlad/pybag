@@ -1,7 +1,6 @@
-from dataclasses import dataclass
-
 import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
 import pybag.types as t
+from pybag.types import dataclass
 
 
 @dataclass(kw_only=True)
