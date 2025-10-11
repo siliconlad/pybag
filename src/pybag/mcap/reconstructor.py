@@ -268,6 +268,7 @@ class McapChunkedSummary:
             channel_message_counts: dict[int, int] = {}
             all_log_times: list[int] = []
             for ci in chunk_indexes:
+                # TODO: Handle case when there are no message_index_offsets
                 for channel_id, message_index_offset in ci.message_index_offsets.items():
                     # Read the message index record to count messages for this channel in this chunk
                     self._file.seek_from_start(message_index_offset)
