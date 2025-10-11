@@ -1,10 +1,13 @@
-from abc import ABC, abstractmethod
 from typing import Literal, TypeAlias
-from dataclasses import dataclass
-from typing_extensions import override
 
 from pybag.io.raw_reader import BaseReader
-from pybag.mcap.records import ChannelRecord, ChunkIndexRecord, SchemaRecord, StatisticsRecord, SummaryOffsetRecord
+from pybag.mcap.records import (
+    ChannelRecord,
+    ChunkIndexRecord,
+    SchemaRecord,
+    StatisticsRecord,
+    SummaryOffsetRecord
+)
 
 
 ChannelId: TypeAlias = int
