@@ -204,7 +204,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         )
 
         # Caches for message indexes
-        self._summary.message_indexeses: dict[int, dict[int, MessageIndexRecord]] = {}
+        self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
     # Helpful Constructors
 
@@ -348,16 +348,16 @@ class McapChunkedReader(BaseMcapRecordReader):
             A list of MessageIndexRecord objects.
         """
         key = chunk_index.chunk_start_offset
-        if key in self._summary.message_indexeses:
-            return self._summary.message_indexeses[key]
+        if key in self._message_indexes:
+            return self._message_indexes[key]
 
         message_index: dict[int, MessageIndexRecord] = {}
         for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
             self._file.seek_from_start(message_index_offset)
             message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
             message_index[channel_id].records.sort(key=lambda x: (x[0], x[1]))
+        self._message_indexes[key] = message_index
 
-        self._summary.message_indexeses[key] = message_index
         return message_index
 
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
