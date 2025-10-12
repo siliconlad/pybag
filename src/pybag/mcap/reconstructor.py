@@ -1,3 +1,4 @@
+import logging
 from typing import Literal, TypeAlias
 
 from pybag.io.raw_reader import BaseReader
@@ -15,6 +16,7 @@ from pybag.mcap.record_parser import (
 from pybag.mcap.records import (
     ChannelRecord,
     ChunkIndexRecord,
+    FooterRecord,
     SchemaRecord,
     StatisticsRecord,
     SummaryOffsetRecord
@@ -34,6 +36,7 @@ LogTime: TypeAlias = int
 
 Offset: TypeAlias = int
 """Integer representing an offset from the start of a file/bytes."""
+
 
 class McapChunkedSummary:
     """Summary information for a chunked MCAP file.
@@ -360,228 +363,54 @@ class McapNonChunkedSummary:
         file: BaseReader,
         *,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-    ) -> None:
+    ):
         self._file = file
+        self._enable_reconstruction = enable_reconstruction
 
-        # Read footer to determine if summary sections exist
-        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        footer = McapRecordParser.parse_footer(self._file)
+        self._summary_offset: dict[RecordId, Offset] = {}
+        self._schemas: dict[SchemaId, SchemaRecord] = {}
+        self._channels: dict[ChannelId, ChannelRecord] = {}
+        self._statistics: StatisticsRecord | None = None
 
-        has_summary = footer.summary_start != 0
-        has_summary_offset = footer.summary_offset_start != 0
+        _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+        self._footer: FooterRecord = McapRecordParser.parse_footer(self._file)
 
-        # Determine whether to load from summary or reconstruct
+        self._has_summary: bool = self._footer.summary_start != 0
+        self._has_summary_offset: bool = self._footer.summary_offset_start != 0
+
         if enable_reconstruction == 'never':
-            if not has_summary:
+            if not self._has_summary:
                 error_msg = 'No summary section detected in MCAP'
                 raise McapNoSummarySectionError(error_msg)
-            if not has_summary_offset:
+            if not self._has_summary_offset:
                 error_msg = 'No summary offset section detected in MCAP'
                 raise McapNoSummaryIndexError(error_msg)
-            should_reconstruct = False
-        elif enable_reconstruction == 'always':
-            should_reconstruct = True
-        else:  # 'missing'
-            should_reconstruct = not (has_summary and has_summary_offset)
 
-        # Load or reconstruct summary data
-        if should_reconstruct:
-            (
-                self._schemas,
-                self._channels,
-                self._statistics,
-                self._offsets,
-                self._message_indexes,
-            ) = self._reconstruct_summary()
+        if self._has_summary and self._has_summary_offset:
+            # Load summary offset into memory
+            self._load_summary_offset()
+        elif self._has_summary:
+            # Construct offset from existing summary
+            self._build_summary_offset()
         else:
-            (
-                self._schemas,
-                self._channels,
-                self._statistics,
-                self._offsets,
-                self._message_indexes,
-            ) = self._load_from_summary(footer.summary_start, footer.summary_offset_start)
+            # Build summary from data section
+            self._build_summary()
 
-        # Reset file position to start of data section for consistent state
-        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+    def _load_summary_offset(self):
+        _ = self._file.seek_from_start(self._footer.summary_offset_start)
+        while McapRecordParser.peek_record(self._file) == McapRecordType.SUMMARY_OFFSET:
+            record = McapRecordParser.parse_summary_offset(self._file)
+            self._summary_offset[record.group_opcode] = record.group_start
 
-    def _scan_data_section_for_messages(
-        self,
-        summary_start: int,
-    ) -> dict[ChannelId, dict[LogTime, list[Offset]]]:
-        """Scan the data section to build message indexes.
+    def _build_summary_offset(self):
+        current_record: RecordId | None = None
+        _ = self._file.seek_from_start(self._footer.summary_start)
+        while McapRecordParser.peek_record(self._file) != McapRecordType.FOOTER:
+            next_record = McapRecordParser.peek_record(self._file)
+            if current_record is None or current_record != next_record:
+                self._summary_offset[next_record] = self._file.tell()
 
-        Args:
-            summary_start: Offset where the summary section starts
-
-        Returns:
-            Message indexes mapping channel IDs to log times to offsets
-        """
-        message_indexes: dict[ChannelId, dict[LogTime, list[Offset]]] = {}
-
-        # Seek to start of data section (after magic bytes)
-        self._file.seek_from_start(MAGIC_BYTES_SIZE)
-
-        # Iterate through records until we reach the summary section
-        while self._file.tell() < summary_start:
-            record_type = McapRecordParser.peek_record(self._file)
-
-            if record_type == McapRecordType.MESSAGE:
-                # Get offset before parsing
-                message_offset = self._file.tell()
-                message = McapRecordParser.parse_message(self._file)
-
-                # Track message in index
-                channel_id = message.channel_id
-                log_time = message.log_time
-
-                if channel_id not in message_indexes:
-                    message_indexes[channel_id] = {}
-                if log_time not in message_indexes[channel_id]:
-                    message_indexes[channel_id][log_time] = []
-                message_indexes[channel_id][log_time].append(message_offset)
-            else:
-                # Skip other record types
-                McapRecordParser.skip_record(self._file)
-
-        return message_indexes
-
-    def _load_from_summary(
-        self,
-        summary_start: int,
-        summary_offset_start: int,
-    ) -> tuple[
-        dict[SchemaId, SchemaRecord],
-        dict[ChannelId, ChannelRecord],
-        StatisticsRecord,
-        dict[RecordId, SummaryOffsetRecord],
-        dict[ChannelId, dict[LogTime, list[Offset]]],
-    ]:
-        """Load summary information from existing summary sections.
-
-        Args:
-            summary_start: Offset to the summary section
-            summary_offset_start: Offset to the summary offset section
-
-        Returns:
-            Tuple of (schemas, channels, statistics, offsets, message_indexes)
-        """
-        # First, read all summary offset records to know where each record type group is
-        self._file.seek_from_start(summary_offset_start)
-        offsets: dict[RecordId, SummaryOffsetRecord] = {}
-
-        # Calculate footer position for bounds checking
-        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        footer_position = self._file.tell()
-        self._file.seek_from_start(summary_offset_start)
-
-        # Read summary offset records until we hit the footer
-        while self._file.tell() < footer_position:
-            record_type = McapRecordParser.peek_record(self._file)
-            if record_type == McapRecordType.FOOTER:
-                break
-            if record_type == McapRecordType.SUMMARY_OFFSET:
-                offset_record = McapRecordParser.parse_summary_offset(self._file)
-                offsets[offset_record.group_opcode] = offset_record
-            else:
-                McapRecordParser.skip_record(self._file)
-
-        # Now read each record type group using the offsets
-        schemas: dict[SchemaId, SchemaRecord] = {}
-        channels: dict[ChannelId, ChannelRecord] = {}
-        message_indexes: dict[ChannelId, dict[LogTime, list[Offset]]] = {}
-        statistics: StatisticsRecord | None = None
-
-        # Read schemas
-        if McapRecordType.SCHEMA in offsets:
-            schema_offset = offsets[McapRecordType.SCHEMA]
-            self._file.seek_from_start(schema_offset.group_start)
-            bytes_read = 0
-            while bytes_read < schema_offset.group_length:
-                pos_before = self._file.tell()
-                schema = McapRecordParser.parse_schema(self._file)
-                if schema is not None:  # Skip schemas with id == 0
-                    schemas[schema.id] = schema
-                bytes_read += self._file.tell() - pos_before
-
-        # Read channels
-        if McapRecordType.CHANNEL in offsets:
-            channel_offset = offsets[McapRecordType.CHANNEL]
-            self._file.seek_from_start(channel_offset.group_start)
-            bytes_read = 0
-            while bytes_read < channel_offset.group_length:
-                pos_before = self._file.tell()
-                channel = McapRecordParser.parse_channel(self._file)
-                channels[channel.id] = channel
-                bytes_read += self._file.tell() - pos_before
-
-        # Read message indexes
-        if McapRecordType.MESSAGE_INDEX in offsets:
-            message_index_offset = offsets[McapRecordType.MESSAGE_INDEX]
-            self._file.seek_from_start(message_index_offset.group_start)
-            bytes_read = 0
-            while bytes_read < message_index_offset.group_length:
-                pos_before = self._file.tell()
-                message_index = McapRecordParser.parse_message_index(self._file)
-
-                # Build the message_indexes structure
-                channel_id = message_index.channel_id
-                if channel_id not in message_indexes:
-                    message_indexes[channel_id] = {}
-
-                # Each record in the message index is a tuple of (log_time, offset)
-                for log_time, offset in message_index.records:
-                    if log_time not in message_indexes[channel_id]:
-                        message_indexes[channel_id][log_time] = []
-                    message_indexes[channel_id][log_time].append(offset)
-
-                bytes_read += self._file.tell() - pos_before
-
-        # Read statistics
-        if McapRecordType.STATISTICS in offsets:
-            statistics_offset = offsets[McapRecordType.STATISTICS]
-            self._file.seek_from_start(statistics_offset.group_start)
-            statistics = McapRecordParser.parse_statistics(self._file)
-
-        # If no statistics record found, create a default one
-        if statistics is None:
-            statistics = StatisticsRecord(
-                message_count=0,
-                schema_count=0,
-                channel_count=0,
-                attachment_count=0,
-                metadata_count=0,
-                chunk_count=0,
-                message_start_time=0,
-                message_end_time=0,
-                channel_message_counts={},
-            )
-
-        # If no message indexes found in summary, scan data section for messages
-        # This happens when the writer creates a summary without message index records
-        if not message_indexes:
-            message_indexes = self._scan_data_section_for_messages(summary_start)
-
-        return schemas, channels, statistics, offsets, message_indexes
-
-    def _reconstruct_summary(
-        self,
-    ) -> tuple[
-        dict[SchemaId, SchemaRecord],
-        dict[ChannelId, ChannelRecord],
-        StatisticsRecord,
-        dict[RecordId, SummaryOffsetRecord],
-        dict[ChannelId, dict[LogTime, list[Offset]]],
-    ]:
-        """Reconstruct summary information by scanning the data section.
-
-        Returns:
-            Tuple of (schemas, channels, statistics, offsets, message_indexes)
-        """
-        schemas: dict[SchemaId, SchemaRecord] = {}
-        channels: dict[ChannelId, ChannelRecord] = {}
-        message_indexes: dict[ChannelId, dict[LogTime, list[Offset]]] = {}
-
+    def _build_summary(self):
         # Track message statistics
         message_count = 0
         message_start_time: int | None = None
@@ -589,60 +418,37 @@ class McapNonChunkedSummary:
         channel_message_counts: dict[int, int] = {}
 
         # Seek to start of data section (after magic bytes)
-        self._file.seek_from_start(MAGIC_BYTES_SIZE)
-
-        # Calculate footer position by seeking to end and back
-        current_pos = self._file.tell()
-        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        footer_position = self._file.tell()
-        self._file.seek_from_start(current_pos)
+        _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
 
         # Iterate through records until we reach the footer
-        while self._file.tell() < footer_position:
-            record_type = McapRecordParser.peek_record(self._file)
-
+        while (record_type := McapRecordParser.peek_record(self._file)) != McapRecordType.FOOTER:
             if record_type == McapRecordType.SCHEMA:
-                schema = McapRecordParser.parse_schema(self._file)
-                if schema is not None:  # Skip schemas with id == 0
-                    schemas[schema.id] = schema
+                if schema := McapRecordParser.parse_schema(self._file):
+                    self._schemas[schema.id] = schema
             elif record_type == McapRecordType.CHANNEL:
                 channel = McapRecordParser.parse_channel(self._file)
-                channels[channel.id] = channel
+                self._channels[channel.id] = channel
             elif record_type == McapRecordType.MESSAGE:
-                # Get offset before parsing (after record type byte)
-                message_offset = self._file.tell()
+                # Parse message to extract statistics
                 message = McapRecordParser.parse_message(self._file)
-
-                # Track message in index
                 channel_id = message.channel_id
                 log_time = message.log_time
-
-                if channel_id not in message_indexes:
-                    message_indexes[channel_id] = {}
-                if log_time not in message_indexes[channel_id]:
-                    message_indexes[channel_id][log_time] = []
-                message_indexes[channel_id][log_time].append(message_offset)
 
                 # Update statistics
                 message_count += 1
                 channel_message_counts[channel_id] = channel_message_counts.get(channel_id, 0) + 1
-
                 if message_start_time is None or log_time < message_start_time:
                     message_start_time = log_time
                 if message_end_time is None or log_time > message_end_time:
                     message_end_time = log_time
-            elif record_type == McapRecordType.FOOTER:
-                # Reached footer, stop
-                break
             else:
-                # Skip other record types (header, attachment, metadata, etc.)
                 McapRecordParser.skip_record(self._file)
 
         # Create statistics record from collected data
-        statistics = StatisticsRecord(
+        self._statistics = StatisticsRecord(
             message_count=message_count,
-            schema_count=len(schemas),
-            channel_count=len(channels),
+            schema_count=len(self._schemas),
+            channel_count=len(self._channels),
             attachment_count=0,  # Not tracked during reconstruction
             metadata_count=0,  # Not tracked during reconstruction
             chunk_count=0,  # Non-chunked files have no chunks
@@ -651,32 +457,98 @@ class McapNonChunkedSummary:
             channel_message_counts=channel_message_counts,
         )
 
-        # No offsets available when reconstructing
-        offsets: dict[RecordId, SummaryOffsetRecord] = {}
-
-        return schemas, channels, statistics, offsets, message_indexes
-
-    @property
-    def schemas(self) -> dict[SchemaId, SchemaRecord]:
+    def get_schemas(self) -> dict[SchemaId, SchemaRecord]:
         """Get all schemas defined in the MCAP file."""
+        schemas: dict[SchemaId, SchemaRecord] = {}
+
+        # If schema is in offset, then assume complete and return all
+        if self._has_summary and McapRecordType.SCHEMA in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.SCHEMA])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
+                if record := McapRecordParser.parse_schema(self._file):
+                    schemas[record.id] = record
+            return schemas
+
+        # If schema is not in summary section, then we must search data section
+        elif self._has_summary and McapRecordType.SCHEMA not in self._summary_offset:
+            # If we reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No schema records found in summary and searching is disabled.')
+                return schemas
+
+            # Search for schema records in the data section
+            logging.warning('No schema records found in summary. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while (next_record := McapRecordParser.peek_record(self._file)) != McapRecordType.DATA_END:
+                if next_record != McapRecordType.SCHEMA:
+                    McapRecordParser.skip_record(self._file)
+                if record := McapRecordParser.parse_schema(self._file):
+                    schemas[record.id] = record
+            return schemas
+
+        # Otherwise, we have already searched through the data section
         return self._schemas
 
-    @property
-    def channels(self) -> dict[ChannelId, ChannelRecord]:
+    def get_channels(self) -> dict[ChannelId, ChannelRecord]:
         """Get all channels defined in the MCAP file."""
+        channels: dict[ChannelId, ChannelRecord] = {}
+
+        # If channel is in offset, then assume complete and return all
+        if self._has_summary and McapRecordType.CHANNEL in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.CHANNEL])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
+                if record := McapRecordParser.parse_channel(self._file):
+                    channels[record.id] = record
+            return channels
+
+        # If channel is not in summary section, then we must search data section
+        elif self._has_summary and McapRecordType.CHANNEL not in self._summary_offset:
+            # If we reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No channel records found in summary and searching is disabled.')
+                return channels
+
+            # Search for schema records in the data section
+            logging.warning('No channel records found in summary. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while (next_record := McapRecordParser.peek_record(self._file)) != McapRecordType.DATA_END:
+                if next_record != McapRecordType.CHANNEL:
+                    McapRecordParser.skip_record(self._file)
+                if record := McapRecordParser.parse_channel(self._file):
+                    channels[record.id] = record
+            return channels
+
+        # Otherwise, we have already searched through the data section
         return self._channels
 
-    @property
-    def statistics(self) -> StatisticsRecord:
+    def get_statistics(self) -> StatisticsRecord | None:
         """Get statistics about the MCAP file."""
+        # If statistics is in offset, then assume complete and return all
+        if McapRecordType.STATISTICS in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.STATISTICS:
+                if record := McapRecordParser.parse_statistics(self._file):
+                    return record
+            return None
+
+        # If channel is not in summary section, then we must search data section
+        elif self._has_summary and McapRecordType.CHANNEL not in self._summary_offset:
+            # If we reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No statistics record found in summary and searching is disabled.')
+                return None
+
+            # Search for schema records in the data section
+            logging.warning('No statistics record found in summary. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while (next_record := McapRecordParser.peek_record(self._file)) != McapRecordType.DATA_END:
+                if next_record != McapRecordType.STATISTICS:
+                    McapRecordParser.skip_record(self._file)
+                if record := McapRecordParser.parse_statistics(self._file):
+                    return record
+            return None
+
+        # If no summary offset, then statistics are pre-loaded
         return self._statistics
 
-    @property
-    def offsets(self) -> dict[RecordId, SummaryOffsetRecord]:
-        """Get summary offset records (empty if reconstructed)."""
-        return self._offsets
-
-    @property
-    def message_indexes(self) -> dict[ChannelId, dict[LogTime, list[Offset]]]:
-        """Get message indexes mapping channel IDs to log times to message offsets."""
-        return self._message_indexes
+    # TODO: Maybe build message index here?
