@@ -14,7 +14,7 @@ from pybag.mcap.error import (
     McapUnexpectedChunkIndexError,
     McapUnknownSchemaError
 )
-from pybag.mcap.reconstructor import McapChunkedSummary, McapNonChunkedSummary
+from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 from pybag.mcap.record_parser import (
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
