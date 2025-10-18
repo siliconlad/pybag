@@ -1,5 +1,5 @@
-from pathlib import Path
 from enum import Enum
+from pathlib import Path
 
 import pytest
 from mcap.writer import CompressionType, IndexType, Writer
@@ -7,7 +7,11 @@ from mcap_ros2.writer import SchemaEncoding, serialize_dynamic
 
 from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import BytesWriter
-from pybag.mcap.record_parser import FOOTER_SIZE, MAGIC_BYTES_SIZE, McapRecordParser
+from pybag.mcap.record_parser import (
+    FOOTER_SIZE,
+    MAGIC_BYTES_SIZE,
+    McapRecordParser
+)
 from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import FooterRecord
 from pybag.mcap_reader import McapFileReader
