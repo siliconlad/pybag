@@ -26,6 +26,12 @@ class McapUnexpectedChunkError(McapError):
         super().__init__(message)
 
 
+class McapUnexpectedRecordError(McapError):
+    """Exception raised when a record is found in an unexpected place."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 class McapNoSummarySectionError(McapError):
     """Exception raised when a MCAP file has no summary section."""
     def __init__(self, message: str):

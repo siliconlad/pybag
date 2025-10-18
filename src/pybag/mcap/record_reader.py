@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Generator, Iterator, Literal
 
-from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.error import (
     McapNoChunkError,
@@ -13,7 +12,6 @@ from pybag.mcap.error import (
     McapNoSummaryIndexError,
     McapNoSummarySectionError,
     McapUnexpectedChunkIndexError,
-    McapUnknownCompressionError,
     McapUnknownSchemaError
 )
 from pybag.mcap.reconstructor import McapChunkedSummary, McapNonChunkedSummary
@@ -32,30 +30,11 @@ from pybag.mcap.records import (
     MessageIndexRecord,
     MessageRecord,
     SchemaRecord,
-    StatisticsRecord
+    StatisticsRecord,
+    decompress_chunk
 )
 
 logger = logging.getLogger(__name__)
-
-
-def decompress_chunk(chunk: ChunkRecord, *, check_crc: bool = False) -> bytes:
-    """Decompress the records field of a chunk."""
-    if chunk.compression == 'zstd':
-        import zstandard as zstd
-        chunk_data = zstd.ZstdDecompressor().decompress(chunk.records)
-    elif chunk.compression == 'lz4':
-        import lz4.frame
-        chunk_data = lz4.frame.decompress(chunk.records)
-    elif chunk.compression == '':
-        chunk_data = chunk.records
-    else:
-        error_msg = f'Unknown compression type: {chunk.compression}'
-        raise McapUnknownCompressionError(error_msg)
-
-    # Validate the CRC if requested
-    if check_crc and chunk.uncompressed_crc != 0:
-        assert_crc(chunk_data, chunk.uncompressed_crc)
-    return chunk_data
 
 
 # TODO: Is this the minimal set of methods needed?
@@ -251,7 +230,9 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
-        return self._summary.statistics
+        if (record := self._summary.get_statistics()) is None:
+            raise McapNoStatisticsError("No statistics record found in MCAP")
+        return record
 
     # Schema Management
 
@@ -262,7 +243,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping schema IDs to SchemaInfo objects.
         """
-        return self._summary.schemas
+        return self._summary.get_schemas()
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """
@@ -315,7 +296,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping channel IDs to channel information.
         """
-        return self._summary.channels
+        return self._summary.get_channels()
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """
@@ -390,9 +371,9 @@ class McapChunkedReader(BaseMcapRecordReader):
             A list of ChunkIndexRecord objects.
         """
         if channel_id is None:
-            return self._summary.chunk_indexes
+            return self._summary.get_chunk_indexes()
         # TODO: Deal with when message_index_offsets being empty
-        return [ci for ci in self._summary.chunk_indexes if channel_id in ci.message_index_offsets]
+        return [ci for ci in self._summary.get_chunk_indexes() if channel_id in ci.message_index_offsets]
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
         """
