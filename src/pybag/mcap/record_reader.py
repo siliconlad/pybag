@@ -413,17 +413,23 @@ class McapChunkedReader(BaseMcapRecordReader):
                 # The message must be in the chunk based on the start and end times
                 message_index = self.get_message_index(chunk_index, channel_id)
                 if message_index is None:
-                    return None  # TODO: What happens for overlapping chunks?
+                    continue  # TODO: What happens for overlapping chunks?
 
-                # Make sure the timestamp is in the message index
-                offset = next((r[1] for r in message_index.records if r[0] == timestamp), None)
+                if not message_index.records:
+                    continue
+
+                if timestamp is None:
+                    offset = message_index.records[0][1]
+                else:
+                    offset = next((r[1] for r in message_index.records if r[0] == timestamp), None)
+
                 if offset is None:
-                    return None
+                    continue
 
                 # Read data from chunk
                 chunk = self.get_chunk(chunk_index)
                 reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-                reader.seek_from_start(offset)
+                _ = reader.seek_from_start(offset)
                 return McapRecordParser.parse_message(reader)
         return None
 

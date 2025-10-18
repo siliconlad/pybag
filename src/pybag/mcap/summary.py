@@ -177,11 +177,15 @@ class McapChunkedSummary:
                         message_count += 1
                         channel_message_counts[channel_id] += 1
 
-                        message_start_time = min(message_start_time or log_time, log_time)
-                        message_end_time = max(message_end_time or log_time, log_time)
+                        if message_start_time is None or log_time < message_start_time:
+                            message_start_time = log_time
+                        if message_end_time is None or log_time > message_end_time:
+                            message_end_time = log_time
 
-                        chunk_message_start_time = min(chunk_message_start_time or log_time, log_time)
-                        chunk_message_end_time = max(chunk_message_end_time or log_time, log_time)
+                        if chunk_message_start_time is None or log_time < chunk_message_start_time:
+                            chunk_message_start_time = log_time
+                        if chunk_message_end_time is None or log_time > chunk_message_end_time:
+                            chunk_message_end_time = log_time
 
                 # TODO: Do we want to deal with cases when there are no message indices?
                 message_index_offsets: dict[int, int] = {}
@@ -403,9 +407,10 @@ class McapChunkedSummary:
                         if chunk_record_type == McapRecordType.MESSAGE:
                             chunk_message = McapRecordParser.parse_message(reader)
                             log_time = chunk_message.log_time
-
-                            chunk_message_start_time = min(chunk_message_start_time or log_time, log_time)
-                            chunk_message_end_time = max(chunk_message_end_time or log_time, log_time)
+                            if chunk_message_start_time is None or log_time < chunk_message_start_time:
+                                chunk_message_start_time = log_time
+                            if chunk_message_end_time is None or log_time > chunk_message_end_time:
+                                chunk_message_end_time = log_time
 
                     # TODO: Do we want to deal with cases when there are no message indices?
                     message_index_offsets: dict[int, int] = {}
@@ -503,8 +508,10 @@ class McapChunkedSummary:
                     # Update start/end time
                     start_time = min([t for t, _ in record.records])
                     end_time = max([t for t, _ in record.records])
-                    message_start_time = min(message_start_time or start_time, start_time)
-                    message_end_time = max(message_end_time or end_time, end_time)
+                    if message_start_time is None or start_time < message_start_time:
+                        message_start_time = start_time
+                    if message_end_time is None or end_time > message_end_time:
+                        message_end_time = end_time
                 elif record_type == McapRecordType.MESSAGE:
                     logging.warning('Found Message record outside of a chunk! Ignoring...')
                     McapRecordParser.skip_record(self._file)
@@ -633,8 +640,10 @@ class McapNonChunkedSummary:
                 # Update statistics
                 message_count += 1
                 channel_message_counts[channel_id] += 1
-                message_start_time = min(message_start_time or log_time, log_time)
-                message_end_time = max(message_end_time or log_time, log_time)
+                if message_start_time is None or log_time < message_start_time:
+                    message_start_time = log_time
+                if message_end_time is None or log_time > message_end_time:
+                    message_end_time = log_time
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -784,8 +793,10 @@ class McapNonChunkedSummary:
                     # Update statistics
                     message_count += 1
                     channel_message_counts[channel_id] += 1
-                    message_start_time = min(message_start_time or log_time, log_time)
-                    message_end_time = max(message_end_time or log_time, log_time)
+                    if message_start_time is None or log_time < message_start_time:
+                        message_start_time = log_time
+                    if message_end_time is None or log_time > message_end_time:
+                        message_end_time = log_time
                 else:
                     McapRecordParser.skip_record(self._file)
 
