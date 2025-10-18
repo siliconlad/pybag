@@ -3,7 +3,11 @@ from collections import defaultdict
 from typing import Literal, TypeAlias
 
 from pybag.io.raw_reader import BaseReader, BytesReader
-from pybag.mcap.error import McapNoChunkIndexError, McapNoSummaryIndexError, McapNoSummarySectionError
+from pybag.mcap.error import (
+    McapNoChunkIndexError,
+    McapNoSummaryIndexError,
+    McapNoSummarySectionError
+)
 from pybag.mcap.record_parser import (
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
@@ -80,15 +84,14 @@ class McapChunkedSummary:
                 error_msg = 'No summary offset section detected in MCAP'
                 raise McapNoSummaryIndexError(error_msg)
 
-        if self._has_summary and self._has_summary_offset:
+        if not self._has_summary or enable_reconstruction == 'always':
+            self._build_summary()
+        elif self._has_summary and self._has_summary_offset:
             # Load summary offset into memory
             self._load_summary_offset()
-        elif self._has_summary:
+        else:
             # Construct offset from existing summary section
             self._build_summary_offset()
-        else:
-            # Build summary from data section
-            self._build_summary()
 
         # If not chunk index records are found, then we cannot use this class
         # TODO: For MCAP files that do not have chunks, this could be slow
@@ -573,15 +576,14 @@ class McapNonChunkedSummary:
                 error_msg = 'No summary offset section detected in MCAP'
                 raise McapNoSummaryIndexError(error_msg)
 
-        if self._has_summary and self._has_summary_offset:
+        if not self._has_summary or enable_reconstruction == 'always':
+            self._build_summary()
+        elif self._has_summary and self._has_summary_offset:
             # Load summary offset into memory
             self._load_summary_offset()
-        elif self._has_summary:
-            # Construct offset from existing summary
-            self._build_summary_offset()
         else:
-            # Build summary from data section
-            self._build_summary()
+            # Construct offset from existing summary section
+            self._build_summary_offset()
 
     def _load_summary_offset(self):
         _ = self._file.seek_from_start(self._footer.summary_offset_start)
