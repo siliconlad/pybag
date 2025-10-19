@@ -416,6 +416,8 @@ class McapChunkedSummary:
                                 chunk_message_start_time = log_time
                             if chunk_message_end_time is None or log_time > chunk_message_end_time:
                                 chunk_message_end_time = log_time
+                        else:
+                            McapRecordParser.skip_record(reader)
 
                     # TODO: Do we want to deal with cases when there are no message indices?
                     message_index_offsets: dict[int, int] = {}
@@ -592,12 +594,13 @@ class McapNonChunkedSummary:
                 raise McapNoSummaryIndexError(error_msg)
 
         if not self._has_summary or enable_reconstruction == 'always':
+            logging.debug('Building summary from data section')
             self._build_summary()
         elif self._has_summary and self._has_summary_offset:
-            # Load summary offset into memory
+            logging.debug('Loading summary offset into memory')
             self._load_summary_offset()
         else:
-            # Construct offset from existing summary section
+            logging.debug('Building summary offset from summary section')
             self._build_summary_offset()
 
     def _load_summary_offset(self):

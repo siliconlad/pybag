@@ -113,7 +113,7 @@ def _bool_params(name: str) -> list[object]:
 
 def _enum_params(e: type[Enum]) -> list[object]:
     return [
-        pytest.param(e_value, id=f'{e_value.name.lower()}')
+        pytest.param(e_value, id=f'{e.__name__}_{e_value.name.lower()}')
         for e_value in e
     ]
 
@@ -158,7 +158,7 @@ def test_read_messages_across_writer_configs(
     with McapFileReader.from_file(path) as reader:
         assert reader.get_topics() == [output_topic]
         assert reader.get_message_count(output_topic) == 5
-        assert (reader.start_time, reader.end_time) == (0, 5)
+        assert (reader.start_time, reader.end_time) == (0, 4)
 
         actual = list(reader.messages(output_topic))
         expected_time = [timestamp for timestamp, _ in messages]
