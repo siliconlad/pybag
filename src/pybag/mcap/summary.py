@@ -189,6 +189,8 @@ class McapChunkedSummary:
                             chunk_message_start_time = log_time
                         if chunk_message_end_time is None or log_time > chunk_message_end_time:
                             chunk_message_end_time = log_time
+                    else:
+                        McapRecordParser.skip_record(reader)
 
                 # TODO: Do we want to deal with cases when there are no message indices?
                 message_index_offsets: dict[int, int] = {}
