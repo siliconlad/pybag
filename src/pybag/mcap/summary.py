@@ -47,6 +47,7 @@ class McapChunkedSummary:
 
     Args:
         file: The file reader to read from.
+        enable_crc_check: Whether to validate the CRC checksums
         enable_reconstruction: Controls reconstruction behavior:
             - 'never': Raise error if summary sections are missing
             - 'missing': Load from summary if present, otherwise reconstruct
@@ -57,10 +58,12 @@ class McapChunkedSummary:
         self,
         file: BaseReader,
         *,
+        enable_crc_check: bool = False,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> None:
         self._file = file
         self._enable_reconstruction = enable_reconstruction
+        self._enable_crc_check = enable_crc_check
 
         # Initialize cache variables
         self._summary_offset: dict[RecordId, Offset] = {}
@@ -159,7 +162,7 @@ class McapChunkedSummary:
                 chunk_message_end_time: int | None = None
 
                 compressed_size = len(chunk.records)
-                reader = BytesReader(decompress_chunk(chunk))
+                reader = BytesReader(decompress_chunk(chunk, check_crc=self._enable_crc_check))
                 uncompressed_size = reader.size()
 
                 while chunk_record_type := McapRecordParser.peek_record(reader):
@@ -277,7 +280,7 @@ class McapChunkedSummary:
                         schemas[record.id] = record
                 elif next_record == McapRecordType.CHUNK:
                     chunk = McapRecordParser.parse_chunk(self._file)
-                    reader = BytesReader(decompress_chunk(chunk))
+                    reader = BytesReader(decompress_chunk(chunk, check_crc=self._enable_crc_check))
                     while chunk_record_type := McapRecordParser.peek_record(reader):
                         if chunk_record_type == McapRecordType.SCHEMA:
                             if schema := McapRecordParser.parse_schema(reader):
@@ -335,7 +338,7 @@ class McapChunkedSummary:
                     channels[channel.id] = channel
                 elif next_record == McapRecordType.CHUNK:
                     chunk = McapRecordParser.parse_chunk(self._file)
-                    reader = BytesReader(decompress_chunk(chunk))
+                    reader = BytesReader(decompress_chunk(chunk, check_crc=self._enable_crc_check))
                     while chunk_record_type := McapRecordParser.peek_record(reader):
                         if chunk_record_type == McapRecordType.CHANNEL:
                             channel = McapRecordParser.parse_channel(reader)

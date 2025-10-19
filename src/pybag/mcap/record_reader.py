@@ -180,6 +180,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         # Mcap summary abstraction
         self._summary = McapChunkedSummary(
             self._file,
+            enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
         )
 
@@ -671,6 +672,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
         self._summary: McapNonChunkedSummary = McapNonChunkedSummary(
             self._file,
+            enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
         )
         self._message_indexes = self._build_message_index()
