@@ -58,6 +58,8 @@ class McapRecordParser:
     @classmethod
     def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
+        # If peek(1) returns b'', then this returns 0
+        # No record has an ID of 0 so this indicates end
         return int.from_bytes(file.peek(1)[:1], 'little')
 
 

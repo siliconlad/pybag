@@ -53,6 +53,7 @@ class FileReader(BaseReader):
         self._file = open(self._file_path, mode)
 
     def peek(self, size: int) -> bytes:
+        # Returns empty bytes when end of file
         return self._file.peek(size)
 
     def read(self, size: int | None = None) -> bytes:
@@ -80,6 +81,7 @@ class BytesReader(BaseReader):
         self._position = 0
 
     def peek(self, size: int) -> bytes:
+        # Returns empty bytes when end of data
         return self._data[self._position:self._position + size]
 
     def read(self, size: int | None = None) -> bytes:
@@ -108,6 +110,9 @@ class BytesReader(BaseReader):
         if self._position % size > 0:
             self._position += size - (self._position % size)
         return self
+
+    def size(self) -> int:
+        return len(self._data)
 
     def close(self) -> None:
         pass
