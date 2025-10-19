@@ -18,6 +18,7 @@ from pybag.mcap.records import (
     ChannelRecord,
     ChunkIndexRecord,
     FooterRecord,
+    MessageIndexRecord,
     SchemaRecord,
     StatisticsRecord,
     decompress_chunk
@@ -71,6 +72,7 @@ class McapChunkedSummary:
         self._cached_channels: dict[ChannelId, ChannelRecord] | None = None
         self._cached_chunk_indexes: list[ChunkIndexRecord] | None = None
         self._cached_statistics: StatisticsRecord | None = None
+        self._message_indexes: dict[Offset, dict[ChannelId, MessageIndexRecord]] = {}
 
         # Read footer to determine if summary sections exist
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
@@ -157,9 +159,27 @@ class McapChunkedSummary:
                 chunk = McapRecordParser.parse_chunk(self._file)
                 chunk_length = self._file.tell() - chunk_start_offset
 
+                # Read the message index records
+                message_index_length = 0
+                reconstruct_message_index = True
+                message_index_offsets: dict[int, int] = {}
+                if self._enable_reconstruction != 'always':  # i.e. if 'missing'
+                    start_post_chunk_message_index_offset = self._file.tell()
+                    while McapRecordParser.peek_record(self._file) == McapRecordType.MESSAGE_INDEX:
+                        post_chunk_message_index_offset = self._file.tell()
+                        post_chunk_message_index = McapRecordParser.parse_message_index(self._file)
+                        message_index_offsets[post_chunk_message_index.channel_id] = post_chunk_message_index_offset
+                    message_index_length = self._file.tell() - start_post_chunk_message_index_offset
+                    # If message index records exist, assume they are complete
+                    reconstruct_message_index = not message_index_offsets
+                    if reconstruct_message_index:
+                        logging.warning("No message indexes found for chunk!")
+
+                # Continue parsing the chunk
                 compression = chunk.compression
                 chunk_message_start_time: int | None = None
                 chunk_message_end_time: int | None = None
+                chunk_message_indexes: dict[ChannelId, list[tuple[LogTime, Offset]]] = defaultdict(list)
 
                 compressed_size = len(chunk.records)
                 reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
@@ -173,12 +193,15 @@ class McapChunkedSummary:
                         channel = McapRecordParser.parse_channel(reader)
                         found_channels[channel.id] = channel
                     elif chunk_record_type == McapRecordType.MESSAGE:
+                        message_offset = reader.tell()
                         chunk_message = McapRecordParser.parse_message(reader)
                         channel_id = chunk_message.channel_id
                         log_time = chunk_message.log_time
 
                         message_count += 1
                         channel_message_counts[channel_id] += 1
+                        if reconstruct_message_index:
+                            chunk_message_indexes[channel_id].append((log_time, message_offset))
 
                         if message_start_time is None or log_time < message_start_time:
                             message_start_time = log_time
@@ -192,14 +215,13 @@ class McapChunkedSummary:
                     else:
                         McapRecordParser.skip_record(reader)
 
-                # TODO: Do we want to deal with cases when there are no message indices?
-                message_index_offsets: dict[int, int] = {}
-                start_post_chunk_message_index_offset = self._file.tell()
-                while McapRecordParser.peek_record(self._file) == McapRecordType.MESSAGE_INDEX:
-                    post_chunk_message_index_offset = self._file.tell()
-                    post_chunk_message_index = McapRecordParser.parse_message_index(self._file)
-                    message_index_offsets[post_chunk_message_index.channel_id] = post_chunk_message_index_offset
-                message_index_length = self._file.tell() - start_post_chunk_message_index_offset
+                self._message_indexes[chunk_start_offset] = {
+                    channel_id: MessageIndexRecord(
+                        channel_id=channel_id,
+                        records=sorted(records, key=lambda x: (x[0], x[1])),
+                    )
+                    for channel_id, records in chunk_message_indexes.items()
+                }
 
                 found_chunk_indexes.append(
                     ChunkIndexRecord(
@@ -400,9 +422,27 @@ class McapChunkedSummary:
                     chunk = McapRecordParser.parse_chunk(self._file)
                     chunk_length = self._file.tell() - chunk_start_offset
 
+                    # Read the message index records
+                    message_index_length = 0
+                    reconstruct_message_index = True
+                    message_index_offsets: dict[int, int] = {}
+                    if self._enable_reconstruction != 'always':  # i.e. if 'missing'
+                        start_post_chunk_message_index_offset = self._file.tell()
+                        while McapRecordParser.peek_record(self._file) == McapRecordType.MESSAGE_INDEX:
+                            post_chunk_message_index_offset = self._file.tell()
+                            post_chunk_message_index = McapRecordParser.parse_message_index(self._file)
+                            message_index_offsets[post_chunk_message_index.channel_id] = post_chunk_message_index_offset
+                        message_index_length = self._file.tell() - start_post_chunk_message_index_offset
+                        # If message index records exist, assume they are complete
+                        reconstruct_message_index = not message_index_offsets
+                        if reconstruct_message_index:
+                            logging.warning("No message indexes found for chunk!")
+
+                    # Continue parsing the chunk
                     compression = chunk.compression
                     chunk_message_start_time: int | None = None
                     chunk_message_end_time: int | None = None
+                    chunk_message_indexes: dict[ChannelId, list[tuple[LogTime, Offset]]] = defaultdict(list)
 
                     compressed_size = len(chunk.records)
                     reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
@@ -410,8 +450,14 @@ class McapChunkedSummary:
 
                     while chunk_record_type := McapRecordParser.peek_record(reader):
                         if chunk_record_type == McapRecordType.MESSAGE:
+                            message_offset = reader.tell()
                             chunk_message = McapRecordParser.parse_message(reader)
+
+                            channel_id = chunk_message.channel_id
                             log_time = chunk_message.log_time
+                            if reconstruct_message_index:
+                                chunk_message_indexes[channel_id].append((log_time, message_offset))
+
                             if chunk_message_start_time is None or log_time < chunk_message_start_time:
                                 chunk_message_start_time = log_time
                             if chunk_message_end_time is None or log_time > chunk_message_end_time:
@@ -419,14 +465,13 @@ class McapChunkedSummary:
                         else:
                             McapRecordParser.skip_record(reader)
 
-                    # TODO: Do we want to deal with cases when there are no message indices?
-                    message_index_offsets: dict[int, int] = {}
-                    start_post_chunk_message_index_offset = self._file.tell()
-                    while McapRecordParser.peek_record(self._file) == McapRecordType.MESSAGE_INDEX:
-                        post_chunk_message_index_offset = self._file.tell()
-                        post_chunk_message_index = McapRecordParser.parse_message_index(self._file)
-                        message_index_offsets[post_chunk_message_index.channel_id] = post_chunk_message_index_offset
-                    message_index_length = self._file.tell() - start_post_chunk_message_index_offset
+                    self._message_indexes[chunk_start_offset] = {
+                        channel_id: MessageIndexRecord(
+                            channel_id=channel_id,
+                            records=sorted(records, key=lambda x: (x[0], x[1])),
+                        )
+                        for channel_id, records in chunk_message_indexes.items()
+                    }
 
                     chunk_indexes.append(
                         ChunkIndexRecord(
@@ -452,6 +497,43 @@ class McapChunkedSummary:
         # Either we built self._cached_chunked_indexes
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
+
+    def get_message_indexes(
+        self,
+        chunk_index: ChunkIndexRecord,
+    ) -> dict[ChannelId, MessageIndexRecord]:
+        """Get reconstructed message indexes for a chunk if available."""
+        chunk_offset = chunk_index.chunk_start_offset
+        if chunk_offset in self._message_indexes:
+            return self._message_indexes[chunk_offset]
+
+        current_pos = self._file.tell()
+        try:
+            _ = self._file.seek_from_start(chunk_offset)
+            chunk = McapRecordParser.parse_chunk(self._file)
+        finally:
+            _ = self._file.seek_from_start(current_pos)
+
+        reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+        chunk_message_indexes: dict[ChannelId, list[tuple[int, int]]] = defaultdict(list)
+        while chunk_record_type := McapRecordParser.peek_record(reader):
+            if chunk_record_type == McapRecordType.MESSAGE:
+                message_offset = reader.tell()
+                message = McapRecordParser.parse_message(reader)
+                chunk_message_indexes[message.channel_id].append((message.log_time, message_offset))
+            else:
+                McapRecordParser.skip_record(reader)
+
+        reconstructed = {
+            channel_id: MessageIndexRecord(
+                channel_id=channel_id,
+                records=sorted(records, key=lambda x: (x[0], x[1])),
+            )
+            for channel_id, records in chunk_message_indexes.items()
+        }
+        self._message_indexes[chunk_offset] = reconstructed
+
+        return reconstructed
 
     def get_statistics(self) -> StatisticsRecord | None:
         """Get statistics about the MCAP file.
@@ -482,12 +564,12 @@ class McapChunkedSummary:
 
             # Track message statistics
             chunk_count = 0
-            schema_count = 0
-            channel_count = 0
             message_count = 0
             message_start_time: int | None = None
             message_end_time: int | None = None
             channel_message_counts: dict[ChannelId, int] = defaultdict(int)
+            schema_ids: set[SchemaId] = set()
+            channel_ids: set[ChannelId] = set()
 
             # Seek to start of data section (after magic bytes)
             _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
@@ -497,28 +579,52 @@ class McapChunkedSummary:
             while McapRecordParser.peek_record(self._file) != McapRecordType.FOOTER:
                 record_type = McapRecordParser.peek_record(self._file)
                 if record_type == McapRecordType.SCHEMA:
-                    schema_count += 1
-                    McapRecordParser.skip_record(self._file)
+                    if schema := McapRecordParser.parse_schema(self._file):
+                        schema_ids.add(schema.id)
                 elif record_type == McapRecordType.CHANNEL:
-                    channel_count += 1
-                    McapRecordParser.skip_record(self._file)
+                    channel = McapRecordParser.parse_channel(self._file)
+                    channel_ids.add(channel.id)
                 elif record_type == McapRecordType.CHUNK:
-                    # We utilise the message indices to collect statistics
                     chunk_count += 1
-                    McapRecordParser.skip_record(self._file)
-                elif record_type == McapRecordType.MESSAGE_INDEX:
-                    # TODO: What happens if there are no message_indices?
-                    record = McapRecordParser.parse_message_index(self._file)
-                    # Keep track of message counts
-                    message_count += len(record.records)
-                    channel_message_counts[record.channel_id] += len(record.records)
-                    # Update start/end time
-                    start_time = min([t for t, _ in record.records])
-                    end_time = max([t for t, _ in record.records])
-                    if message_start_time is None or start_time < message_start_time:
-                        message_start_time = start_time
-                    if message_end_time is None or end_time > message_end_time:
-                        message_end_time = end_time
+                    chunk_start_offset = self._file.tell()
+                    chunk = McapRecordParser.parse_chunk(self._file)
+                    reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+                    chunk_message_indexes: dict[ChannelId, list[tuple[int, int]]] = defaultdict(list)
+                    while chunk_record_type := McapRecordParser.peek_record(reader):
+                        if chunk_record_type == McapRecordType.SCHEMA:
+                            if schema := McapRecordParser.parse_schema(reader):
+                                schema_ids.add(schema.id)
+                        elif chunk_record_type == McapRecordType.CHANNEL:
+                            channel = McapRecordParser.parse_channel(reader)
+                            channel_ids.add(channel.id)
+                        elif chunk_record_type == McapRecordType.MESSAGE:
+                            message_offset = reader.tell()
+                            chunk_message = McapRecordParser.parse_message(reader)
+                            channel_id = chunk_message.channel_id
+                            log_time = chunk_message.log_time
+                            channel_ids.add(channel_id)
+                            message_count += 1
+                            channel_message_counts[channel_id] += 1
+                            chunk_message_indexes[channel_id].append((log_time, message_offset))
+                            if message_start_time is None or log_time < message_start_time:
+                                message_start_time = log_time
+                            if message_end_time is None or log_time > message_end_time:
+                                message_end_time = log_time
+                        else:
+                            McapRecordParser.skip_record(reader)
+
+                    if chunk_message_indexes and chunk_start_offset not in self._message_indexes:
+                        self._message_indexes[chunk_start_offset] = {
+                            channel_id: MessageIndexRecord(
+                                channel_id=channel_id,
+                                records=sorted(records, key=lambda x: (x[0], x[1])),
+                            )
+                            for channel_id, records in chunk_message_indexes.items()
+                        }
+
+                    # Advance past any existing message index records following the chunk
+                    while McapRecordParser.peek_record(self._file) == McapRecordType.MESSAGE_INDEX:
+                        McapRecordParser.skip_record(self._file)
                 elif record_type == McapRecordType.MESSAGE:
                     logging.warning('Found Message record outside of a chunk! Ignoring...')
                     McapRecordParser.skip_record(self._file)
@@ -528,14 +634,14 @@ class McapChunkedSummary:
             # Create statistics record from collected data
             self._cached_statistics = StatisticsRecord(
                 message_count=message_count,
-                schema_count=schema_count,
-                channel_count=channel_count,
+                schema_count=len(schema_ids),
+                channel_count=len(channel_ids),
                 attachment_count=0,  # Not tracked during reconstruction
                 metadata_count=0,  # Not tracked during reconstruction
                 chunk_count=chunk_count,
                 message_start_time=message_start_time or 0,
                 message_end_time=message_end_time or 0,
-                channel_message_counts=channel_message_counts,
+                channel_message_counts=dict(channel_message_counts),
             )
             return self._cached_statistics
 

@@ -334,12 +334,14 @@ class McapChunkedReader(BaseMcapRecordReader):
         if key in self._message_indexes:
             return self._message_indexes[key]
 
-        # TODO: Deal with when message_index_offsets being empty
-        message_index: dict[int, MessageIndexRecord] = {}
-        for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
-            self._file.seek_from_start(message_index_offset)
-            message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
-            message_index[channel_id].records.sort(key=lambda x: (x[0], x[1]))
+        if chunk_index.message_index_offsets:
+            message_index: dict[int, MessageIndexRecord] = {}
+            for channel_id, message_index_offset in chunk_index.message_index_offsets.items():
+                _ = self._file.seek_from_start(message_index_offset)
+                message_index[channel_id] = McapRecordParser.parse_message_index(self._file)
+                message_index[channel_id].records.sort(key=lambda x: (x[0], x[1]))
+        else:
+            message_index = self._summary.get_message_indexes(chunk_index)
         self._message_indexes[key] = message_index
 
         return message_index
@@ -355,7 +357,6 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A MessageIndexRecord object or None if the channel does not exist for the chunk.
         """
-        # TODO: Deal with when message_index_offsets being empty
         return self.get_message_indexes(chunk_index).get(channel_id)
 
     # Chunk Management
@@ -373,8 +374,16 @@ class McapChunkedReader(BaseMcapRecordReader):
         """
         if channel_id is None:
             return self._summary.get_chunk_indexes()
-        # TODO: Deal with when message_index_offsets being empty
-        return [ci for ci in self._summary.get_chunk_indexes() if channel_id in ci.message_index_offsets]
+        chunk_indexes: list[ChunkIndexRecord] = []
+        for chunk_index in self._summary.get_chunk_indexes():
+            if channel_id in chunk_index.message_index_offsets:
+                chunk_indexes.append(chunk_index)
+                continue
+            if chunk_index.message_index_offsets:
+                continue
+            if channel_id in self._summary.get_message_indexes(chunk_index):
+                chunk_indexes.append(chunk_index)
+        return chunk_indexes
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
         """
