@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from textwrap import dedent
 from typing import Iterable
 
 from pybag import __version__
@@ -97,11 +98,51 @@ def _filter_mcap_from_args(args: argparse.Namespace) -> None:
 def add_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    parser = subparsers.add_parser("filter", help="Filter MCAP files")
-    parser.add_argument("input", help="Input MCAP file")
+    parser = subparsers.add_parser(
+        "filter",
+        help="Extract data from an mcap.",
+        description=dedent("""
+            The messages that satisfy the given constraints are written into
+            a new mcap file. The new mcap is written from scratch, so the way
+            the messages are stored in the file compared to the input mcap may
+            be different (e.g messages may no longer be in the same chunk).
+        """)
+    )
+    parser.add_argument("input", help="Path to mcap file (*.mcap).")
     parser.add_argument("-o", "--output", help="Output MCAP file path")
-    parser.add_argument("--include-topic", action="append", help="Topics to include")
-    parser.add_argument("--exclude-topic", action="append", help="Topics to exclude")
-    parser.add_argument("--start-time", type=float, help="Start time in seconds")
-    parser.add_argument("--end-time", type=float, help="End time in seconds")
+    parser.add_argument(
+        "--include-topic",
+        action="append",
+        help=dedent("""
+            Topics to include. If not specified, defaults to all topics.
+            If specified, only the topics listed are included.
+            Excluded topics are ignored (i.e. exclusion takes precedent).
+        """)
+    )
+    parser.add_argument(
+        "--exclude-topic",
+        action="append",
+        help=dedent("""
+            Topics to exclude. If not specified, defaults to no topics.
+            If specified, the specified topics are excluded from the output.
+        """)
+    )
+    parser.add_argument(
+        "--start-time",
+        type=float,
+        help=dedent("""
+            Start time in nanoseconds. All messages with a log time less than
+            the start time is ignored and not included in the output mcap.
+            By default it is set to the smallest log time in the input mcap.
+        """)
+    )
+    parser.add_argument(
+        "--end-time",
+        type=float,
+        help=dedent("""
+            End time in seconds. All messages with a log time greater than
+            the start time is ignored and not included in the output mcap.
+            By default it is set to the largest log time in the input mcap.
+        """)
+    )
     parser.set_defaults(func=_filter_mcap_from_args)
