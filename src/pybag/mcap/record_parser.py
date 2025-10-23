@@ -3,7 +3,7 @@ import struct
 from enum import IntEnum
 from typing import Any, Callable, Iterator
 
-from pybag.io.raw_reader import BaseReader
+from pybag.io.raw_reader import BaseReader, BytesReader
 from pybag.mcap.records import (
     AttachmentIndexRecord,
     AttachmentRecord,
@@ -58,6 +58,8 @@ class McapRecordParser:
     @classmethod
     def peek_record(cls, file: BaseReader) -> int:
         """Peek at the next record in the MCAP file."""
+        # If peek(1) returns b'', then this returns 0
+        # No record has an ID of 0 so this indicates end
         return int.from_bytes(file.peek(1)[:1], 'little')
 
 
@@ -170,7 +172,6 @@ class McapRecordParser:
     ) -> tuple[int, list]:
         array_length_bytes, array_length = cls._parse_uint32(file)
         original_length = array_length
-        logger.debug(f'Array length: {array_length}')
 
         array = []
         while array_length > 0:
@@ -192,10 +193,11 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x01':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # TODO: Improve performance by batching the reads (maybe)
-        _ = cls._parse_uint64(file)
-        _, profile = cls._parse_string(file)
-        _, library = cls._parse_string(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
+
+        _, profile = cls._parse_string(bytes_reader)
+        _, library = cls._parse_string(bytes_reader)
 
         return HeaderRecord(profile, library)
 
@@ -210,10 +212,11 @@ class McapRecordParser:
         _, record_length = cls._parse_uint64(file)
         if record_length != 20:
             raise MalformedMCAP(f'Unexpected footer record length ({record_length} bytes).')
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, summary_start = cls._parse_uint64(file)
-        _, summary_offset_start = cls._parse_uint64(file)
-        _, summary_crc = cls._parse_uint32(file)
+        _, summary_start = cls._parse_uint64(bytes_reader)
+        _, summary_offset_start = cls._parse_uint64(bytes_reader)
+        _, summary_crc = cls._parse_uint32(bytes_reader)
 
         return FooterRecord(summary_start, summary_offset_start, summary_crc)
 
@@ -224,15 +227,16 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, id = cls._parse_uint16(file)
+        _, id = cls._parse_uint16(bytes_reader)
         if id == 0:  # Invalid and should be ignored
             return None
 
-        _, name = cls._parse_string(file)
-        _, encoding = cls._parse_string(file)
-        _, data_length = cls._parse_uint32(file)
-        _, data = cls._parse_bytes(file, data_length)
+        _, name = cls._parse_string(bytes_reader)
+        _, encoding = cls._parse_string(bytes_reader)
+        _, data_length = cls._parse_uint32(bytes_reader)
+        _, data = cls._parse_bytes(bytes_reader, data_length)
 
         return SchemaRecord(id, name, encoding, data)
 
@@ -243,12 +247,13 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, id = cls._parse_uint16(file)
-        _, channel_id = cls._parse_uint16(file)
-        _, topic = cls._parse_string(file)
-        _, message_encoding = cls._parse_string(file)
-        _, metadata = cls._parse_map(file, "string", "string")
+        _, id = cls._parse_uint16(bytes_reader)
+        _, channel_id = cls._parse_uint16(bytes_reader)
+        _, topic = cls._parse_string(bytes_reader)
+        _, message_encoding = cls._parse_string(bytes_reader)
+        _, metadata = cls._parse_map(bytes_reader, "string", "string")
 
         return ChannelRecord(id, channel_id, topic, message_encoding, metadata)
 
@@ -259,13 +264,14 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, channel_id = cls._parse_uint16(file)
-        _, sequence = cls._parse_uint32(file)
-        _, log_time = cls._parse_timestamp(file)
-        _, publish_time = cls._parse_timestamp(file)
+        _, channel_id = cls._parse_uint16(bytes_reader)
+        _, sequence = cls._parse_uint32(bytes_reader)
+        _, log_time = cls._parse_timestamp(bytes_reader)
+        _, publish_time = cls._parse_timestamp(bytes_reader)
         # Other fields: 2 + 4 + 8 + 8 = 22 bytes
-        _, data = cls._parse_bytes(file, record_length - 22)
+        _, data = cls._parse_bytes(bytes_reader, record_length - 22)
 
         return MessageRecord(channel_id, sequence, log_time, publish_time, data)
 
@@ -275,15 +281,16 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x06':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, message_start_time = cls._parse_timestamp(file)
-        _, message_end_time = cls._parse_timestamp(file)
-        _, uncompressed_size = cls._parse_uint64(file)
-        _, uncompressed_crc = cls._parse_uint32(file)
-        _, compression = cls._parse_string(file)
-        _, records_length = cls._parse_uint64(file)
-        _, records = cls._parse_bytes(file, records_length)
+        _, message_start_time = cls._parse_timestamp(bytes_reader)
+        _, message_end_time = cls._parse_timestamp(bytes_reader)
+        _, uncompressed_size = cls._parse_uint64(bytes_reader)
+        _, uncompressed_crc = cls._parse_uint32(bytes_reader)
+        _, compression = cls._parse_string(bytes_reader)
+        _, records_length = cls._parse_uint64(bytes_reader)
+        _, records = cls._parse_bytes(bytes_reader, records_length)
 
         return ChunkRecord(
             message_start_time,
@@ -301,10 +308,10 @@ class McapRecordParser:
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
         _, message_index_length = cls._parse_uint64(file)
-        logger.debug(f'Message index length: {message_index_length}')
+        bytes_reader = BytesReader(file.read(message_index_length))
 
-        _, channel_id = cls._parse_uint16(file)
-        _, records = cls._parse_array(file, lambda file: cls._parse_tuple(file, "timestamp", "uint64"))
+        _, channel_id = cls._parse_uint16(bytes_reader)
+        _, records = cls._parse_array(bytes_reader, lambda file: cls._parse_tuple(file, "timestamp", "uint64"))
 
         return MessageIndexRecord(channel_id, records)
 
@@ -314,17 +321,18 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x08':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, message_start_time = cls._parse_timestamp(file)
-        _, message_end_time = cls._parse_timestamp(file)
-        _, chunk_start_offset = cls._parse_uint64(file)
-        _, chunk_length = cls._parse_uint64(file)
-        _, message_index_offsets = cls._parse_map(file, "uint16", "uint64")
-        _, message_index_length = cls._parse_uint64(file)
-        _, compression = cls._parse_string(file)
-        _, compressed_size = cls._parse_uint64(file)
-        _, uncompressed_size = cls._parse_uint64(file)
+        _, message_start_time = cls._parse_timestamp(bytes_reader)
+        _, message_end_time = cls._parse_timestamp(bytes_reader)
+        _, chunk_start_offset = cls._parse_uint64(bytes_reader)
+        _, chunk_length = cls._parse_uint64(bytes_reader)
+        _, message_index_offsets = cls._parse_map(bytes_reader, "uint16", "uint64")
+        _, message_index_length = cls._parse_uint64(bytes_reader)
+        _, compression = cls._parse_string(bytes_reader)
+        _, compressed_size = cls._parse_uint64(bytes_reader)
+        _, uncompressed_size = cls._parse_uint64(bytes_reader)
 
         return ChunkIndexRecord(
             message_start_time,
@@ -344,15 +352,16 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x09':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, log_time = cls._parse_timestamp(file)
-        _, create_time = cls._parse_timestamp(file)
-        _, name = cls._parse_string(file)
-        _, media_type = cls._parse_string(file)
-        _, data_bytes_length = cls._parse_uint64(file)
-        _, data_bytes = cls._parse_bytes(file, data_bytes_length)
-        _, crc = cls._parse_uint32(file)
+        _, log_time = cls._parse_timestamp(bytes_reader)
+        _, create_time = cls._parse_timestamp(bytes_reader)
+        _, name = cls._parse_string(bytes_reader)
+        _, media_type = cls._parse_string(bytes_reader)
+        _, data_bytes_length = cls._parse_uint64(bytes_reader)
+        _, data_bytes = cls._parse_bytes(bytes_reader, data_bytes_length)
+        _, crc = cls._parse_uint32(bytes_reader)
 
         return AttachmentRecord(log_time, create_time, name, media_type, data_bytes, crc)
 
@@ -362,11 +371,12 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x0C':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, name = cls._parse_string(file)
+        _, name = cls._parse_string(bytes_reader)
         logger.debug(f'Parsing metadata for {name}...')
-        _, metadata = cls._parse_map(file, "string", "string")
+        _, metadata = cls._parse_map(bytes_reader, "string", "string")
 
         return MetadataRecord(name, metadata)
 
@@ -376,9 +386,10 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x0f':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, data_section_crc = cls._parse_uint32(file)
+        _, data_section_crc = cls._parse_uint32(bytes_reader)
         return DataEndRecord(data_section_crc)
 
 
@@ -387,15 +398,16 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x0A':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, offset = cls._parse_uint64(file)
-        _, length = cls._parse_uint64(file)
-        _, log_time = cls._parse_timestamp(file)
-        _, create_time = cls._parse_timestamp(file)
-        _, data_size = cls._parse_uint64(file)
-        _, name = cls._parse_string(file)
-        _, media_type = cls._parse_string(file)
+        _, offset = cls._parse_uint64(bytes_reader)
+        _, length = cls._parse_uint64(bytes_reader)
+        _, log_time = cls._parse_timestamp(bytes_reader)
+        _, create_time = cls._parse_timestamp(bytes_reader)
+        _, data_size = cls._parse_uint64(bytes_reader)
+        _, name = cls._parse_string(bytes_reader)
+        _, media_type = cls._parse_string(bytes_reader)
 
         return AttachmentIndexRecord(
             offset,
@@ -413,11 +425,12 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x0D':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, offset = cls._parse_uint64(file)
-        _, length = cls._parse_uint64(file)
-        _, name = cls._parse_string(file)
+        _, offset = cls._parse_uint64(bytes_reader)
+        _, length = cls._parse_uint64(bytes_reader)
+        _, name = cls._parse_string(bytes_reader)
 
         return MetadataIndexRecord(offset, length, name)
 
@@ -427,17 +440,18 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x0B':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, message_count = cls._parse_uint64(file)
-        _, schema_count = cls._parse_uint16(file)
-        _, channel_count = cls._parse_uint32(file)
-        _, attachment_count = cls._parse_uint32(file)
-        _, metadata_count = cls._parse_uint32(file)
-        _, chunk_count = cls._parse_uint32(file)
-        _, message_start_time = cls._parse_timestamp(file)
-        _, message_end_time = cls._parse_timestamp(file)
-        _, channel_message_counts = cls._parse_map(file, 'uint16', 'uint64')
+        _, message_count = cls._parse_uint64(bytes_reader)
+        _, schema_count = cls._parse_uint16(bytes_reader)
+        _, channel_count = cls._parse_uint32(bytes_reader)
+        _, attachment_count = cls._parse_uint32(bytes_reader)
+        _, metadata_count = cls._parse_uint32(bytes_reader)
+        _, chunk_count = cls._parse_uint32(bytes_reader)
+        _, message_start_time = cls._parse_timestamp(bytes_reader)
+        _, message_end_time = cls._parse_timestamp(bytes_reader)
+        _, channel_message_counts = cls._parse_map(bytes_reader, 'uint16', 'uint64')
 
         return StatisticsRecord(
             message_count,
@@ -457,10 +471,11 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x0E':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _ = cls._parse_uint64(file)
+        _, record_length = cls._parse_uint64(file)
+        bytes_reader = BytesReader(file.read(record_length))
 
-        _, group_opcode = cls._parse_uint8(file)
-        _, group_start = cls._parse_uint64(file)
-        _, group_length = cls._parse_uint64(file)
+        _, group_opcode = cls._parse_uint8(bytes_reader)
+        _, group_start = cls._parse_uint64(bytes_reader)
+        _, group_length = cls._parse_uint64(bytes_reader)
 
         return SummaryOffsetRecord(group_opcode, group_start, group_length)

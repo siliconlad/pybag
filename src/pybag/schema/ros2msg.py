@@ -37,6 +37,31 @@ class Ros2MsgError(Exception):
 class Ros2MsgSchemaDecoder(SchemaDecoder):
     def __init__(self):
         self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
+        self._builtin_schemas = self._create_builtin_schemas()
+
+    def _create_builtin_schemas(self) -> dict[str, Schema]:
+        """Create schemas for built-in ROS2 message types."""
+        builtin_schemas = {}
+
+        # builtin_interfaces/Time
+        builtin_schemas['builtin_interfaces/Time'] = Schema(
+            'builtin_interfaces/Time',
+            {
+                'sec': SchemaField(Primitive('int32'), None),
+                'nanosec': SchemaField(Primitive('uint32'), None)
+            }
+        )
+
+        # builtin_interfaces/Duration
+        builtin_schemas['builtin_interfaces/Duration'] = Schema(
+            'builtin_interfaces/Duration',
+            {
+                'sec': SchemaField(Primitive('int32'), None),
+                'nanosec': SchemaField(Primitive('uint32'), None)
+            }
+        )
+
+        return builtin_schemas
 
     def _remove_inline_comment(self, line: str) -> str:
         in_single = False
@@ -118,8 +143,13 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
         if not field_raw_name:
             raise Ros2MsgError('Field name cannot be empty')
 
-        if is_constant := '=' in field_raw_name:
-            field_raw_name, raw_default = field_raw_name.split('=', 1)
+        if is_constant := ('=' in field_raw_name or (raw_default and raw_default.startswith('='))):
+            if '=' in field_raw_name:
+                field_raw_name, raw_default = field_raw_name.split('=', 1)
+            else:
+                # TODO: Hack should be made more robust
+                # Handle case where = is separated by spaces: "CONST = value"
+                raw_default = raw_default[1:].strip()  # Remove the '=' and strip spaces
             if not field_raw_name.isupper():
                 raise Ros2MsgError('Constant name must be uppercase')
             if not raw_default:
@@ -155,13 +185,22 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
             return field_raw_name, SchemaConstant(schema_type, default_value)
         return field_raw_name, SchemaField(schema_type, default_value)
 
+    def _add_missing_builtin_schemas(
+        self,
+        main_schema: SchemaRecord,
+        sub_schemas: dict[str, Schema]
+    ) -> None:
+        """Add any missing built-in schemas that are referenced but not defined."""
+        schema_text = main_schema.data.decode('utf-8')
+        for builtin_name, builtin_schema in self._builtin_schemas.items():
+            if builtin_name not in sub_schemas and builtin_name in schema_text:
+                sub_schemas[builtin_name] = builtin_schema
 
     def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
         if schema.id in self._cache:
             return self._cache[schema.id]
 
         assert schema.encoding == "ros2msg"
-        logger.debug(f"Parsing schema: {schema.name}")
 
         package_name = schema.name.split('/')[0]
         msg = schema.data.decode('utf-8')
@@ -187,12 +226,18 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
             sub_msg_fields = [m.strip() for m in sub_msg.split('\n')[1:] if m]
             # TODO: Do some caching here
             sub_msg_schema = {}
+            # Use the package name from the sub-message, not the main message
+            sub_msg_package_name = sub_msg_name.split('/')[0]
             for raw_field in sub_msg_fields:
-                field_name, field = self._parse_field(raw_field, package_name)
+                field_name, field = self._parse_field(raw_field, sub_msg_package_name)
                 sub_msg_schema[field_name] = field
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
-        result = Schema(schema.name, msg_schema), sub_msg_schemas
+        # Add any required built-in schemas
+        main_schema = Schema(schema.name, msg_schema)
+        self._add_missing_builtin_schemas(schema, sub_msg_schemas)
+        result = main_schema, sub_msg_schemas
+
         self._cache[schema.id] = result
         return result
 
@@ -200,6 +245,10 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
 class Ros2MsgSchemaEncoder(SchemaEncoder):
     def __init__(self):
         self._cache = None  # TODO: Cache messages we come across
+
+    @classmethod
+    def encoding(cls) -> str:
+        return "ros2msg"
 
     def _extract_literal_int(self, literal_type: Any) -> int:
         """Extract the value from a Literal type annotation."""

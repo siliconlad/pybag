@@ -1,6 +1,6 @@
 [project]
 name = "pybag-sdk"
-version = "0.1.0"
+version = "0.3.0"
 description = "A Python library to work with bag files without ROS."
 readme = "README.md"
 authors = [{ name = "Angus Stewart", email = "siliconlad@protonmail.com" }]
@@ -32,6 +32,8 @@ test = [
 multi_line_output = 3
 
 [tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "DEBUG"
 addopts = "--cov=pybag --benchmark-sort=mean"
 testpaths = ["tests"]
 

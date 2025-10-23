@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+from importlib.metadata import version
 
 from .types import (
     Array,
@@ -19,3 +19,5 @@ from .types import (
     uint64,
     wstring
 )
+
+__version__ = version("pybag-sdk")

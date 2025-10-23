@@ -140,3 +140,5 @@ cython_debug/
 
 # Custom
 mcaps/
+*.mcap
+.claude/

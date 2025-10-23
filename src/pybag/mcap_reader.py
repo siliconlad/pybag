@@ -6,7 +6,11 @@ from types import TracebackType
 from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
-from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
+from pybag.mcap.error import (
+    McapUnknownEncodingError,
+    McapUnknownSchemaError,
+    McapUnknownTopicError
+)
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
@@ -20,8 +24,8 @@ from pybag.mcap.record_reader import (
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class DecodedMessage:
+@dataclass(slots=True)
+class DecodedMessage():
     channel_id: int
     sequence: int
     log_time: int
@@ -75,9 +79,11 @@ class McapFileReader:
     def messages(
         self,
         topic: str,
-        start_time: float | None = None,
-        end_time: float | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
+        *,
+        in_log_time_order: bool = True
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -87,33 +93,41 @@ class McapFileReader:
             start_time: Start time to filter by. If None, start from the beginning of the file.
             end_time: End time to filter by. If None, read to the end of the file.
             filter: Callable used to filter messages. If None, all messages are returned.
+            in_log_time_order: Return messages in log time order if true, otherwise in the order they appear in the file.
 
         Returns:
             An iterator over DecodedMessage objects.
         """
         channel_id = self._reader.get_channel_id(topic)
         if channel_id is None:
-            raise McapUnknownEncodingError(f'Topic {topic} not found in MCAP file')
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP file')
+        channel_record = self._reader.get_channel(channel_id)
+        if channel_record is None:
+            raise McapUnknownTopicError(f'Channel {channel_id} not found in MCAP file')
 
-        for message in self._reader.get_messages(channel_id, start_time, end_time):
-            message_deserializer = self._message_deserializer
-            if message_deserializer is None:
-                message_deserializer = MessageDeserializerFactory.from_channel(
-                    self._reader.get_channel(channel_id),
-                    self._reader.get_message_schema(message)
-                )
-            if message_deserializer is None:
-                raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
+        if (message_schema := self._reader.get_channel_schema(channel_id)) is None:
+            raise McapUnknownSchemaError(f'Unknown schema for channel {channel_id}')
 
+        if (message_deserializer := self._message_deserializer) is None:
+            message_deserializer = MessageDeserializerFactory.from_channel(
+                channel_record, message_schema
+            )
+        if message_deserializer is None:
+            raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
+
+        deserialize = message_deserializer.deserialize_message
+        for message in self._reader.get_messages(
+            channel_id,
+            start_time,
+            end_time,
+            in_log_time_order=in_log_time_order
+        ):
             decoded = DecodedMessage(
                 message.channel_id,
                 message.sequence,
                 message.log_time,
                 message.publish_time,
-                message_deserializer.deserialize_message(
-                    message,
-                    self._reader.get_message_schema(message)
-                ),
+                deserialize(message, message_schema),
             )
             if filter is None or filter(decoded):
                 yield decoded
@@ -132,4 +146,3 @@ class McapFileReader:
         tb: TracebackType | None
     ) -> None:
         self.close()
-
