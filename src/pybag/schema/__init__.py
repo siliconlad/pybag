@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pybag.types import Message
 
 from pybag.mcap.records import SchemaRecord
 
@@ -102,11 +107,11 @@ class SchemaEncoder(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
-    def encode(self, schema: Schema) -> bytes:
+    def encode(self, schema: Message | type[Message]) -> bytes:
         """Encode a schema into a bytes object."""
         ...  # pragma: no cover
 
     @abstractmethod
-    def parse_schema(self, schema: Any) -> tuple[Schema, dict[str, Schema]]:
+    def parse_schema(self, schema: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
         """Parse a schema into a Python object."""
         ...  # pragma: no cover
