@@ -163,7 +163,7 @@ class McapFileReader:
 
         if (message_deserializer := self._message_deserializer) is None:
             # TODO: Do not assume all channels use the same encoding
-            channel_record, message_schema = channel_infos.values()[0]
+            channel_record, message_schema = next(iter(channel_infos.values()))
             message_deserializer = MessageDeserializerFactory.from_channel(
                 channel_record, message_schema
             )
