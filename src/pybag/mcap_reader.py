@@ -78,39 +78,25 @@ class McapFileReader:
     # Message Access
 
     def _expand_topics(self, topic: str | list[str]) -> list[str]:
-        """Expand topic specification to list of concrete topic names.
+        """Expand topic patterns to list of concrete topic names.
 
         Handles:
         - Single topic string (may contain glob pattern like "/sensor/*")
         - List of topic strings (each may contain glob patterns)
 
         Args:
-            topic: Topic specification (string or list of strings)
+            topic: Topic pattern (string or list of strings)
 
         Returns:
             Deduplicated list of concrete topic names that exist in the file
         """
-        # Get all available topics
         available_topics = self.get_topics()
-
-        # Normalize input to list
         topic_patterns = [topic] if isinstance(topic, str) else topic
-
-        # Expand patterns to concrete topics
         matched_topics = set()
         for pattern in topic_patterns:
-            # Check if pattern contains glob characters
-            if '*' in pattern or '?' in pattern:
-                # Use fnmatch to find matching topics
-                matches = fnmatch.filter(available_topics, pattern)
-                matched_topics.update(matches)
-            else:
-                # Exact match - check if topic exists
-                if pattern in available_topics:
-                    matched_topics.add(pattern)
-
-        # Return sorted list for consistent ordering
-        return sorted(matched_topics)
+            matches = fnmatch.filter(available_topics, pattern)
+            matched_topics.update(matches)
+        return list(matched_topics)
 
     def messages(
         self,
@@ -141,24 +127,29 @@ class McapFileReader:
         # If empty list we return no messages
         if (concrete_topics := self._expand_topics(topic)) == []:
             return
+        logging.debug(f"Expanded topics: {concrete_topics}")
 
         channel_infos = {}  # dict[channel_id, tuple[channel_record, schema]]
         for topic_name in concrete_topics:
             channel_id = self._reader.get_channel_id(topic_name)
             if channel_id is None:
+                logging.warning(f"{topic_name} corresponds to no channel")
                 continue  # Skip topics that don't exist
 
             channel_record = self._reader.get_channel(channel_id)
             if channel_record is None:
+                logging.warning(f"No channel record for {topic_name} ({channel_id})")
                 continue
 
             message_schema = self._reader.get_channel_schema(channel_id)
             if message_schema is None:
-                raise McapUnknownSchemaError(f'Unknown schema for channel {channel_id}')
+                logging.warning(f"Unknown schema for {topic_name} ({channel_id})")
+                continue
 
             channel_infos[channel_id] = (channel_record, message_schema)
 
         if not channel_infos:
+            logging.warning(f'Nothing to retrieve!')
             return
 
         if (message_deserializer := self._message_deserializer) is None:
