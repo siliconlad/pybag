@@ -21,7 +21,7 @@ from pybag.mcap.records import (
     StatisticsRecord,
     SummaryOffsetRecord
 )
-from pybag.serialize import MessageSerializerFactory
+from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
 
 logger = logging.getLogger(__name__)
@@ -70,9 +70,11 @@ class McapFileWriter:
         McapRecordWriter.write_header(self._writer, header)
 
         self._profile = profile
-        self._message_serializer = MessageSerializerFactory.from_profile(self._profile)
-        if self._message_serializer is None:
+        message_serializer = MessageSerializerFactory.from_profile(self._profile)
+        if message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
+        # After the None check, we know message_serializer is not None
+        self._message_serializer: MessageSerializer = message_serializer
 
     def __enter__(self) -> "McapFileWriter":
         return self
