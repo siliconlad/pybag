@@ -1028,19 +1028,13 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         """
         # Determine which channels to process
         if channel_id is not None:
-            if isinstance(channel_id, list):
-                if not channel_id:  # Empty list
-                    return
-                channels_to_process = [cid for cid in channel_id if cid in self._message_indexes]
-                if not channels_to_process:
-                    logger.warning('None of the requested channel IDs are in MCAP!')
-                    return
-            else:
-                # Single channel ID
-                if channel_id not in self._message_indexes:
-                    logger.warning('Channel ID not in MCAP!')
-                    return
-                channels_to_process = [channel_id]
+            channel_id = channel_id if isinstance(channel_id, list) else [channel_id]
+            if not channel_id:  # Empty list
+                return
+            channels_to_process = [cid for cid in channel_id if cid in self._message_indexes]
+            if not channels_to_process:
+                logger.warning('None of the requested channel IDs are in MCAP!')
+                return
         else:
             channels_to_process = list(self._message_indexes.keys())
         logger.debug(f'Channels requested: {channels_to_process}')
