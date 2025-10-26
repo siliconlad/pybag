@@ -121,6 +121,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     if: github.actor == 'siliconlad'
+    needs: [release]
     environment: pypi
     permissions:
       id-token: write
