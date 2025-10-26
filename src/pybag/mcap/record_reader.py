@@ -121,7 +121,7 @@ class BaseMcapRecordReader(ABC):
     # Chunk Management
 
     @abstractmethod
-    def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
+    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
         """Get all chunk indexes from the MCAP file."""
         ...  # pragma: no cover
 
@@ -143,7 +143,7 @@ class BaseMcapRecordReader(ABC):
     @abstractmethod
     def get_messages(
         self,
-        channel_id: int | None = None,
+        channel_id: int | list[int] | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
         *,
@@ -361,27 +361,34 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     # Chunk Management
 
-    def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
+    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
         """
         Get all chunk indexes from the MCAP file.
 
         Args:
-            channel_id: The ID of the channel to get the chunk indexes for.
-                        If None, all chunk indexes are returned.
+            channel_id: The ID of the channel(s) to get the chunk indexes for.
+                        Can be a single int, a list of ints, or None for all channels.
 
         Returns:
             A list of ChunkIndexRecord objects.
         """
         if channel_id is None:
             return self._summary.get_chunk_indexes()
+
+        # Normalize to list for consistent processing
+        channel_ids = [channel_id] if isinstance(channel_id, int) else channel_id
+
         chunk_indexes: list[ChunkIndexRecord] = []
         for chunk_index in self._summary.get_chunk_indexes():
-            if channel_id in chunk_index.message_index_offsets:
+            # Check if any of the requested channels are in this chunk
+            if any(cid in chunk_index.message_index_offsets for cid in channel_ids):
                 chunk_indexes.append(chunk_index)
                 continue
             if chunk_index.message_index_offsets:
                 continue
-            if channel_id in self._summary.get_message_indexes(chunk_index):
+            # Fall back to checking message indexes
+            message_indexes = self._summary.get_message_indexes(chunk_index)
+            if any(cid in message_indexes for cid in channel_ids):
                 chunk_indexes.append(chunk_index)
         return chunk_indexes
 
@@ -445,7 +452,7 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     def get_messages(
         self,
-        channel_id: int | None = None,
+        channel_id: int | list[int] | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
         *,
@@ -458,13 +465,27 @@ class McapChunkedReader(BaseMcapRecordReader):
         If the start and end timestamps are not provided, the entire available range is returned.
 
         Args:
-            channel_id: Optional channel ID to filter by. If None, all channels are included.
+            channel_id: Optional channel ID(s) to filter by. Can be:
+                - int: Single channel ID
+                - list[int]: Multiple channel IDs (reads chunks once, filters to these channels)
+                - None: All channels
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
+            in_log_time_order: Return messages in log time order if True, otherwise in write order.
 
         Returns:
             A generator of MessageRecord objects.
         """
+        # Normalize channel_id to a set for efficient filtering
+        if channel_id is None:
+            channel_id_set = None  # All channels
+        elif isinstance(channel_id, list):
+            if not channel_id:  # Empty list
+                return
+            channel_id_set = set(channel_id)  # Multiple specific channels
+        else:
+            channel_id_set = {channel_id}  # Single channel
+
         relevant_chunks = []
         for chunk_index in self.get_chunk_indexes(channel_id):
             # Skip chunk that do not match the timestamp range
@@ -480,7 +501,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         if not in_log_time_order:
             yield from self._get_messages_write_order(
                 relevant_chunks,
-                channel_id,
+                channel_id_set,
                 start_timestamp,
                 end_timestamp,
             )
@@ -489,11 +510,11 @@ class McapChunkedReader(BaseMcapRecordReader):
         if self._has_overlapping_chunks(relevant_chunks):
             logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
             yield from self._get_messages_with_overlaps(
-                relevant_chunks, channel_id, start_timestamp, end_timestamp
+                relevant_chunks, channel_id_set, start_timestamp, end_timestamp
             )
         else:
             yield from self._get_messages_sequential(
-                relevant_chunks, channel_id, start_timestamp, end_timestamp
+                relevant_chunks, channel_id_set, start_timestamp, end_timestamp
             )
 
     def _has_overlapping_chunks(self, chunks: list[ChunkIndexRecord]) -> bool:
@@ -513,18 +534,31 @@ class McapChunkedReader(BaseMcapRecordReader):
     def _get_messages_sequential(
         self,
         chunks: list[ChunkIndexRecord],
-        channel_id: int | None,
+        channel_id_set: set[int] | None,
         start_timestamp: int | None,
         end_timestamp: int | None,
     ) -> Generator[MessageRecord, None, None]:
-        """Fast sequential reading for non-overlapping chunks (original implementation)."""
+        """Fast sequential reading for non-overlapping chunks.
+
+        Args:
+            chunks: List of chunk indexes to read from
+            channel_id_set: Set of channel IDs to filter by, or None for all channels
+            start_timestamp: Start timestamp filter
+            end_timestamp: End timestamp filter
+
+        Yields:
+            MessageRecord objects matching the filters
+        """
         for chunk_index in chunks:
-            if channel_id is None:
+            if channel_id_set is None:
+                # All channels in this chunk
                 message_indexes = self.get_message_indexes(chunk_index).values()
-            elif message_index := self.get_message_index(chunk_index, channel_id):
-                message_indexes = [message_index]
             else:
-                message_indexes = None
+                # Get message indexes for requested channels only
+                message_indexes = []
+                for ch_id in channel_id_set:
+                    if message_index := self.get_message_index(chunk_index, ch_id):
+                        message_indexes.append(message_index)
 
             if not message_indexes:
                 continue
@@ -549,23 +583,36 @@ class McapChunkedReader(BaseMcapRecordReader):
     def _get_messages_with_overlaps(
         self,
         chunks: list[ChunkIndexRecord],
-        channel_id: int | None,
+        channel_id_set: set[int] | None,
         start_timestamp: int | None,
         end_timestamp: int | None,
     ) -> Generator[MessageRecord, None, None]:
-        """Streaming overlap-safe reading using heap-based merge of per-chunk iterators."""
+        """Streaming overlap-safe reading using heap-based merge of per-chunk iterators.
+
+        Args:
+            chunks: List of chunk indexes to read from
+            channel_id_set: Set of channel IDs to filter by, or None for all channels
+            start_timestamp: Start timestamp filter
+            end_timestamp: End timestamp filter
+
+        Yields:
+            MessageRecord objects in log time order
+        """
 
         def chunk_message_iterator(
             chunk_index_id: int,
             chunk_index: ChunkIndexRecord
         ) -> Iterator[tuple[int, int, MessageRecord]]:
-            """Create an iterator that yields (timestamp, message) tuples for a chunk."""
-            if channel_id is None:
+            """Create an iterator that yields (timestamp, chunk_id, message) tuples for a chunk."""
+            if channel_id_set is None:
+                # All channels in this chunk
                 message_indexes = self.get_message_indexes(chunk_index).values()
-            elif message_index := self.get_message_index(chunk_index, channel_id):
-                message_indexes = [message_index]
             else:
-                message_indexes = None
+                # Get message indexes for requested channels only
+                message_indexes = []
+                for ch_id in channel_id_set:
+                    if message_index := self.get_message_index(chunk_index, ch_id):
+                        message_indexes.append(message_index)
 
             if not message_indexes:
                 return
@@ -606,19 +653,32 @@ class McapChunkedReader(BaseMcapRecordReader):
     def _get_messages_write_order(
         self,
         chunks: list[ChunkIndexRecord],
-        channel_id: int | None,
+        channel_id_set: set[int] | None,
         start_timestamp: int | None,
         end_timestamp: int | None,
     ) -> Generator[MessageRecord, None, None]:
-        """Read messages preserving the order they were written to the file."""
+        """Read messages preserving the order they were written to the file.
+
+        Args:
+            chunks: List of chunk indexes to read from
+            channel_id_set: Set of channel IDs to filter by, or None for all channels
+            start_timestamp: Start timestamp filter
+            end_timestamp: End timestamp filter
+
+        Yields:
+            MessageRecord objects in write order
+        """
 
         for chunk_index in sorted(chunks, key=lambda ci: ci.chunk_start_offset):
-            if channel_id is None:
+            if channel_id_set is None:
+                # All channels in this chunk
                 message_indexes = self.get_message_indexes(chunk_index).values()
-            elif message_index := self.get_message_index(chunk_index, channel_id):
-                message_indexes = [message_index]
             else:
-                message_indexes = None
+                # Get message indexes for requested channels only
+                message_indexes = []
+                for ch_id in channel_id_set:
+                    if message_index := self.get_message_index(chunk_index, ch_id):
+                        message_indexes.append(message_index)
 
             if not message_indexes:
                 continue
@@ -878,7 +938,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
     # Chunk Management (placeholders for compatibility)
 
-    def get_chunk_indexes(self, channel_id: int | None = None) -> list[ChunkIndexRecord]:
+    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
         """
         Get all chunk indexes from the MCAP file.
 
@@ -942,7 +1002,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
     def get_messages(
         self,
-        channel_id: int | None = None,
+        channel_id: int | list[int] | None = None,
         start_timestamp: int | None = None,
         end_timestamp: int | None = None,
         *,
@@ -955,7 +1015,10 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         If the start and end timestamps are not provided, the entire available range is returned.
 
         Args:
-            channel_id: Optional channel ID to filter by. If None, all channels are included.
+            channel_id: Optional channel ID(s) to filter by. Can be:
+                - int: Single channel ID
+                - list[int]: Multiple channel IDs
+                - None: All channels
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
             in_log_time_order: Return records in log time order if true, else in the order they appear in the file
@@ -965,10 +1028,13 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         """
         # Determine which channels to process
         if channel_id is not None:
-            if channel_id not in self._message_indexes:
-                logger.warning('Channel ID not in MCAP!')
+            channel_id = channel_id if isinstance(channel_id, list) else [channel_id]
+            if not channel_id:  # Empty list
                 return
-            channels_to_process = [channel_id]
+            channels_to_process = [cid for cid in channel_id if cid in self._message_indexes]
+            if not channels_to_process:
+                logger.warning('None of the requested channel IDs are in MCAP!')
+                return
         else:
             channels_to_process = list(self._message_indexes.keys())
         logger.debug(f'Channels requested: {channels_to_process}')

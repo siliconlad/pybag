@@ -1,3 +1,4 @@
+import fnmatch
 import logging
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -76,9 +77,30 @@ class McapFileReader:
 
     # Message Access
 
+    def _expand_topics(self, topic: str | list[str]) -> list[str]:
+        """Expand topic patterns to list of concrete topic names.
+
+        Handles:
+        - Single topic string (may contain glob pattern like "/sensor/*")
+        - List of topic strings (each may contain glob patterns)
+
+        Args:
+            topic: Topic pattern (string or list of strings)
+
+        Returns:
+            Deduplicated list of concrete topic names that exist in the file
+        """
+        available_topics = self.get_topics()
+        topic_patterns = [topic] if isinstance(topic, str) else topic
+        matched_topics = set()
+        for pattern in topic_patterns:
+            matches = fnmatch.filter(available_topics, pattern)
+            matched_topics.update(matches)
+        return list(matched_topics)
+
     def messages(
         self,
-        topic: str,
+        topic: str | list[str],
         start_time: int | None = None,
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
@@ -89,45 +111,69 @@ class McapFileReader:
         Iterate over messages in the MCAP file.
 
         Args:
-            topic: Topic to filter by.
-            start_time: Start time to filter by. If None, start from the beginning of the file.
-            end_time: End time to filter by. If None, read to the end of the file.
-            filter: Callable used to filter messages. If None, all messages are returned.
-            in_log_time_order: Return messages in log time order if true, otherwise in the order they appear in the file.
+            topic: Topic(s) to filter by. Can be:
+                - Single topic string (e.g., "/camera")
+                - Glob pattern (e.g., "/sensor/*")
+                - List of topics/patterns (e.g., ["/topic1", "/sensor/*"])
+                - Empty list [] returns no messages
+            start_time: Start time to filter by. If None, start from the beginning.
+            end_time: End time to filter by. If None, read to the end.
+            filter: Callable to filter messages. If None, all messages are returned.
+            in_log_time_order: Return messages in log time order if True, otherwise in write order.
 
         Returns:
-            An iterator over DecodedMessage objects.
+            Generator yielding DecodedMessage objects from matching topics.
         """
-        channel_id = self._reader.get_channel_id(topic)
-        if channel_id is None:
-            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP file')
-        channel_record = self._reader.get_channel(channel_id)
-        if channel_record is None:
-            raise McapUnknownTopicError(f'Channel {channel_id} not found in MCAP file')
+        # If empty list we return no messages
+        if (concrete_topics := self._expand_topics(topic)) == []:
+            return
+        logging.debug(f"Expanded topics: {concrete_topics}")
 
-        if (message_schema := self._reader.get_channel_schema(channel_id)) is None:
-            raise McapUnknownSchemaError(f'Unknown schema for channel {channel_id}')
+        channel_infos = {}  # dict[channel_id, tuple[channel_record, schema]]
+        for topic_name in concrete_topics:
+            channel_id = self._reader.get_channel_id(topic_name)
+            if channel_id is None:
+                logging.warning(f"{topic_name} corresponds to no channel")
+                continue  # Skip topics that don't exist
+
+            channel_record = self._reader.get_channel(channel_id)
+            if channel_record is None:
+                logging.warning(f"No channel record for {topic_name} ({channel_id})")
+                continue
+
+            message_schema = self._reader.get_channel_schema(channel_id)
+            if message_schema is None:
+                logging.warning(f"Unknown schema for {topic_name} ({channel_id})")
+                continue
+
+            channel_infos[channel_id] = (channel_record, message_schema)
+
+        if not channel_infos:
+            logging.warning(f'Nothing to retrieve!')
+            return
 
         if (message_deserializer := self._message_deserializer) is None:
+            # TODO: Do not assume all channels use the same encoding
+            channel_record, message_schema = next(iter(channel_infos.values()))
             message_deserializer = MessageDeserializerFactory.from_channel(
                 channel_record, message_schema
             )
         if message_deserializer is None:
             raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
 
-        deserialize = message_deserializer.deserialize_message
-        for message in self._reader.get_messages(
-            channel_id,
+        for msg in self._reader.get_messages(
+            list(channel_infos.keys()),
             start_time,
             end_time,
             in_log_time_order=in_log_time_order
         ):
+            _, schema = channel_infos[msg.channel_id]
             decoded = DecodedMessage(
-                message.channel_id,
-                message.sequence,
-                message.log_time,
-                message.publish_time,
-                deserialize(message, message_schema),
+                msg.channel_id,
+                msg.sequence,
+                msg.log_time,
+                msg.publish_time,
+                message_deserializer.deserialize_message(msg, schema),
             )
             if filter is None or filter(decoded):
                 yield decoded
