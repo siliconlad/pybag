@@ -98,6 +98,12 @@ jobs:
         with:
           version: latest
 
+      - name: Configure git
+        run: |
+          git config user.name "siliconlad"
+          git config user.email "siliconlad@protonmail.com"
+        shell: bash
+
       - name: Get version
         id: version
         shell: bash
@@ -105,6 +111,25 @@ jobs:
           set -euo pipefail
           echo "version=$(uv version --short)" >> "$GITHUB_OUTPUT"
           echo "tag=v$(uv version --short)" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # Check if tag already exists locally or remotely
+          if git rev-parse "$TAG" > /dev/null 2>&1; then
+            echo "Tag $TAG already exists locally. Skipping tag creation."
+            exit 0
+          fi
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
+            echo "Tag $TAG already exists on remote. Skipping tag creation."
+            exit 0
+          fi
+          # Create annotated tag and push
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+        shell: bash
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
