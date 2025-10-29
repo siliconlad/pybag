@@ -128,8 +128,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-	with:
-	  ref: "main"
+        with:
+          ref: "main" # Checkout main branch with updated commit
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
