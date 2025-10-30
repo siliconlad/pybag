@@ -60,7 +60,6 @@ def test_cli_filter_include_and_time(tmp_path: Path) -> None:
 
     cli_main(
         [
-            "mcap",
             "filter",
             str(input_path),
             "--include-topic",
@@ -86,7 +85,6 @@ def test_cli_filter_exclude(tmp_path: Path) -> None:
 
     cli_main(
         [
-            "mcap",
             "filter",
             str(input_path),
             "--exclude-topic",
