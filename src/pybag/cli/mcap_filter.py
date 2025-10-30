@@ -33,7 +33,10 @@ def filter_mcap(
     input_path = Path(input_path)
     output_path = (
         Path(output_path)
-        if output_path is not None
+        if (
+            output_path is not None and
+            Path(output_path).absolute() != input_path.absolute()
+        )
         else input_path.with_name(input_path.stem + "_filtered.mcap")
     )
 
