@@ -131,7 +131,7 @@ def add_parser(
         "--start-time",
         type=float,
         help=dedent("""
-            Start time in nanoseconds. All messages with a log time less than
+            Start time in seconds. All messages with a log time less than
             the start time is ignored and not included in the output mcap.
             By default it is set to the smallest log time in the input mcap.
         """)
