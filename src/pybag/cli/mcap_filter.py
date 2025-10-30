@@ -68,7 +68,7 @@ def filter_mcap(
                     continue
 
                 schema_id = channel.schema_id
-                if schema_id not in written_schemas:
+                if schema_id not in written_schemas and schema_id != 0:
                     McapRecordWriter.write_schema(writer, schemas[schema_id])
                     written_schemas.add(schema_id)
                 McapRecordWriter.write_channel(writer, channel)
