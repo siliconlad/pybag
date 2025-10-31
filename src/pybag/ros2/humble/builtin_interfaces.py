@@ -1,6 +1,5 @@
-from dataclasses import dataclass
-
 import pybag.types as t
+from pybag.types import dataclass
 
 
 @dataclass(kw_only=True)
