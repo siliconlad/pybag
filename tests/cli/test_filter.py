@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from pybag.cli.main import main as cli_main
-from pybag.mcap_writer import McapFileWriter
 from pybag.mcap_reader import McapFileReader
+from pybag.mcap_writer import McapFileWriter
 from pybag.ros2.humble.std_msgs import Int32
 
 
@@ -36,9 +36,9 @@ def test_cli_filter_include_and_time(tmp_path: Path) -> None:
     with McapFileReader.from_file(output_path) as reader:
         assert set(reader.get_topics()) == {"/foo"}
 
-        messages = reader.messages("/foo")
+        messages = list(reader.messages("/foo"))
         assert [m.log_time for m in messages] == [int(3e9)]
-        assert [m.data.value for m in messages] == [3]
+        assert [m.data.data for m in messages] == [3]
 
 
 def test_cli_filter_exclude(tmp_path: Path) -> None:
@@ -60,6 +60,6 @@ def test_cli_filter_exclude(tmp_path: Path) -> None:
     with McapFileReader.from_file(output_path) as reader:
         assert set(reader.get_topics()) == {"/foo"}
 
-        messages = reader.messages("/foo")
+        messages = list(reader.messages("/foo"))
         assert [m.log_time for m in messages] == [int(1e9), int(3e9)]
-        assert [m.data.value for m in messages] == [1, 3]
+        assert [m.data.data for m in messages] == [1, 3]
