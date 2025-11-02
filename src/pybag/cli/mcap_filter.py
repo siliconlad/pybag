@@ -57,7 +57,7 @@ def filter_mcap(
         ):
             writer.write_message(
                 topic=msg.topic,
-                timestmap=msg.log_time,
+                timestamp=msg.log_time,
                 message=msg.data,
             )
     return output_path
@@ -74,9 +74,7 @@ def _filter_mcap_from_args(args: argparse.Namespace) -> None:
     )
 
 
-def add_parser(
-    subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
-) -> None:
+def add_parser(subparsers) -> None:
     parser = subparsers.add_parser(
         "filter",
         help="Extract data from an mcap.",
