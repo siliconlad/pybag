@@ -1,17 +1,15 @@
 """MCAP filtering CLI command."""
 
-from __future__ import annotations
-
 import argparse
+import logging
 from pathlib import Path
 from textwrap import dedent
 from typing import Iterable
 
-from pybag import __version__
-from pybag.io.raw_writer import CrcWriter, FileWriter
-from pybag.mcap.record_writer import McapRecordWriter
-from pybag.mcap.records import DataEndRecord, FooterRecord, HeaderRecord
 from pybag.mcap_reader import McapFileReader
+from pybag.mcap_writer import McapFileWriter
+
+logger = logging.getLogger(__name__)
 
 
 def _to_ns(seconds: float | None) -> int | None:
@@ -22,69 +20,47 @@ def _to_ns(seconds: float | None) -> int | None:
 
 def filter_mcap(
     input_path: str | Path,
-    *,
     output_path: str | Path | None = None,
     include_topics: Iterable[str] | None = None,
     exclude_topics: Iterable[str] | None = None,
     start_time: float | None = None,
     end_time: float | None = None,
-) -> None:
+    *,
+    overwrite: bool = False
+) -> Path:
     """Filter an MCAP file based on topics and time."""
-    input_path = Path(input_path)
-    output_path = (
-        Path(output_path)
-        if (
-            output_path is not None and
-            Path(output_path).absolute() != input_path.absolute()
-        )
-        else input_path.with_name(input_path.stem + "_filtered.mcap")
-    )
+    # Resolve input and output paths
+    input_path = Path(input_path).resolve()
+    if output_path is None:
+        output_path = input_path.with_name(f"{input_path.stem}_filtered.mcap")
+    output_path = Path(output_path).resolve()
+    if output_path == input_path:
+        raise ValueError('Input path cannot be same as output.')
 
-    include_topics = set(include_topics or [])
-    exclude_topics = set(exclude_topics or [])
+    include_topics = set(include_topics or []) - set(exclude_topics or [])
+    start_ns, end_ns = _to_ns(start_time), _to_ns(end_time)
 
-    start_ns = _to_ns(start_time)
-    end_ns = _to_ns(end_time)
-
-    with McapFileReader.from_file(input_path) as reader:
-        writer = CrcWriter(FileWriter(output_path))
-        try:
-            header = reader._reader.get_header()
-            McapRecordWriter.write_magic_bytes(writer)
-            McapRecordWriter.write_header(
-                writer,
-                HeaderRecord(profile=header.profile, library=f"pybag {__version__}"),
+    with (
+        McapFileReader.from_file(input_path) as reader,
+        McapFileWriter.open(
+                output_path,
+                profile=reader.profile,
+                chunk_size=None,
+                chunk_compression=None,
+            ) as writer
+    ):
+        for msg in reader.messages(
+            topic=include_topics,
+            start_time=start_ns,
+            end_time=end_ns,
+            in_log_time_order=False
+        ):
+            writer.write_message(
+                topic=msg.topic,
+                timestmap=msg.log_time,
+                message=msg.data,
             )
-
-            channels = reader._reader.get_channels()
-            schemas = reader._reader.get_schemas()
-            written_schemas: set[int] = set()
-
-            for cid, channel in channels.items():
-                topic = channel.topic
-                if include_topics and topic not in include_topics:
-                    continue
-                if topic in exclude_topics:
-                    continue
-
-                schema_id = channel.schema_id
-                if schema_id not in written_schemas and schema_id != 0:
-                    McapRecordWriter.write_schema(writer, schemas[schema_id])
-                    written_schemas.add(schema_id)
-                McapRecordWriter.write_channel(writer, channel)
-
-                for message in reader._reader.get_messages(cid, start_ns, end_ns):
-                    McapRecordWriter.write_message(writer, message)
-
-            McapRecordWriter.write_data_end(
-                writer, DataEndRecord(data_section_crc=writer.get_crc())
-            )
-            McapRecordWriter.write_footer(
-                writer, FooterRecord(summary_start=0, summary_offset_start=0, summary_crc=0)
-            )
-            McapRecordWriter.write_magic_bytes(writer)
-        finally:
-            writer.close()
+    return output_path
 
 
 def _filter_mcap_from_args(args: argparse.Namespace) -> None:
