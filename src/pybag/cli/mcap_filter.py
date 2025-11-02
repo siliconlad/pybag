@@ -21,8 +21,8 @@ def _to_ns(seconds: float | None) -> int | None:
 def filter_mcap(
     input_path: str | Path,
     output_path: str | Path | None = None,
-    include_topics: Iterable[str] | None = None,
-    exclude_topics: Iterable[str] | None = None,
+    include_topics: list[str] | None = None,
+    exclude_topics: list[str] | None = None,
     start_time: float | None = None,
     end_time: float | None = None,
     *,
@@ -37,7 +37,6 @@ def filter_mcap(
     if output_path == input_path:
         raise ValueError('Input path cannot be same as output.')
 
-    include_topics = set(include_topics or []) - set(exclude_topics or [])
     start_ns, end_ns = _to_ns(start_time), _to_ns(end_time)
 
     with (
@@ -49,8 +48,18 @@ def filter_mcap(
                 chunk_compression=None,
             ) as writer
     ):
+        # If no topics specified, default to all topics
+        if include_topics is None:
+            topics_to_filter = set(reader.get_topics())
+        else:
+            topics_to_filter = set(include_topics)
+
+        # Remove excluded topics
+        if exclude_topics:
+            topics_to_filter -= set(exclude_topics)
+
         for msg in reader.messages(
-            topic=include_topics,
+            topic=topics_to_filter,
             start_time=start_ns,
             end_time=end_ns,
             in_log_time_order=False
