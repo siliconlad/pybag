@@ -16,7 +16,12 @@ from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
 )
-from pybag.mcap.records import ChannelRecord, HeaderRecord, MessageRecord, SchemaRecord
+from pybag.mcap.records import (
+    ChannelRecord,
+    HeaderRecord,
+    MessageRecord,
+    SchemaRecord
+)
 
 # GLOBAL TODOs:
 # - TODO: Add tests with mcaps
