@@ -59,7 +59,7 @@ def filter_mcap(
             topics_to_filter -= set(exclude_topics)
 
         for msg in reader.messages(
-            topic=topics_to_filter,
+            topic=list(topics_to_filter),
             start_time=start_ns,
             end_time=end_ns,
             in_log_time_order=False
