@@ -37,6 +37,10 @@ def filter_mcap(
     if output_path == input_path:
         raise ValueError('Input path cannot be same as output.')
 
+    # Check if output path exists
+    if not overwrite and output_path.exists():
+        raise ValueError('Output mcap exists. Please set `overwrite` to True.')
+
     start_ns, end_ns = _to_ns(start_time), _to_ns(end_time)
 
     with (
