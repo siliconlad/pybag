@@ -3,7 +3,7 @@ from pathlib import Path
 from pybag.cli.main import main as cli_main
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
-from pybag.ros2.humble.std_msgs import Int32, Empty
+from pybag.ros2.humble.std_msgs import Empty, Int32
 
 
 def _create_mcap(path: Path) -> None:
