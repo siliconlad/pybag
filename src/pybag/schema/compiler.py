@@ -310,9 +310,10 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
 
         flush()
 
-        # Return dataclass instance
+        # Return dataclass instance - always instantiate, even if _fields is empty
+        # (e.g., for messages with only constants or no fields at all)
         class_name = _sanitize(current.name)
-        lines.append(f"{_TAB}return _dataclass_types[{class_name!r}](**_fields) if _fields else None")
+        lines.append(f"{_TAB}return _dataclass_types[{class_name!r}](**_fields)")
         function_defs.append("\n".join(lines))
         return func_name
 
