@@ -52,13 +52,15 @@ def filter_mcap(
                 chunk_compression=None,
             ) as writer
     ):
-        # If no topics specified, default to all topics
+        # Step 1: Get the initial set of topics to include
         if include_topics is None:
+            # If no topics specified, start with all topics
             topics_to_filter = set(reader.get_topics())
         else:
-            topics_to_filter = set(include_topics)
+            # Expand glob patterns in include list to get concrete topic names
+            topics_to_filter = set(reader._expand_topics(include_topics))
 
-        # Remove excluded topics
+        # Step 2: Remove excluded topics (after expansion)
         if exclude_topics:
             topics_to_filter -= set(exclude_topics)
 

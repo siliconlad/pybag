@@ -100,3 +100,48 @@ def test_cli_filter_empty_messages(tmp_path: Path) -> None:
         assert messages[0].data.__msg_name__ == 'std_msgs/msg/Empty'
         assert hasattr(messages[1].data, '__msg_name__')
         assert messages[1].data.__msg_name__ == 'std_msgs/msg/Empty'
+
+
+def test_cli_filter_glob_with_exclude(tmp_path: Path) -> None:
+    """Test that exclude filters work correctly with glob patterns in include.
+
+    This ensures that exclusions are applied AFTER glob expansion, not before.
+    """
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Create MCAP with multiple topics matching a glob pattern
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo/a", int(1e9), Int32(data=1))
+        writer.write_message("/foo/b", int(2e9), Int32(data=2))
+        writer.write_message("/foo/c", int(3e9), Int32(data=3))
+        writer.write_message("/bar", int(4e9), Int32(data=4))
+
+    # Filter to include all /foo/* topics but exclude /foo/b
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--include-topic",
+            "/foo/*",
+            "--exclude-topic",
+            "/foo/b",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    # Verify the output - should have /foo/a and /foo/c but NOT /foo/b
+    with McapFileReader.from_file(output_path) as reader:
+        topics = set(reader.get_topics())
+        expected_topics = {"/foo/a", "/foo/c"}
+        assert topics == expected_topics, f"Expected {expected_topics}, got {topics}"
+
+        # Verify messages
+        messages_a = list(reader.messages("/foo/a"))
+        assert len(messages_a) == 1
+        assert messages_a[0].data.data == 1
+
+        messages_c = list(reader.messages("/foo/c"))
+        assert len(messages_c) == 1
+        assert messages_c[0].data.data == 3
