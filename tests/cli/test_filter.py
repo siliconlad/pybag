@@ -72,9 +72,9 @@ def test_cli_filter_empty_messages(tmp_path: Path) -> None:
 
     # Create MCAP with Empty messages
     with McapFileWriter.open(input_path, chunk_size=1024) as writer:
-        writer.write_message("/empty", int(1e9), Empty(structure_needs_at_least_one_member=0))
+        writer.write_message("/empty", int(1e9), Empty())
         writer.write_message("/foo", int(2e9), Int32(data=42))
-        writer.write_message("/empty", int(3e9), Empty(structure_needs_at_least_one_member=0))
+        writer.write_message("/empty", int(3e9), Empty())
 
     # Filter to include only /empty topic
     cli_main(

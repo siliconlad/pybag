@@ -39,8 +39,8 @@ class ColorRGBA:
 class Empty:
     __msg_name__ = 'std_msgs/msg/Empty'
 
-    # TODO: Can this be removed?
-    structure_needs_at_least_one_member: t.uint8
+    # Optional field for C++ compatibility - defaults to 0 so you don't have to provide it
+    structure_needs_at_least_one_member: t.uint8 = 0
 
 
 @dataclass(kw_only=True)
