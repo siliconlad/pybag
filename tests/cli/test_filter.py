@@ -183,3 +183,96 @@ def test_cli_filter_exclude_with_glob(tmp_path: Path) -> None:
         messages = list(reader.messages("/bar"))
         assert len(messages) == 1
         assert messages[0].data.data == 3
+
+
+def test_cli_filter_preserves_publish_time(tmp_path: Path) -> None:
+    """Test that filtering preserves both log_time and publish_time.
+
+    Many MCAPs (e.g. rosbag2 recordings) have distinct log_time and publish_time,
+    and downstream tooling relies on both being preserved accurately.
+    """
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Create MCAP with messages that have different log_time and publish_time
+    log_time_1 = int(1e9)
+    publish_time_1 = int(1.5e9)  # Different from log_time
+    log_time_2 = int(2e9)
+    publish_time_2 = int(2.7e9)  # Different from log_time
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        # Need to write raw messages with separate log and publish times
+        # First, write normally to set up the channel
+        writer.write_message("/test", log_time_1, Int32(data=1))
+        writer.write_message("/test", log_time_2, Int32(data=2))
+
+    # Manually modify the MCAP to have different publish times
+    # (This is a bit hacky but necessary for testing)
+    from pybag.mcap_reader import McapFileReader as RawReader
+    from pybag.mcap.record_writer import McapRecordWriter
+    from pybag.mcap.records import MessageRecord
+    from pybag.serialize import MessageSerializerFactory
+
+    # Re-create with proper publish times
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        # Write message 1 - we'll need to use internal API
+        channel_id = writer.add_channel("/test", Int32)
+
+        # Serialize the message
+        msg1 = Int32(data=1)
+        serializer = MessageSerializerFactory.from_profile("ros2")
+        assert serializer is not None
+        data1 = serializer.serialize_message(msg1)
+
+        record1 = MessageRecord(
+            channel_id=channel_id,
+            sequence=0,
+            log_time=log_time_1,
+            publish_time=publish_time_1,
+            data=data1,
+        )
+        McapRecordWriter.write_message(writer._writer, record1)
+        writer._sequences[channel_id] = 1
+        writer._channel_message_counts[channel_id] = 1
+
+        # Message 2
+        msg2 = Int32(data=2)
+        data2 = serializer.serialize_message(msg2)
+
+        record2 = MessageRecord(
+            channel_id=channel_id,
+            sequence=1,
+            log_time=log_time_2,
+            publish_time=publish_time_2,
+            data=data2,
+        )
+        McapRecordWriter.write_message(writer._writer, record2)
+        writer._sequences[channel_id] = 2
+        writer._channel_message_counts[channel_id] = 2
+
+    # Filter the MCAP (should preserve all timestamps)
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    # Verify that both log_time and publish_time are preserved
+    with McapFileReader.from_file(output_path) as reader:
+        messages = list(reader.messages("/test"))
+        assert len(messages) == 2
+
+        # Check first message
+        assert messages[0].log_time == log_time_1
+        assert messages[0].publish_time == publish_time_1, \
+            f"Expected publish_time {publish_time_1}, got {messages[0].publish_time}"
+        assert messages[0].data.data == 1
+
+        # Check second message
+        assert messages[1].log_time == log_time_2
+        assert messages[1].publish_time == publish_time_2, \
+            f"Expected publish_time {publish_time_2}, got {messages[1].publish_time}"
+        assert messages[1].data.data == 2

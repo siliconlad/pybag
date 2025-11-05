@@ -76,6 +76,7 @@ def filter_mcap(
                 topic=msg.topic,
                 timestamp=msg.log_time,
                 message=msg.data,
+                publish_time=msg.publish_time,
             )
     return output_path
 
