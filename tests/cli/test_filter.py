@@ -145,3 +145,41 @@ def test_cli_filter_glob_with_exclude(tmp_path: Path) -> None:
         messages_c = list(reader.messages("/foo/c"))
         assert len(messages_c) == 1
         assert messages_c[0].data.data == 3
+
+
+def test_cli_filter_exclude_with_glob(tmp_path: Path) -> None:
+    """Test that glob patterns work in exclude filters.
+
+    This ensures that --exclude-topic with wildcards actually excludes matching topics.
+    """
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Create MCAP with multiple topics
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo/a", int(1e9), Int32(data=1))
+        writer.write_message("/foo/b", int(2e9), Int32(data=2))
+        writer.write_message("/bar", int(3e9), Int32(data=3))
+
+    # Filter to exclude all /foo/* topics using glob pattern
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--exclude-topic",
+            "/foo/*",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    # Verify the output - should only have /bar (all /foo/* should be excluded)
+    with McapFileReader.from_file(output_path) as reader:
+        topics = set(reader.get_topics())
+        expected_topics = {"/bar"}
+        assert topics == expected_topics, f"Expected {expected_topics}, got {topics}"
+
+        # Verify message
+        messages = list(reader.messages("/bar"))
+        assert len(messages) == 1
+        assert messages[0].data.data == 3

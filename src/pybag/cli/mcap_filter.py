@@ -62,7 +62,9 @@ def filter_mcap(
 
         # Step 2: Remove excluded topics (after expansion)
         if exclude_topics:
-            topics_to_filter -= set(exclude_topics)
+            # Expand glob patterns in exclude list too
+            expanded_exclude = set(reader._expand_topics(exclude_topics))
+            topics_to_filter -= expanded_exclude
 
         for msg in reader.messages(
             topic=list(topics_to_filter),
