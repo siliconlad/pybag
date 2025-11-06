@@ -135,7 +135,7 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             # Create sub-type if needed
             sub_schema = sub_schemas[field_type.type]
             sub_type = create_dataclass_type(sub_schema)
-            return Annotated[Any, ("complex", field_type.type)]
+            return Annotated[sub_type, ("complex", field_type.type)]
         else:
             return Any
 
@@ -149,8 +149,13 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
         field_specs = []
         for field_name, entry in current.fields.items():
             if isinstance(entry, SchemaConstant):
-                # Constants are class attributes, not fields
-                continue
+                # Constants must be dataclass fields with a special annotation
+                # so they can be recovered by the schema encoder
+                base_type = schema_type_to_annotation(entry.type)
+                # Wrap the type in a ('constant', base_type) annotation
+                constant_annotation = Annotated[base_type, ('constant', base_type)]
+                # Constants always have a default value
+                field_specs.append((field_name, constant_annotation, entry.value))
             elif isinstance(entry, SchemaField):
                 type_annotation = schema_type_to_annotation(entry.type)
                 if entry.default is not None:
@@ -165,11 +170,6 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             namespace={'__msg_name__': current.name},
             kw_only=True
         )
-
-        # Add constants as class attributes
-        for field_name, entry in current.fields.items():
-            if isinstance(entry, SchemaConstant):
-                setattr(dataclass_type, field_name, entry.value)
 
         dataclass_types[class_name] = dataclass_type
         return dataclass_type

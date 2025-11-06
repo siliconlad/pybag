@@ -208,9 +208,9 @@ def test_cli_filter_preserves_publish_time(tmp_path: Path) -> None:
 
     # Manually modify the MCAP to have different publish times
     # (This is a bit hacky but necessary for testing)
-    from pybag.mcap_reader import McapFileReader as RawReader
     from pybag.mcap.record_writer import McapRecordWriter
     from pybag.mcap.records import MessageRecord
+    from pybag.mcap_reader import McapFileReader as RawReader
     from pybag.serialize import MessageSerializerFactory
 
     # Re-create with proper publish times
@@ -276,3 +276,74 @@ def test_cli_filter_preserves_publish_time(tmp_path: Path) -> None:
         assert messages[1].publish_time == publish_time_2, \
             f"Expected publish_time {publish_time_2}, got {messages[1].publish_time}"
         assert messages[1].data.data == 2
+
+
+def test_cli_filter_preserves_constants(tmp_path: Path) -> None:
+    """Test that filtering preserves schema constants.
+
+    When filtering an MCAP, the constants defined in message schemas should be
+    preserved in the output file. This is critical for schema compatibility.
+
+    For example, sensor_msgs/BatteryState has POWER_SUPPLY_* constants that
+    downstream tools rely on.
+    """
+    from pybag.ros2.humble.sensor_msgs import BatteryState
+    from pybag.ros2.humble.std_msgs import Header
+    from pybag.ros2.humble.builtin_interfaces import Time
+
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Write an MCAP with BatteryState message (which has constants)
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message(
+            "/battery",
+            int(1e9),
+            BatteryState(
+                header=Header(stamp=Time(sec=0, nanosec=0), frame_id="battery"),
+                voltage=12.0,
+                temperature=25.0,
+                current=1.5,
+                charge=10.0,
+                capacity=100.0,
+                design_capacity=100.0,
+                percentage=0.1,
+                power_supply_status=BatteryState.POWER_SUPPLY_STATUS_DISCHARGING,
+                power_supply_health=BatteryState.POWER_SUPPLY_HEALTH_GOOD,
+                power_supply_technology=BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN,
+                present=True,
+                cell_voltage=[3.7, 3.7, 3.7],
+                cell_temperature=[25.0, 25.0, 25.0],
+                location="base",
+                serial_number="123456"
+            )
+        )
+
+    # Filter the MCAP
+    cli_main([
+        "filter",
+        str(input_path),
+        "--output",
+        str(output_path),
+    ])
+
+    # Read the filtered MCAP and verify constants are preserved on the message object
+    with McapFileReader.from_file(output_path) as reader:
+        messages = list(reader.messages("/battery"))
+        assert len(messages) == 1, "Expected 1 message in filtered MCAP"
+
+        msg = messages[0].data
+
+        # Verify that the decoded message has all the POWER_SUPPLY_* constants
+        assert hasattr(msg, "POWER_SUPPLY_STATUS_UNKNOWN")
+        assert hasattr(msg, "POWER_SUPPLY_STATUS_CHARGING")
+        assert hasattr(msg, "POWER_SUPPLY_STATUS_DISCHARGING")
+        assert hasattr(msg, "POWER_SUPPLY_HEALTH_GOOD")
+        assert hasattr(msg, "POWER_SUPPLY_TECHNOLOGY_UNKNOWN")
+
+        # Verify constant values are correct
+        assert msg.POWER_SUPPLY_STATUS_UNKNOWN == 0
+        assert msg.POWER_SUPPLY_STATUS_CHARGING == 1
+        assert msg.POWER_SUPPLY_STATUS_DISCHARGING == 2
+        assert msg.POWER_SUPPLY_HEALTH_GOOD == 1
+        assert msg.POWER_SUPPLY_TECHNOLOGY_UNKNOWN == 0
