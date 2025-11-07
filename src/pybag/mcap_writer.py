@@ -4,9 +4,16 @@ import logging
 import zlib
 from pathlib import Path
 from typing import Any, Callable, Literal
+from urllib.parse import urlparse
 
 from pybag import __version__
-from pybag.io.raw_writer import BaseWriter, BytesWriter, CrcWriter, FileWriter
+from pybag.io.raw_writer import (
+    BaseWriter,
+    BytesWriter,
+    CrcWriter,
+    FileWriter,
+    NetworkWriter
+)
 from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     ChannelRecord,
@@ -103,8 +110,17 @@ class McapFileWriter:
             A writer backed by a file on disk.
         """
 
+        destination = str(file_path)
+        parsed = urlparse(destination)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            writer = NetworkWriter(destination)
+        elif parsed.scheme == "file" and parsed.path:
+            writer = FileWriter(Path(parsed.path))
+        else:
+            writer = FileWriter(file_path)
+
         return cls(
-            FileWriter(file_path),
+            writer,
             profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,

@@ -1,6 +1,8 @@
 import tempfile
 from dataclasses import dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Event, Thread
 from typing import Literal
 
 import pytest
@@ -202,6 +204,70 @@ def test_add_channel_and_write_message() -> None:
     # Check the summary magic bytes
     summary_version = McapRecordParser.parse_magic_bytes(reader)
     assert summary_version == version
+
+
+def test_streaming_writer_over_http(tmp_path: Path) -> None:
+    received_data: bytes | None = None
+    request_event = Event()
+
+    class StreamingHandler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            nonlocal received_data
+            data = bytearray()
+            if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+                while True:
+                    chunk_size_line = self.rfile.readline().strip()
+                    if not chunk_size_line:
+                        continue
+                    size = int(chunk_size_line, 16)
+                    if size == 0:
+                        # Consume the trailing CRLF after the zero-length chunk
+                        self.rfile.readline()
+                        break
+                    chunk = self.rfile.read(size)
+                    data.extend(chunk)
+                    # Each chunk is terminated by CRLF
+                    self.rfile.read(2)
+            else:
+                length = int(self.headers.get("Content-Length", "0"))
+                data.extend(self.rfile.read(length))
+
+            received_data = bytes(data)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+            request_event.set()
+
+        def log_message(self, format: str, *args: object) -> None:  # pragma: no cover - suppress server logs
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), StreamingHandler)
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    @dataclass
+    class Example:
+        __msg_name__ = "tests/msgs/NetworkExample"
+        value: pybag.int32
+
+    try:
+        # Write MCAP to disk to obtain the expected byte sequence
+        expected_path = tmp_path / "expected.mcap"
+        with McapFileWriter.open(expected_path, chunk_compression=None) as writer:
+            writer.write_message("/example", 1, Example(5))
+        expected_bytes = expected_path.read_bytes()
+
+        # Stream MCAP data to the HTTP server
+        port = server.server_address[1]
+        with McapFileWriter.open(f"http://127.0.0.1:{port}/stream", chunk_compression=None) as writer:
+            writer.write_message("/example", 1, Example(5))
+
+        assert request_event.wait(timeout=5)
+        assert received_data is not None
+        assert received_data == expected_bytes
+    finally:
+        server.shutdown()
+        server_thread.join()
 
 
 def test_invalid_profile() -> None:

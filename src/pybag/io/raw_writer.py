@@ -1,6 +1,9 @@
 import zlib
 from abc import ABC, abstractmethod
+from http.client import HTTPConnection, HTTPSConnection
 from pathlib import Path
+from typing import Mapping
+from urllib.parse import urlsplit
 
 
 class BaseWriter(ABC):
@@ -95,3 +98,69 @@ class CrcWriter(BaseWriter):
 
     def close(self) -> None:
         self._writer.close()
+
+
+class NetworkWriter(BaseWriter):
+    """Stream binary data to a network destination using HTTP chunked transfer."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        method: str = "POST",
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"}:
+            raise ValueError(f"Unsupported URL scheme for network writer: {parsed.scheme!r}")
+        if parsed.hostname is None:
+            raise ValueError(f"URL must include a hostname: {url!r}")
+
+        self._bytes_written = 0
+        self._closed = False
+
+        connection_cls = HTTPConnection if parsed.scheme == "http" else HTTPSConnection
+        port = parsed.port
+        self._connection = connection_cls(parsed.hostname, port=port, timeout=timeout)
+
+        path = parsed.path or "/"
+        if parsed.query:
+            path = f"{path}?{parsed.query}"
+
+        self._connection.putrequest(method, path)
+        headers = {"Content-Type": "application/octet-stream", **(headers or {})}
+        # Use chunked transfer to avoid buffering the entire MCAP file in memory.
+        self._connection.putheader("Transfer-Encoding", "chunked")
+        for header, value in headers.items():
+            self._connection.putheader(header, value)
+        self._connection.endheaders()
+
+    def write(self, data: bytes) -> int:
+        if self._closed:
+            raise ValueError("Cannot write to a closed NetworkWriter")
+        if not data:
+            return 0
+
+        chunk_header = f"{len(data):X}\r\n".encode("ascii")
+        self._connection.send(chunk_header)
+        self._connection.send(data)
+        self._connection.send(b"\r\n")
+        self._bytes_written += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self._bytes_written
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        # Terminate the chunked transfer stream.
+        self._connection.send(b"0\r\n\r\n")
+        try:
+            response = self._connection.getresponse()
+            # Ensure the response body is fully consumed so the server can reuse the connection.
+            response.read()
+        finally:
+            self._connection.close()
