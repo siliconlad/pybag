@@ -29,12 +29,15 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Source ROS environment in bashrc
-RUN echo 'source /opt/ros/'$ROS_DISTRO'/setup.bash' >> /root/.bashrc
+# Uncommenting causes problems with uv environments (pyyaml + lark)
+# RUN echo 'source /opt/ros/'$ROS_DISTRO'/setup.bash' >> /root/.bashrc
 
 # Git Config
 RUN git config --global push.autoSetupRemote true
 RUN git config --global core.editor "vim"
 RUN git config --global --add safe.directory /pybag
+RUN git config --global push.default current
+
 
 # Switch back to dialog for any ad-hoc use of apt-get
 ENV DEBIAN_FRONTEND=

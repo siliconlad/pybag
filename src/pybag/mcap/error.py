@@ -2,6 +2,36 @@ class McapError(Exception):
     """Base exception for all MCAP errors."""
 
 
+class McapNoChunkIndexError(McapError):
+    """Exception raised when a MCAP file has no chunk index records."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class McapNoChunkError(McapError):
+    """Exception raised when a MCAP file has no chunk records."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class McapUnexpectedChunkIndexError(McapError):
+    """Exception raised when a MCAP file has a chunk index record."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class McapUnexpectedChunkError(McapError):
+    """Exception raised when a MCAP file has a chunk record."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class McapUnexpectedRecordError(McapError):
+    """Exception raised when a record is found in an unexpected place."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
 class McapNoSummarySectionError(McapError):
     """Exception raised when a MCAP file has no summary section."""
     def __init__(self, message: str):

@@ -61,9 +61,8 @@ def test_color_rgba_pybag() -> None:
     assert decoded_msgs[0].a == 0.75
 
 
-# TODO: How to handle empty messages?
 def test_empty_pybag() -> None:
-    msg = std_msgs.Empty(structure_needs_at_least_one_member=0)
+    msg = std_msgs.Empty()
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'Empty'
