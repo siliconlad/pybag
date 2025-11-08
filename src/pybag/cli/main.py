@@ -1,5 +1,7 @@
 import argparse
 
+from pybag.cli import mcap_filter
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -9,11 +11,14 @@ def build_parser() -> argparse.ArgumentParser:
             "MCAP and bag files."
         ),
     )
+    parser.set_defaults(func=lambda args: parser.print_help())
+
+    # Pybag CLI Subcommands
     subparsers = parser.add_subparsers(dest="command")
 
-    # In the future subcommands will be added here.
+    # `filter` command
+    mcap_filter.add_parser(subparsers)
 
-    parser.set_defaults(func=lambda args: parser.print_help())
     return parser
 
 

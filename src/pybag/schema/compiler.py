@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import re
 import struct
+from dataclasses import make_dataclass
 from itertools import count
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Annotated, Any, Callable
 
+import pybag.types as t
 from pybag.encoding import MessageDecoder
 from pybag.schema import (
     Array,
@@ -67,23 +69,125 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
     """Compile ``schema`` into a decoder function.
 
     The returned function accepts a :class:`MessageDecoder` instance and returns a
-    dynamically constructed type with the decoded fields as class attributes.
+    dynamically constructed dataclass instance with the decoded fields.
     """
 
     function_defs: list[str] = []
     compiled: dict[str, str] = {}
+    dataclass_types: dict[str, type] = {}
+
+    # Map primitive types to their annotated equivalents
+    _PRIMITIVE_TYPE_MAP = {
+        'int8': t.int8,
+        'int16': t.int16,
+        'int32': t.int32,
+        'int64': t.int64,
+        'uint8': t.uint8,
+        'uint16': t.uint16,
+        'uint32': t.uint32,
+        'uint64': t.uint64,
+        'float32': t.float32,
+        'float64': t.float64,
+        'bool': t.bool,
+        'byte': t.byte,
+        'char': t.char,
+        'string': t.string,
+        'wstring': t.wstring,
+    }
+
+    def schema_type_to_annotation(field_type: SchemaFieldType) -> Any:
+        """Convert a schema field type to a proper type annotation."""
+        if isinstance(field_type, Primitive):
+            return _PRIMITIVE_TYPE_MAP.get(field_type.type, Any)
+        elif isinstance(field_type, String):
+            return _PRIMITIVE_TYPE_MAP.get(field_type.type, str)
+        elif isinstance(field_type, Array):
+            elem_type = field_type.type
+            if isinstance(elem_type, Primitive):
+                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, Any)
+                return Annotated[list[elem_annotation], ("array", elem_annotation, field_type.length)]  # type: ignore[valid-type]
+            elif isinstance(elem_type, String):
+                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, str)
+                return Annotated[list[elem_annotation], ("array", elem_annotation, field_type.length)]  # type: ignore[valid-type]
+            elif isinstance(elem_type, Complex):
+                # Create sub-type if needed - use Any for list element since type is dynamic
+                sub_schema = sub_schemas[elem_type.type]
+                elem_annotation = create_dataclass_type(sub_schema)
+                return Annotated[list[Any], ("array", elem_annotation, field_type.length)]
+            else:
+                return Annotated[list[Any], ("array", Any, field_type.length)]
+        elif isinstance(field_type, Sequence):
+            elem_type = field_type.type
+            if isinstance(elem_type, Primitive):
+                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, Any)
+                return Annotated[list[elem_annotation], ("array", elem_annotation, None)]  # type: ignore[valid-type]
+            elif isinstance(elem_type, String):
+                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, str)
+                return Annotated[list[elem_annotation], ("array", elem_annotation, None)]  # type: ignore[valid-type]
+            elif isinstance(elem_type, Complex):
+                # Create sub-type if needed - use Any for list element since type is dynamic
+                sub_schema = sub_schemas[elem_type.type]
+                elem_annotation = create_dataclass_type(sub_schema)
+                return Annotated[list[Any], ("array", elem_annotation, None)]
+            else:
+                return Annotated[list[Any], ("array", Any, None)]
+        elif isinstance(field_type, Complex):
+            # Create sub-type if needed
+            sub_schema = sub_schemas[field_type.type]
+            sub_type = create_dataclass_type(sub_schema)
+            return Annotated[sub_type, ("complex", field_type.type)]
+        else:
+            return Any
+
+    # Create dataclass types for all schemas
+    def create_dataclass_type(current: Schema) -> type:
+        class_name = _sanitize(current.name)
+        if class_name in dataclass_types:
+            return dataclass_types[class_name]
+
+        # Collect field names and types with proper annotations
+        field_specs = []
+        for field_name, entry in current.fields.items():
+            if isinstance(entry, SchemaConstant):
+                # Constants must be dataclass fields with a special annotation
+                # so they can be recovered by the schema encoder
+                base_type = schema_type_to_annotation(entry.type)
+                # Wrap the type in a ('constant', base_type) annotation
+                constant_annotation = Annotated[base_type, ('constant', base_type)]
+                # Constants always have a default value
+                field_specs.append((field_name, constant_annotation, entry.value))
+            elif isinstance(entry, SchemaField):
+                type_annotation = schema_type_to_annotation(entry.type)
+                if entry.default is not None:
+                    field_specs.append((field_name, type_annotation, entry.default))
+                else:
+                    field_specs.append((field_name, type_annotation))
+
+        # Create dataclass with __msg_name__ attribute
+        dataclass_type = make_dataclass(
+            class_name,
+            field_specs,
+            namespace={'__msg_name__': current.name},
+            kw_only=True
+        )
+
+        dataclass_types[class_name] = dataclass_type
+        return dataclass_type
 
     def build(current: Schema) -> str:
         func_name = f"decode_{_sanitize(current.name)}"
         if func_name in compiled:
             return func_name
 
+        # Create dataclass type for this schema
+        dataclass_type = create_dataclass_type(current)
+
         compiled[func_name] = func_name
         lines: list[str] = [
             f"def {func_name}(decoder):",
             f"{_TAB}fmt_prefix = '<' if decoder._is_little_endian else '>'",
             f"{_TAB}_data = decoder._data",
-            f"{_TAB}obj = SimpleNamespace()",
+            f"{_TAB}_fields = {{}}",
         ]
         field_names: list[str] = []
         run_type: str | None = None
@@ -103,24 +207,25 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                 names = ", ".join(run_fields)
                 lines.append(f"{_TAB}{names} = struct.unpack(fmt_prefix + '{fmt}', _data.read({size * count}))")
                 for field in run_fields:
-                    lines.append(f"{_TAB}obj.{field} = {field}")
+                    lines.append(f"{_TAB}_fields[{field!r}] = {field}")
             else:
                 field = run_fields[0]
-                lines.append(f"{_TAB}obj.{field} = struct.unpack(fmt_prefix + '{fmt}', _data.read({size * count}))[0]")
+                lines.append(f"{_TAB}_fields[{field!r}] = struct.unpack(fmt_prefix + '{fmt}', _data.read({size * count}))[0]")
 
             run_fields = []
             run_type = None
 
         for field_name, entry in current.fields.items():
-            field_names.append(field_name)
             if isinstance(entry, SchemaConstant):
+                # Skip constants - they're class attributes, not instance fields
                 flush()
-                lines.append(f"{_TAB}obj.{field_name} = {repr(entry.value)}")
                 continue
+
+            field_names.append(field_name)
 
             if not isinstance(entry, SchemaField):
                 flush()
-                lines.append(f"{_TAB}obj.{field_name} = None")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = None")
                 continue
 
             field_type = entry.type
@@ -137,10 +242,10 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             flush()
 
             if isinstance(field_type, Primitive):
-                lines.append(f"{_TAB}obj.{field_name} = decoder.{field_type.type}()")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
 
             elif isinstance(field_type, String):
-                lines.append(f"{_TAB}obj.{field_name} = decoder.{field_type.type}()")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
 
             elif isinstance(field_type, Array):
                 elem = field_type.type
@@ -149,23 +254,23 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                     fmt = _STRUCT_FORMAT[elem.type] * field_type.length
                     lines.append(f"{_TAB}_data.align({size})")
                     lines.append(
-                        f"{_TAB}obj.{field_name} = list(struct.unpack(fmt_prefix + '{fmt}', _data.read({size * field_type.length})))"
+                        f"{_TAB}_fields[{field_name!r}] = list(struct.unpack(fmt_prefix + '{fmt}', _data.read({size * field_type.length})))"
                     )
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
                     lines.append(
-                        f"{_TAB}obj.{field_name} = [{sub_func}(decoder) for _ in range({field_type.length})]"
+                        f"{_TAB}_fields[{field_name!r}] = [{sub_func}(decoder) for _ in range({field_type.length})]"
                     )
                 elif isinstance(elem, String):
                     elem_name = elem.type
                     lines.append(
-                        f"{_TAB}obj.{field_name} = [decoder.{elem_name}() for _ in range({field_type.length})]"
+                        f"{_TAB}_fields[{field_name!r}] = [decoder.{elem_name}() for _ in range({field_type.length})]"
                     )
                 else:
                     elem_name = getattr(elem, "type", "unknown")
                     lines.append(
-                        f"{_TAB}obj.{field_name} = decoder.array('{elem_name}', {field_type.length})"
+                        f"{_TAB}_fields[{field_name!r}] = decoder.array('{elem_name}', {field_type.length})"
                     )
 
             elif isinstance(field_type, Sequence):
@@ -176,41 +281,46 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                     lines.append(f"{_TAB}_len = decoder.uint32()")
                     lines.append(f"{_TAB}_data.align({size})")
                     lines.append(
-                        f"{_TAB}obj.{field_name} = list(struct.unpack(fmt_prefix + '{char}' * _len, _data.read({size} * _len)))"
+                        f"{_TAB}_fields[{field_name!r}] = list(struct.unpack(fmt_prefix + '{char}' * _len, _data.read({size} * _len)))"
                     )
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
                     lines.append(f"{_TAB}length = decoder.uint32()")
                     lines.append(
-                        f"{_TAB}obj.{field_name} = [{sub_func}(decoder) for _ in range(length)]"
+                        f"{_TAB}_fields[{field_name!r}] = [{sub_func}(decoder) for _ in range(length)]"
                     )
                 elif isinstance(elem, String):
                     lines.append(f"{_TAB}length = decoder.uint32()")
                     elem_name = elem.type
                     lines.append(
-                        f"{_TAB}obj.{field_name} = [decoder.{elem_name}() for _ in range(length)]"
+                        f"{_TAB}_fields[{field_name!r}] = [decoder.{elem_name}() for _ in range(length)]"
                     )
                 else:
                     elem_name = getattr(elem, "type", "unknown")
-                    lines.append(f"{_TAB}obj.{field_name} = decoder.sequence('{elem_name}')")
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.sequence('{elem_name}')")
 
             elif isinstance(field_type, Complex):
                 sub_schema = sub_schemas[field_type.type]
                 sub_func = build(sub_schema)
-                lines.append(f"{_TAB}obj.{field_name} = {sub_func}(decoder)")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = {sub_func}(decoder)")
 
             else:
-                lines.append(f"{_TAB}obj.{field_name} = None")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = None")
 
         flush()
-        lines.append(f"{_TAB}return {'obj' if field_names else 'None'}")
+
+        # Return dataclass instance - always instantiate, even if _fields is empty
+        # (e.g., for messages with only constants or no fields at all)
+        class_name = _sanitize(current.name)
+        lines.append(f"{_TAB}return _dataclass_types[{class_name!r}](**_fields)")
         function_defs.append("\n".join(lines))
         return func_name
 
     build(schema)
-    code = "import struct\nfrom types import SimpleNamespace\n" + "\n\n".join(function_defs)
-    namespace: dict[str, object] = {"struct": struct, "SimpleNamespace": SimpleNamespace}
+    code = "import struct\n" + "\n\n".join(function_defs)
+
+    namespace: dict[str, object] = {"struct": struct, "_dataclass_types": dataclass_types}
     exec(code, namespace)
     return namespace[f"decode_{_sanitize(schema.name)}"]  # type: ignore[index]
 

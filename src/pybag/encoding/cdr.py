@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class CdrDecoder(MessageDecoder):
     def __init__(self, data: bytes):
-        assert len(data) > 4, 'Data must be at least 4 bytes long.'
+        assert len(data) >= 4, 'Data must be at least 4 bytes long (CDR header).'
 
         # Get endianness from second byte
         self._is_little_endian = bool(data[1])

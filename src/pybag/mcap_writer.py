@@ -148,15 +148,22 @@ class McapFileWriter:
 
         return channel_id
 
-    def write_message(self, topic: str, timestamp: int, message: Message) -> None:
+    def write_message(
+        self,
+        topic: str,
+        timestamp: int,
+        message: Message,
+        publish_time: int | None = None
+    ) -> None:
         """Write a message to a topic at a given timestamp.
 
         Automatically creates the channel (and schema) if it doesn't exist.
 
         Args:
             topic: The topic name.
-            timestamp: The timestamp of the message in nanoseconds.
+            timestamp: The log timestamp of the message (nanoseconds).
             message: The message to write.
+            publish_time: The publish timestamp (nanoseconds). If None, defaults to timestamp.
         """
         # Ensure the channel exists
         channel_id = self.add_channel(topic, type(message))
@@ -165,12 +172,15 @@ class McapFileWriter:
         sequence = self._sequences[channel_id]
         self._sequences[channel_id] = sequence + 1
 
+        # Use publish_time if provided, otherwise default to timestamp (log_time)
+        actual_publish_time = publish_time if publish_time is not None else timestamp
+
         # Create message record
         record = MessageRecord(
             channel_id=channel_id,
             sequence=sequence,
             log_time=timestamp,
-            publish_time=timestamp,
+            publish_time=actual_publish_time,
             data=self._message_serializer.serialize_message(message),
         )
 

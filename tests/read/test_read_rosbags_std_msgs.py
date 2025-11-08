@@ -157,7 +157,10 @@ def test_empty_rosbags(typestore: Typestore):
         assert messages[0].publish_time == 0
         assert messages[0].sequence == 0
         assert messages[0].channel_id == channel_id
-        assert messages[0].data is None
+        # Empty messages should return a dataclass instance, not None
+        assert messages[0].data is not None
+        assert hasattr(messages[0].data, '__msg_name__')
+        assert messages[0].data.__msg_name__ == 'std_msgs/msg/Empty'
 
 
 def test_float32_rosbags(typestore: Typestore):

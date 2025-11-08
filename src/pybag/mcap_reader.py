@@ -7,11 +7,7 @@ from types import TracebackType
 from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
-from pybag.mcap.error import (
-    McapUnknownEncodingError,
-    McapUnknownSchemaError,
-    McapUnknownTopicError
-)
+from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
@@ -53,6 +49,10 @@ class McapFileReader:
     def from_bytes(data: bytes) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_bytes(data)
         return McapFileReader(reader)
+
+    @property
+    def profile(self) -> str:
+        return self._profile
 
     def get_topics(self) -> list[str]:
         """Get all topics in the MCAP file."""
