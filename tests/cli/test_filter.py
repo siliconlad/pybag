@@ -201,54 +201,9 @@ def test_cli_filter_preserves_publish_time(tmp_path: Path) -> None:
     publish_time_2 = int(2.7e9)  # Different from log_time
 
     with McapFileWriter.open(input_path, chunk_size=1024) as writer:
-        # Need to write raw messages with separate log and publish times
-        # First, write normally to set up the channel
-        writer.write_message("/test", log_time_1, Int32(data=1))
-        writer.write_message("/test", log_time_2, Int32(data=2))
-
-    # Manually modify the MCAP to have different publish times
-    # (This is a bit hacky but necessary for testing)
-    from pybag.mcap.record_writer import McapRecordWriter
-    from pybag.mcap.records import MessageRecord
-    from pybag.mcap_reader import McapFileReader as RawReader
-    from pybag.serialize import MessageSerializerFactory
-
-    # Re-create with proper publish times
-    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
-        # Write message 1 - we'll need to use internal API
-        channel_id = writer.add_channel("/test", Int32)
-
-        # Serialize the message
-        msg1 = Int32(data=1)
-        serializer = MessageSerializerFactory.from_profile("ros2")
-        assert serializer is not None
-        data1 = serializer.serialize_message(msg1)
-
-        record1 = MessageRecord(
-            channel_id=channel_id,
-            sequence=0,
-            log_time=log_time_1,
-            publish_time=publish_time_1,
-            data=data1,
-        )
-        McapRecordWriter.write_message(writer._writer, record1)
-        writer._sequences[channel_id] = 1
-        writer._channel_message_counts[channel_id] = 1
-
-        # Message 2
-        msg2 = Int32(data=2)
-        data2 = serializer.serialize_message(msg2)
-
-        record2 = MessageRecord(
-            channel_id=channel_id,
-            sequence=1,
-            log_time=log_time_2,
-            publish_time=publish_time_2,
-            data=data2,
-        )
-        McapRecordWriter.write_message(writer._writer, record2)
-        writer._sequences[channel_id] = 2
-        writer._channel_message_counts[channel_id] = 2
+        # Write messages with different log_time and publish_time using the public API
+        writer.write_message("/test", log_time_1, Int32(data=1), publish_time=publish_time_1)
+        writer.write_message("/test", log_time_2, Int32(data=2), publish_time=publish_time_2)
 
     # Filter the MCAP (should preserve all timestamps)
     cli_main(
