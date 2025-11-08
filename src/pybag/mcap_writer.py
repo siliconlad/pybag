@@ -5,7 +5,10 @@ from pathlib import Path
 from typing import Literal
 
 from pybag.io.raw_writer import BaseWriter, FileWriter
-from pybag.mcap.record_writer import BaseMcapRecordWriter, McapRecordWriterFactory
+from pybag.mcap.record_writer import (
+    BaseMcapRecordWriter,
+    McapRecordWriterFactory
+)
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
