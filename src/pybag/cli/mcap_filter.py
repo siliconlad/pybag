@@ -6,7 +6,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
-from typing import Iterable
+from typing import Literal
 
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
@@ -29,14 +29,12 @@ def filter_mcap(
     exclude_topics: list[str] | None = None,
     start_time: float | None = None,
     end_time: float | None = None,
+    chunk_size: int | None = None,
+    chunk_compression: Literal["lz4", "zstd"] | None = None,
     *,
     overwrite: bool = False
 ) -> Path:
-    """Filter an MCAP file based on topics and time.
-
-    This function preserves exact schema and channel records from the input file,
-    rather than regenerating them based on message types.
-    """
+    """Filter an MCAP file based on topics and time."""
     # Resolve input and output paths
     input_path = Path(input_path).resolve()
     if output_path is None:
@@ -50,7 +48,6 @@ def filter_mcap(
         raise ValueError('Output mcap exists. Please set `overwrite` to True.')
 
     start_ns, end_ns = _to_ns(start_time), _to_ns(end_time)
-
     with McapRecordReaderFactory.from_file(input_path) as reader:
         # Build topic -> channel_ids mapping
         all_channels = reader.get_channels()
@@ -83,8 +80,8 @@ def filter_mcap(
         # Step 2: Write the filtered MCAP using factory
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
-            chunk_size=None,  # TODO: What is the best way to set this?
-            chunk_compression="lz4",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
             profile=reader.get_header().profile
         ) as writer:
             # Write message records as we read them
@@ -113,7 +110,6 @@ def filter_mcap(
                     else:
                         channel_id = msg_record.channel_id
                         logger.warning(f'Schema {schema_id} not found for channel {channel_id}')
-                        continue
 
                 # Write the channel record to the mcap the first time
                 if msg_record.channel_id not in written_channel_ids:
@@ -142,6 +138,8 @@ def _filter_mcap_from_args(args: argparse.Namespace) -> None:
         exclude_topics=args.exclude_topic,
         start_time=args.start_time,
         end_time=args.end_time,
+        chunk_size=args.chunk_size,
+        chunk_compression=args.chunk_compression,
     )
 
 
@@ -192,5 +190,16 @@ def add_parser(subparsers) -> None:
             the start time is ignored and not included in the output mcap.
             By default it is set to the largest log time in the input mcap.
         """)
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        help=dedent("""Chunk size of the new filtered mcap in bytes.""")
+    )
+    parser.add_argument(
+        "--chunk-compression",
+        type=str,
+        choices=['lz4', 'zstd', None],
+        help=dedent("""Compression used for the chunk records.""")
     )
     parser.set_defaults(func=_filter_mcap_from_args)
