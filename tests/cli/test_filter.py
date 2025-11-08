@@ -447,4 +447,12 @@ def test_cli_filter_empty_result_creates_empty_mcap(tmp_path: Path) -> None:
     ])
 
     # Verify output exists and is a valid MCAP
-    assert not output_path.exists(), "No output file expected"
+    assert output_path.exists(), "No output file expected"
+
+    # Read schema records from output file
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        output_schemas = reader.get_schemas()
+        output_channels = reader.get_channels()
+
+    assert len(output_schemas) == 0, f"Expected 0 output schema, got {len(output_schemas)}"
+    assert len(output_channels) == 0, f"Expected 0 output channel, got {len(output_channels)}"
