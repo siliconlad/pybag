@@ -9,18 +9,11 @@ from typing import Any, Callable
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import (
     McapUnknownEncodingError,
-    McapUnknownSchemaError,
     McapUnknownTopicError
 )
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
-)
-from pybag.mcap.records import (
-    ChannelRecord,
-    HeaderRecord,
-    MessageRecord,
-    SchemaRecord
 )
 
 # GLOBAL TODOs:
