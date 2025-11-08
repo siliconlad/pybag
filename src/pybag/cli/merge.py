@@ -5,6 +5,7 @@ from pybag.io.raw_reader import BytesReader, FileReader
 from pybag.io.raw_writer import CrcWriter, FileWriter
 from pybag.mcap.record_parser import McapRecordParser, McapRecordType
 from pybag.mcap.record_reader import decompress_chunk
+from pybag.mcap.record_writer import McapRecordWriter
 from pybag.mcap.records import (
     ChannelRecord,
     DataEndRecord,
@@ -14,9 +15,8 @@ from pybag.mcap.records import (
     RecordType,
     SchemaRecord,
     StatisticsRecord,
-    SummaryOffsetRecord,
+    SummaryOffsetRecord
 )
-from pybag.mcap.record_writer import McapRecordWriter
 
 
 def merge(inputs: Sequence[str], output: str) -> None:

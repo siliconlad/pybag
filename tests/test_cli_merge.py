@@ -1,8 +1,9 @@
 from pathlib import Path
 
-import pybag.ros2.humble.std_msgs as std_msgs
 from mcap.reader import make_reader
 from mcap_ros2.decoder import DecoderFactory
+
+import pybag.ros2.humble.std_msgs as std_msgs
 from pybag.cli.main import main
 from pybag.mcap_writer import McapFileWriter
 
