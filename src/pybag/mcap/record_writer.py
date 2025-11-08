@@ -1,3 +1,4 @@
+import logging
 import struct
 import zlib
 from abc import ABC, abstractmethod
@@ -271,16 +272,6 @@ class BaseMcapRecordWriter(ABC):
     binary serialization, chunking, compression, and summary section management.
     """
 
-    # Protected attributes that subclasses must initialize
-    _writer: CrcWriter
-    _schema_records: list[SchemaRecord]
-    _channel_records: list[ChannelRecord]
-    _message_count: int
-    _chunk_count: int
-    _message_start_time: int | None
-    _message_end_time: int | None
-    _channel_message_counts: dict[int, int]
-
     @abstractmethod
     def write_schema(self, schema: SchemaRecord) -> None:
         """Write a schema record to the MCAP file.
@@ -325,6 +316,10 @@ class BaseMcapRecordWriter(ABC):
 
     def _write_summary_section(
         self,
+        writer: CrcWriter,
+        schema_records: list[SchemaRecord] | None = None,
+        channel_records: list[ChannelRecord] | None = None,
+        statistics_record: StatisticsRecord | None = None,
         chunk_indexes: list[ChunkIndexRecord] | None = None
     ) -> tuple[int, int]:
         """Write the summary section and return (summary_start, summary_offset_start).
@@ -336,50 +331,42 @@ class BaseMcapRecordWriter(ABC):
             Tuple of (summary_start, summary_offset_start) positions.
         """
         # Start summary section
-        summary_start = self._writer.tell()
-        self._writer.clear_crc()
+        summary_start = writer.tell()
+        writer.clear_crc()
 
         # Write schema records to summary
         schema_group_start = summary_start
-        for record in self._schema_records:
-            McapRecordWriter.write_schema(self._writer, record)
-        schema_group_length = self._writer.tell() - schema_group_start
+        if schema_records:
+            for record in schema_records:
+                McapRecordWriter.write_schema(writer, record)
+        schema_group_length = writer.tell() - schema_group_start
 
         # Write channel records to summary
-        channel_group_start = self._writer.tell()
-        for record in self._channel_records:
-            McapRecordWriter.write_channel(self._writer, record)
-        channel_group_length = self._writer.tell() - channel_group_start
+        channel_group_start = writer.tell()
+        if channel_records:
+            for record in channel_records:
+                McapRecordWriter.write_channel(writer, record)
+        channel_group_length = writer.tell() - channel_group_start
 
         # Write chunk index records to summary (only for chunked writers)
-        chunk_index_group_start = self._writer.tell()
+        chunk_index_group_start = writer.tell()
         chunk_index_group_length = 0
         if chunk_indexes:
             for record in chunk_indexes:
-                McapRecordWriter.write_chunk_index(self._writer, record)
-            chunk_index_group_length = self._writer.tell() - chunk_index_group_start
+                McapRecordWriter.write_chunk_index(writer, record)
+            chunk_index_group_length = writer.tell() - chunk_index_group_start
 
         # Write statistics record
-        statistics_group_start = self._writer.tell()
-        stats = StatisticsRecord(
-            message_count=self._message_count,
-            schema_count=len(self._schema_records),
-            channel_count=len(self._channel_records),
-            attachment_count=0,
-            metadata_count=0,
-            chunk_count=self._chunk_count,
-            message_start_time=self._message_start_time or 0,
-            message_end_time=self._message_end_time or 0,
-            channel_message_counts=self._channel_message_counts,
-        )
-        McapRecordWriter.write_statistics(self._writer, stats)
-        statistics_group_length = self._writer.tell() - statistics_group_start
+        statistics_group_start = writer.tell()
+        if statistics_record is not None:
+            McapRecordWriter.write_statistics(writer, statistics_record)
+        statistics_group_length = writer.tell() - statistics_group_start
 
         # Write summary offsets
-        summary_offset_start = self._writer.tell()
+        summary_offset_start = writer.tell()
         if schema_group_length > 0:
             McapRecordWriter.write_summary_offset(
-                self._writer,
+                writer,
                 SummaryOffsetRecord(
                     group_opcode=RecordType.SCHEMA,
                     group_start=schema_group_start,
@@ -388,7 +375,7 @@ class BaseMcapRecordWriter(ABC):
             )
         if channel_group_length > 0:
             McapRecordWriter.write_summary_offset(
-                self._writer,
+                writer,
                 SummaryOffsetRecord(
                     group_opcode=RecordType.CHANNEL,
                     group_start=channel_group_start,
@@ -397,21 +384,22 @@ class BaseMcapRecordWriter(ABC):
             )
         if chunk_index_group_length > 0:
             McapRecordWriter.write_summary_offset(
-                self._writer,
+                writer,
                 SummaryOffsetRecord(
                     group_opcode=RecordType.CHUNK_INDEX,
                     group_start=chunk_index_group_start,
                     group_length=chunk_index_group_length,
                 ),
             )
-        McapRecordWriter.write_summary_offset(
-            self._writer,
-            SummaryOffsetRecord(
-                group_opcode=RecordType.STATISTICS,
-                group_start=statistics_group_start,
-                group_length=statistics_group_length,
-            ),
-        )
+        if statistics_group_length > 0:
+            McapRecordWriter.write_summary_offset(
+                writer,
+                SummaryOffsetRecord(
+                    group_opcode=RecordType.STATISTICS,
+                    group_start=statistics_group_start,
+                    group_length=statistics_group_length,
+                ),
+            )
 
         return summary_start, summary_offset_start
 
@@ -434,8 +422,8 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
         self._profile = profile
 
         # Tracking for summary section
-        self._schema_records: list[SchemaRecord] = []
-        self._channel_records: list[ChannelRecord] = []
+        self._schema_records: dict[int, SchemaRecord] = {}
+        self._channel_records: dict[int, ChannelRecord] = {}
 
         # Statistics tracking
         self._message_count = 0
@@ -459,13 +447,19 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
     def write_schema(self, schema: SchemaRecord) -> None:
         """Write a schema record immediately to the data section."""
         McapRecordWriter.write_schema(self._writer, schema)
-        self._schema_records.append(schema)
+        if schema.id in self._schema_records:
+            logging.warning(f'Schema (id {schema.id}) already written to file')
+        else:
+            self._schema_records[schema.id] = schema
 
     def write_channel(self, channel: ChannelRecord) -> None:
         """Write a channel record immediately to the data section."""
         McapRecordWriter.write_channel(self._writer, channel)
-        self._channel_records.append(channel)
-        self._channel_message_counts[channel.id] = 0
+        if channel.id in self._channel_records:
+            logging.warning(f'Channel (id {channel.id}) already written to file')
+        else:
+            self._channel_records[channel.id] = channel
+            self._channel_message_counts[channel.id] = 0
 
     def write_message(self, message: MessageRecord) -> None:
         """Write a message record immediately to the data section."""
@@ -490,7 +484,22 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
         McapRecordWriter.write_data_end(self._writer, data_end)
 
         # Write summary section using shared helper
-        summary_start, summary_offset_start = self._write_summary_section()
+        summary_start, summary_offset_start = self._write_summary_section(
+            self._writer,
+            schema_records=list(self._schema_records.values()),
+            channel_records=list(self._channel_records.values()),
+            statistics_record=StatisticsRecord(
+                message_count=self._message_count,
+                schema_count=len(self._schema_records),
+                channel_count=len(self._channel_records),
+                attachment_count=0,  # TODO: Implement
+                metadata_count=0,    # TODO: Implement
+                chunk_count=self._chunk_count,
+                message_start_time=self._message_start_time or 0,
+                message_end_time=self._message_end_time or 0,
+                channel_message_counts=self._channel_message_counts,
+            )
+        )
 
         # Write footer record manually for CRC calculation
         self._writer.write(McapRecordWriter._encode_record_type(RecordType.FOOTER))
@@ -537,8 +546,8 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._compress_chunk = self._create_chunk_compressor()
 
         # Tracking for summary section
-        self._schema_records: list[SchemaRecord] = []
-        self._channel_records: list[ChannelRecord] = []
+        self._schema_records: dict[int, SchemaRecord] = {}
+        self._channel_records: dict[ int, ChannelRecord] = {}
         self._chunk_indexes: list[ChunkIndexRecord] = []
 
         # Statistics tracking
@@ -582,13 +591,19 @@ class McapChunkedWriter(BaseMcapRecordWriter):
     def write_schema(self, schema: SchemaRecord) -> None:
         """Write a schema record immediately to the data section (not buffered)."""
         McapRecordWriter.write_schema(self._writer, schema)
-        self._schema_records.append(schema)
+        if schema.id in self._schema_records:
+            logging.warning(f'Schema (id {schema.id}) already written to file')
+        else:
+            self._schema_records[schema.id] = schema
 
     def write_channel(self, channel: ChannelRecord) -> None:
         """Write a channel record immediately to the data section (not buffered)."""
         McapRecordWriter.write_channel(self._writer, channel)
-        self._channel_records.append(channel)
-        self._channel_message_counts[channel.id] = 0
+        if channel.id in self._channel_records:
+            logging.warning(f'Channel (id {channel.id}) already written to file')
+        else:
+            self._channel_records[channel.id] = channel
+            self._channel_message_counts[channel.id] = 0
 
     def write_message(self, message: MessageRecord) -> None:
         """Write a message record to the current chunk buffer.
@@ -691,6 +706,20 @@ class McapChunkedWriter(BaseMcapRecordWriter):
 
         # Write summary section using shared helper (passing chunk indexes)
         summary_start, summary_offset_start = self._write_summary_section(
+            self._writer,
+            schema_records=list(self._schema_records.values()),
+            channel_records=list(self._channel_records.values()),
+            statistics_record=StatisticsRecord(
+                message_count=self._message_count,
+                schema_count=len(self._schema_records),
+                channel_count=len(self._channel_records),
+                attachment_count=0,  # TODO: Implement
+                metadata_count=0,    # TODO: Implement
+                chunk_count=self._chunk_count,
+                message_start_time=self._message_start_time or 0,
+                message_end_time=self._message_end_time or 0,
+                channel_message_counts=self._channel_message_counts,
+            ),
             chunk_indexes=self._chunk_indexes
         )
 

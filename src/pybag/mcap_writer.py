@@ -5,10 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from pybag.io.raw_writer import BaseWriter, FileWriter
-from pybag.mcap.record_writer import (
-    BaseMcapRecordWriter,
-    McapRecordWriterFactory
-)
+from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
@@ -37,9 +34,8 @@ class McapFileWriter:
         Args:
             writer: The underlying writer to write binary data to.
             profile: The MCAP profile to use (default: "ros2").
-            chunk_size: If provided, creates chunks of approximately this size in bytes.
-                       If None, writes without chunking.
-            chunk_compression: Compression algorithm for chunks ("lz4" or "zstd").
+            chunk_size: If provided, creates chunks of approximately this size in bytes. If None, writes without chunking.
+            chunk_compression: Compression algorithm for chunks ("lz4" or "zstd" or None for no compression).
         """
         # Create the low-level record writer via factory
         self._record_writer = McapRecordWriterFactory.create_writer(
@@ -56,7 +52,7 @@ class McapFileWriter:
             raise ValueError(f"Unknown encoding type: {self._profile}")
         self._message_serializer: MessageSerializer = message_serializer
 
-        # High-level tracking (topic -> channel_id, type -> schema_id)
+        # High-level tracking
         self._next_schema_id = 1  # Schema ID must be non-zero
         self._next_channel_id = 1
         self._topics: dict[str, int] = {}  # topic -> channel_id
@@ -132,7 +128,6 @@ class McapFileWriter:
                 data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
             )
 
-            # Delegate to low-level writer
             self._record_writer.write_schema(schema_record)
             self._schemas[channel_type] = schema_id  # type: ignore[assignment]
 
@@ -147,7 +142,6 @@ class McapFileWriter:
             metadata={},
         )
 
-        # Delegate to low-level writer
         self._record_writer.write_channel(channel_record)
         self._topics[topic] = channel_id
         self._sequences[channel_id] = 0
