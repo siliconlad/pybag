@@ -52,17 +52,16 @@ def filter_mcap(
     start_ns, end_ns = _to_ns(start_time), _to_ns(end_time)
 
     with McapRecordReaderFactory.from_file(input_path) as reader:
-        # Build topic -> channel_id mapping and filter topics
+        # Build topic -> channel_ids mapping
         all_channels = reader.get_channels()
-        topic_to_channel_id: dict[str, int] = {
-            channel.topic: channel_id
-            for channel_id, channel in all_channels.items()
-        }
-        all_topics = set(topic_to_channel_id.keys())
+        topic_to_channel_ids: dict[str, set[int]] = defaultdict(set)
+        for channel_id, channel in all_channels.items():
+            topic_to_channel_ids[channel.topic].add(channel_id)
+        all_topics = set(topic_to_channel_ids.keys())
 
         # Determine which topics to include
         if include_topics is None:  # Include all topics
-            topics_to_include = set(topic_to_channel_id.keys())
+            topics_to_include = set(topic_to_channel_ids.keys())
         else:  # Expand glob patterns and filter
             topics_to_include = set()
             for pattern in include_topics:
@@ -77,8 +76,9 @@ def filter_mcap(
                 topics_to_exclude.update(matched)
             topics_to_include -= topics_to_exclude
 
-        # Get channel IDs for included topics
-        channel_ids_to_include = {topic_to_channel_id[topic] for topic in topics_to_include}
+        channel_ids_to_include = set()
+        for topic in topics_to_include:
+            channel_ids_to_include.update(topic_to_channel_ids[topic])
 
         # Step 2: Write the filtered MCAP using factory
         with McapRecordWriterFactory.create_writer(
@@ -94,7 +94,7 @@ def filter_mcap(
 
             # If no topics match the filters, create an empty MCAP (no messages)
             if not channel_ids_to_include:
-                logger.warn("No topics match the include/exclude filters.")
+                logger.warning("No topics match filter.")
                 return output_path
 
             for msg_record in reader.get_messages(
@@ -103,15 +103,16 @@ def filter_mcap(
                 end_timestamp=end_ns,
                 in_log_time_order=False
             ):
-                # Write the schema record to the mcap the first time
+                # Write the schema record to the mcap the first time (if it has one)
+                # Note: schema_id == 0 means "no schema" and is valid in MCAP
                 schema_id = all_channels[msg_record.channel_id].schema_id
-                if schema_id not in written_schema_ids:
+                if schema_id != 0 and schema_id not in written_schema_ids:
                     if (schema := reader.get_schema(schema_id)) is not None:
                         writer.write_schema(schema)
                         written_schema_ids.add(schema_id)
                     else:
                         channel_id = msg_record.channel_id
-                        logging.warning(f'Found no schema {schema_id} (channel {channel_id})')
+                        logger.warning(f'Schema {schema_id} not found for channel {channel_id}')
                         continue
 
                 # Write the channel record to the mcap the first time
