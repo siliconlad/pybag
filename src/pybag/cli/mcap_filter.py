@@ -1,13 +1,17 @@
 """MCAP filtering CLI command."""
 
 import argparse
+import fnmatch
 import logging
+from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
 from typing import Iterable
 
-from pybag.mcap_reader import McapFileReader
-from pybag.mcap_writer import McapFileWriter
+from pybag.io.raw_writer import FileWriter
+from pybag.mcap.record_reader import McapRecordReaderFactory
+from pybag.mcap.record_writer import McapRecordWriterFactory
+from pybag.mcap.records import MessageRecord
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +32,11 @@ def filter_mcap(
     *,
     overwrite: bool = False
 ) -> Path:
-    """Filter an MCAP file based on topics and time."""
+    """Filter an MCAP file based on topics and time.
+
+    This function preserves exact schema and channel records from the input file,
+    rather than regenerating them based on message types.
+    """
     # Resolve input and output paths
     input_path = Path(input_path).resolve()
     if output_path is None:
@@ -43,41 +51,80 @@ def filter_mcap(
 
     start_ns, end_ns = _to_ns(start_time), _to_ns(end_time)
 
-    with (
-        McapFileReader.from_file(input_path) as reader,
-        McapFileWriter.open(
-                output_path,
-                profile=reader.profile,
-                chunk_size=None,
-                chunk_compression=None,
-            ) as writer
-    ):
-        # Step 1: Get the initial set of topics to include
-        if include_topics is None:
-            # If no topics specified, start with all topics
-            topics_to_filter = set(reader.get_topics())
-        else:
-            # Expand glob patterns in include list to get concrete topic names
-            topics_to_filter = set(reader._expand_topics(include_topics))
+    with McapRecordReaderFactory.from_file(input_path) as reader:
+        # Build topic -> channel_id mapping and filter topics
+        all_channels = reader.get_channels()
+        topic_to_channel_id: dict[str, int] = {
+            channel.topic: channel_id
+            for channel_id, channel in all_channels.items()
+        }
+        all_topics = set(topic_to_channel_id.keys())
 
-        # Step 2: Remove excluded topics (after expansion)
+        # Determine which topics to include
+        if include_topics is None:  # Include all topics
+            topics_to_include = set(topic_to_channel_id.keys())
+        else:  # Expand glob patterns and filter
+            topics_to_include = set()
+            for pattern in include_topics:
+                matched = fnmatch.filter(all_topics, pattern)
+                topics_to_include.update(matched)
+
+        # Remove excluded topics
         if exclude_topics:
-            # Expand glob patterns in exclude list too
-            expanded_exclude = set(reader._expand_topics(exclude_topics))
-            topics_to_filter -= expanded_exclude
+            topics_to_exclude = set()
+            for pattern in exclude_topics:
+                matched = fnmatch.filter(all_topics, pattern)
+                topics_to_exclude.update(matched)
+            topics_to_include -= topics_to_exclude
 
-        for msg in reader.messages(
-            topic=list(topics_to_filter),
-            start_time=start_ns,
-            end_time=end_ns,
-            in_log_time_order=False
-        ):
-            writer.write_message(
-                topic=msg.topic,
-                timestamp=msg.log_time,
-                message=msg.data,
-                publish_time=msg.publish_time,
-            )
+        # Get channel IDs for included topics
+        channel_ids_to_include = {topic_to_channel_id[topic] for topic in topics_to_include}
+
+        # Step 2: Write the filtered MCAP using factory
+        with McapRecordWriterFactory.create_writer(
+            FileWriter(output_path),
+            chunk_size=None,  # TODO: What is the best way to set this?
+            chunk_compression="lz4",
+            profile=reader.get_header().profile
+        ) as writer:
+            # Write message records as we read them
+            written_schema_ids = set()
+            written_channel_ids = set()
+            sequence_counters = defaultdict(int)
+
+            for msg_record in reader.get_messages(
+                channel_id=list(channel_ids_to_include) if channel_ids_to_include else None,
+                start_timestamp=start_ns,
+                end_timestamp=end_ns,
+                in_log_time_order=False
+            ):
+                # Write the schema record to the mcap the first time
+                schema_id = all_channels[msg_record.channel_id].schema_id
+                if schema_id not in written_schema_ids:
+                    if (schema := reader.get_schema(schema_id)) is not None:
+                        writer.write_schema(schema)
+                        written_schema_ids.add(schema_id)
+                    else:
+                        channel_id = msg_record.channel_id
+                        logging.warning(f'Found no schema {schema_id} (channel {channel_id})')
+                        continue
+
+                # Write the channel record to the mcap the first time
+                if msg_record.channel_id not in written_channel_ids:
+                    writer.write_channel(all_channels[msg_record.channel_id])
+                    written_channel_ids.add(msg_record.channel_id)
+
+                # Write message immediately with updated sequence number
+                new_record = MessageRecord(
+                    channel_id=msg_record.channel_id,
+                    sequence=sequence_counters[msg_record.channel_id],
+                    log_time=msg_record.log_time,
+                    publish_time=msg_record.publish_time,
+                    data=msg_record.data
+                )
+                sequence_counters[msg_record.channel_id] += 1
+                writer.write_message(new_record)
+
     return output_path
 
 
