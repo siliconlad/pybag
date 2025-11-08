@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class DecodedMessage():
-    topic: str
     channel_id: int
     sequence: int
     log_time: int
@@ -140,7 +139,6 @@ class McapFileReader:
             return
         logging.debug(f"Expanded topics: {concrete_topics}")
 
-        channel_topic = {}  # dict[topic, channel_id]
         channel_infos = {}  # dict[channel_id, tuple[channel_record, schema]]
         for topic_name in concrete_topics:
             channel_id = self._reader.get_channel_id(topic_name)
@@ -158,7 +156,6 @@ class McapFileReader:
                 logging.warning(f"Unknown schema for {topic_name} ({channel_id})")
                 continue
 
-            channel_topic[channel_id] = topic_name
             channel_infos[channel_id] = (channel_record, message_schema)
 
         if not channel_infos:
@@ -182,7 +179,6 @@ class McapFileReader:
         ):
             _, schema = channel_infos[msg.channel_id]
             decoded = DecodedMessage(
-                channel_topic[msg.channel_id],
                 msg.channel_id,
                 msg.sequence,
                 msg.log_time,
