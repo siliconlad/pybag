@@ -1,9 +1,15 @@
 from pathlib import Path
 
 from pybag.cli.main import main as cli_main
+from pybag.io.raw_reader import FileReader
+from pybag.mcap.record_parser import McapRecordParser
+from pybag.mcap.record_reader import McapRecordReaderFactory
+from pybag.mcap.records import RecordType
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
-from pybag.ros2.humble.std_msgs import Empty, Int32
+from pybag.ros2.humble.builtin_interfaces import Time
+from pybag.ros2.humble.sensor_msgs import BatteryState
+from pybag.ros2.humble.std_msgs import Empty, Header, Int32
 
 
 def _create_mcap(path: Path) -> None:
@@ -242,9 +248,6 @@ def test_cli_filter_preserves_constants(tmp_path: Path) -> None:
     For example, sensor_msgs/BatteryState has POWER_SUPPLY_* constants that
     downstream tools rely on.
     """
-    from pybag.ros2.humble.sensor_msgs import BatteryState
-    from pybag.ros2.humble.std_msgs import Header
-    from pybag.ros2.humble.builtin_interfaces import Time
 
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "out.mcap"
@@ -302,3 +305,60 @@ def test_cli_filter_preserves_constants(tmp_path: Path) -> None:
         assert msg.POWER_SUPPLY_STATUS_DISCHARGING == 2
         assert msg.POWER_SUPPLY_HEALTH_GOOD == 1
         assert msg.POWER_SUPPLY_TECHNOLOGY_UNKNOWN == 0
+
+
+def test_cli_filter_preserves_exact_schema_records(tmp_path: Path) -> None:
+    """Test that filtering preserves exact schema records from input file.
+
+    When filtering an MCAP, the schema records should be copied verbatim from
+    the input file, not regenerated. This ensures:
+    1. Schema encoding is preserved
+    2. Schema data (IDL definitions) is identical
+    3. Any metadata or constants in schemas are preserved
+    4. Only schemas for included topics are written to output
+    """
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Create an input MCAP with messages using DIFFERENT types for each topic
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+        writer.write_message("/bar", int(2e9), Empty())  # Different type!
+
+    # Read schema records from input file
+    with McapRecordReaderFactory.from_file(input_path) as reader:
+        input_schemas = reader.get_schemas()
+        input_channels = reader.get_channels()
+
+    # Input should have 2 schemas (Int32 for /foo, Empty for /bar)
+    assert len(input_schemas) == 2, f"Expected 2 input schemas, got {len(input_schemas)}"
+    assert len(input_channels) == 2, f"Expected 2 input channels, got {len(input_channels)}"
+
+    # Filter the MCAP (filter to only /foo topic)
+    cli_main([
+        "filter",
+        str(input_path),
+        "--include-topic",
+        "/foo",
+        "--output",
+        str(output_path),
+    ])
+
+    # Read schema records from output file
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        output_schemas = reader.get_schemas()
+        output_channels = reader.get_channels()
+
+    # Output should have only 1 schema (Int32 for /foo), since we filtered out /bar
+    assert len(output_schemas) == 1, f"Expected 1 output schema, got {len(output_schemas)}"
+    assert len(output_channels) == 1, f"Expected 1 output channel, got {len(output_channels)}"
+
+    # Verify that the output schema is byte-for-byte identical to the input schema
+    for schema_id, output_schema in output_schemas.items():
+        assert schema_id in input_schemas, f"Schema ID {schema_id} not found in input"
+
+        input_schema = input_schemas[schema_id]
+        assert output_schema.id == input_schema.id, f"Expected {output_schema.id}, got {input_schema.id}"
+        assert output_schema.name == input_schema.name, f"Expected {output_schema.name}, got {input_schema.name}"
+        assert output_schema.encoding == input_schema.encoding, f"Expected {output_schema.encoding}, got {input_schema.encoding}"
+        assert output_schema.data == input_schema.data, f"Expected {output_schema.data.decode()}, got {input_schema.data.decode()}"
