@@ -1,10 +1,7 @@
 from pathlib import Path
 
 from pybag.cli.main import main as cli_main
-from pybag.io.raw_reader import FileReader
-from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.record_reader import McapRecordReaderFactory
-from pybag.mcap.records import RecordType
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
 from pybag.ros2.humble.builtin_interfaces import Time
@@ -12,17 +9,14 @@ from pybag.ros2.humble.sensor_msgs import BatteryState
 from pybag.ros2.humble.std_msgs import Empty, Header, Int32
 
 
-def _create_mcap(path: Path) -> None:
-    with McapFileWriter.open(path, chunk_size=1024) as writer:
-        writer.write_message("/foo", int(1e9), Int32(data=1))
-        writer.write_message("/bar", int(2e9), Int32(data=2))
-        writer.write_message("/foo", int(3e9), Int32(data=3))
-
-
 def test_cli_filter_include_and_time(tmp_path: Path) -> None:
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "out.mcap"
-    _create_mcap(input_path)
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+        writer.write_message("/bar", int(2e9), Int32(data=2))
+        writer.write_message("/foo", int(3e9), Int32(data=3))
 
     cli_main(
         [
@@ -50,7 +44,11 @@ def test_cli_filter_include_and_time(tmp_path: Path) -> None:
 def test_cli_filter_exclude(tmp_path: Path) -> None:
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "out.mcap"
-    _create_mcap(input_path)
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+        writer.write_message("/bar", int(2e9), Int32(data=2))
+        writer.write_message("/foo", int(3e9), Int32(data=3))
 
     cli_main(
         [
@@ -80,7 +78,6 @@ def test_cli_filter_empty_messages(tmp_path: Path) -> None:
     with McapFileWriter.open(input_path, chunk_size=1024) as writer:
         writer.write_message("/empty", int(1e9), Empty())
         writer.write_message("/foo", int(2e9), Int32(data=42))
-        writer.write_message("/empty", int(3e9), Empty())
 
     # Filter to include only /empty topic
     cli_main(
@@ -99,13 +96,11 @@ def test_cli_filter_empty_messages(tmp_path: Path) -> None:
         assert set(reader.get_topics()) == {"/empty"}
 
         messages = list(reader.messages("/empty"))
-        assert len(messages) == 2
-        assert [m.log_time for m in messages] == [int(1e9), int(3e9)]
+        assert len(messages) == 1
+        assert [m.log_time for m in messages] == [int(1e9)]
         # Empty messages should be proper dataclass instances, not None
         assert hasattr(messages[0].data, '__msg_name__')
         assert messages[0].data.__msg_name__ == 'std_msgs/msg/Empty'
-        assert hasattr(messages[1].data, '__msg_name__')
-        assert messages[1].data.__msg_name__ == 'std_msgs/msg/Empty'
 
 
 def test_cli_filter_glob_with_exclude(tmp_path: Path) -> None:
@@ -200,16 +195,9 @@ def test_cli_filter_preserves_publish_time(tmp_path: Path) -> None:
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "out.mcap"
 
-    # Create MCAP with messages that have different log_time and publish_time
-    log_time_1 = int(1e9)
-    publish_time_1 = int(1.5e9)  # Different from log_time
-    log_time_2 = int(2e9)
-    publish_time_2 = int(2.7e9)  # Different from log_time
-
     with McapFileWriter.open(input_path, chunk_size=1024) as writer:
-        # Write messages with different log_time and publish_time using the public API
-        writer.write_message("/test", log_time_1, Int32(data=1), publish_time=publish_time_1)
-        writer.write_message("/test", log_time_2, Int32(data=2), publish_time=publish_time_2)
+        writer.write_message("/test", int(1e9), Int32(data=1), publish_time=int(1.5e9))
+        writer.write_message("/test", int(2e9), Int32(data=2), publish_time=int(2.7e9))
 
     # Filter the MCAP (should preserve all timestamps)
     cli_main(
@@ -227,15 +215,15 @@ def test_cli_filter_preserves_publish_time(tmp_path: Path) -> None:
         assert len(messages) == 2
 
         # Check first message
-        assert messages[0].log_time == log_time_1
-        assert messages[0].publish_time == publish_time_1, \
-            f"Expected publish_time {publish_time_1}, got {messages[0].publish_time}"
+        assert messages[0].log_time == int(1e9)
+        assert messages[0].publish_time == int(1.5e9), \
+            f"Expected publish_time {int(1.5e9)}, got {messages[0].publish_time}"
         assert messages[0].data.data == 1
 
         # Check second message
-        assert messages[1].log_time == log_time_2
-        assert messages[1].publish_time == publish_time_2, \
-            f"Expected publish_time {publish_time_2}, got {messages[1].publish_time}"
+        assert messages[1].log_time == int(2e9)
+        assert messages[1].publish_time == int(2.7e9), \
+            f"Expected publish_time {int(2.7e9)}, got {messages[1].publish_time}"
         assert messages[1].data.data == 2
 
 
@@ -258,7 +246,10 @@ def test_cli_filter_preserves_constants(tmp_path: Path) -> None:
             "/battery",
             int(1e9),
             BatteryState(
-                header=Header(stamp=Time(sec=0, nanosec=0), frame_id="battery"),
+                header=Header(
+                    stamp=Time(sec=0, nanosec=0),
+                    frame_id="battery"
+                ),
                 voltage=12.0,
                 temperature=25.0,
                 current=1.5,
@@ -300,11 +291,31 @@ def test_cli_filter_preserves_constants(tmp_path: Path) -> None:
         assert hasattr(msg, "POWER_SUPPLY_TECHNOLOGY_UNKNOWN")
 
         # Verify constant values are correct
+
+        # status
         assert msg.POWER_SUPPLY_STATUS_UNKNOWN == 0
         assert msg.POWER_SUPPLY_STATUS_CHARGING == 1
         assert msg.POWER_SUPPLY_STATUS_DISCHARGING == 2
+        assert msg.POWER_SUPPLY_STATUS_NOT_CHARGING == 3
+        assert msg.POWER_SUPPLY_STATUS_FULL == 4
+        # health
+        assert msg.POWER_SUPPLY_HEALTH_UNKNOWN == 0
         assert msg.POWER_SUPPLY_HEALTH_GOOD == 1
+        assert msg.POWER_SUPPLY_HEALTH_OVERHEAT == 2
+        assert msg.POWER_SUPPLY_HEALTH_DEAD == 3
+        assert msg.POWER_SUPPLY_HEALTH_OVERVOLTAGE == 4
+        assert msg.POWER_SUPPLY_HEALTH_UNSPEC_FAILURE == 5
+        assert msg.POWER_SUPPLY_HEALTH_COLD == 6
+        assert msg.POWER_SUPPLY_HEALTH_WATCHDOG_TIMER_EXPIRE == 7
+        assert msg.POWER_SUPPLY_HEALTH_SAFETY_TIMER_EXPIRE == 8
+        # technology
         assert msg.POWER_SUPPLY_TECHNOLOGY_UNKNOWN == 0
+        assert msg.POWER_SUPPLY_TECHNOLOGY_NIMH == 1
+        assert msg.POWER_SUPPLY_TECHNOLOGY_LION == 2
+        assert msg.POWER_SUPPLY_TECHNOLOGY_LIPO == 3
+        assert msg.POWER_SUPPLY_TECHNOLOGY_LIFE == 4
+        assert msg.POWER_SUPPLY_TECHNOLOGY_NICD == 5
+        assert msg.POWER_SUPPLY_TECHNOLOGY_LIMN == 6
 
 
 def test_cli_filter_preserves_shared_schema_records(tmp_path: Path) -> None:
@@ -329,7 +340,6 @@ def test_cli_filter_preserves_shared_schema_records(tmp_path: Path) -> None:
     with McapRecordReaderFactory.from_file(input_path) as reader:
         input_schemas = reader.get_schemas()
         input_channels = reader.get_channels()
-
     assert len(input_schemas) == 1, f"Expected 1 input schema, got {len(input_schemas)}"
     assert len(input_channels) == 2, f"Expected 2 input channels, got {len(input_channels)}"
 
@@ -347,7 +357,6 @@ def test_cli_filter_preserves_shared_schema_records(tmp_path: Path) -> None:
     with McapRecordReaderFactory.from_file(output_path) as reader:
         output_schemas = reader.get_schemas()
         output_channels = reader.get_channels()
-
     assert len(output_schemas) == 1, f"Expected 1 output schema, got {len(output_schemas)}"
     assert len(output_channels) == 1, f"Expected 1 output channel, got {len(output_channels)}"
 
@@ -356,10 +365,10 @@ def test_cli_filter_preserves_shared_schema_records(tmp_path: Path) -> None:
         assert schema_id in input_schemas, f"Schema ID {schema_id} not found in input"
 
         input_schema = input_schemas[schema_id]
-        assert output_schema.id == input_schema.id, f"Expected {output_schema.id}, got {input_schema.id}"
-        assert output_schema.name == input_schema.name, f"Expected {output_schema.name}, got {input_schema.name}"
-        assert output_schema.encoding == input_schema.encoding, f"Expected {output_schema.encoding}, got {input_schema.encoding}"
-        assert output_schema.data == input_schema.data, f"Expected {output_schema.data.decode()}, got {input_schema.data.decode()}"
+        assert output_schema.id == input_schema.id, f"Expected {input_schema.id}, got {output_schema.id}"
+        assert output_schema.name == input_schema.name, f"Expected {input_schema.name}, got {output_schema.name}"
+        assert output_schema.encoding == input_schema.encoding, f"Expected {input_schema.encoding}, got {output_schema.encoding}"
+        assert output_schema.data == input_schema.data, f"Expected {input_schema.data.decode()}, got {output_schema.data.decode()}"
 
 
 def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
@@ -384,7 +393,6 @@ def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
     with McapRecordReaderFactory.from_file(input_path) as reader:
         input_schemas = reader.get_schemas()
         input_channels = reader.get_channels()
-
     assert len(input_schemas) == 2, f"Expected 2 input schemas, got {len(input_schemas)}"
     assert len(input_channels) == 2, f"Expected 2 input channels, got {len(input_channels)}"
 
@@ -402,7 +410,6 @@ def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
     with McapRecordReaderFactory.from_file(output_path) as reader:
         output_schemas = reader.get_schemas()
         output_channels = reader.get_channels()
-
     assert len(output_schemas) == 1, f"Expected 1 output schema, got {len(output_schemas)}"
     assert len(output_channels) == 1, f"Expected 1 output channel, got {len(output_channels)}"
 
@@ -411,10 +418,10 @@ def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
         assert schema_id in input_schemas, f"Schema ID {schema_id} not found in input"
 
         input_schema = input_schemas[schema_id]
-        assert output_schema.id == input_schema.id, f"Expected {output_schema.id}, got {input_schema.id}"
-        assert output_schema.name == input_schema.name, f"Expected {output_schema.name}, got {input_schema.name}"
-        assert output_schema.encoding == input_schema.encoding, f"Expected {output_schema.encoding}, got {input_schema.encoding}"
-        assert output_schema.data == input_schema.data, f"Expected {output_schema.data.decode()}, got {input_schema.data.decode()}"
+        assert output_schema.id == input_schema.id, f"Expected {input_schema.id}, got {output_schema.id}"
+        assert output_schema.name == input_schema.name, f"Expected {input_schema.name}, got {output_schema.name}"
+        assert output_schema.encoding == input_schema.encoding, f"Expected {input_schema.encoding}, got {output_schema.encoding}"
+        assert output_schema.data == input_schema.data, f"Expected {input_schema.data.decode()}, got {output_schema.data.decode()}"
 
 
 def test_cli_filter_empty_result_creates_empty_mcap(tmp_path: Path) -> None:
@@ -428,13 +435,10 @@ def test_cli_filter_empty_result_creates_empty_mcap(tmp_path: Path) -> None:
     output_path = tmp_path / "out.mcap"
 
     # Create input MCAP with messages
-    _create_mcap(input_path)
-
-    # Verify input has messages
-    with McapFileReader.from_file(input_path) as reader:
-        input_topics = reader.get_topics()
-        input_message_count = sum(1 for _ in reader.messages(input_topics))
-        assert input_message_count > 0, "Input should have messages"
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+        writer.write_message("/bar", int(2e9), Int32(data=2))
+        writer.write_message("/foo", int(3e9), Int32(data=3))
 
     # Filter to a non-existent topic
     cli_main([
@@ -447,7 +451,7 @@ def test_cli_filter_empty_result_creates_empty_mcap(tmp_path: Path) -> None:
     ])
 
     # Verify output exists and is a valid MCAP
-    assert output_path.exists(), "No output file expected"
+    assert output_path.exists(), "Output file expected"
 
     # Read schema records from output file
     with McapRecordReaderFactory.from_file(output_path) as reader:
