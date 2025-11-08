@@ -330,8 +330,8 @@ def test_cli_filter_preserves_shared_schema_records(tmp_path: Path) -> None:
         input_schemas = reader.get_schemas()
         input_channels = reader.get_channels()
 
-    assert len(input_schemas) == 1, f"Expected 1 input schemas, got {len(input_schemas)}"
-    assert len(input_channels) == 1, f"Expected 1 input channels, got {len(input_channels)}"
+    assert len(input_schemas) == 1, f"Expected 1 input schema, got {len(input_schemas)}"
+    assert len(input_channels) == 2, f"Expected 2 input channels, got {len(input_channels)}"
 
     # Filter the MCAP (filter to only /foo topic)
     cli_main([
@@ -385,7 +385,6 @@ def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
         input_schemas = reader.get_schemas()
         input_channels = reader.get_channels()
 
-    # Input should have 2 schemas (Int32 for /foo, Empty for /bar)
     assert len(input_schemas) == 2, f"Expected 2 input schemas, got {len(input_schemas)}"
     assert len(input_channels) == 2, f"Expected 2 input channels, got {len(input_channels)}"
 
@@ -404,7 +403,6 @@ def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
         output_schemas = reader.get_schemas()
         output_channels = reader.get_channels()
 
-    # Output should have only 1 schema (Int32 for /foo), since we filtered out /bar
     assert len(output_schemas) == 1, f"Expected 1 output schema, got {len(output_schemas)}"
     assert len(output_channels) == 1, f"Expected 1 output channel, got {len(output_channels)}"
 
