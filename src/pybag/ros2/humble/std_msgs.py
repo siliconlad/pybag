@@ -40,7 +40,7 @@ class Empty:
     __msg_name__ = 'std_msgs/msg/Empty'
 
     # TODO: Really required?
-    _structure_needs_at_least_one_member: t.uint8 = 0
+    structure_needs_at_least_one_member: t.uint8 = 0
 
 
 @dataclass(kw_only=True)

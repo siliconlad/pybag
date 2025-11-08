@@ -307,7 +307,62 @@ def test_cli_filter_preserves_constants(tmp_path: Path) -> None:
         assert msg.POWER_SUPPLY_TECHNOLOGY_UNKNOWN == 0
 
 
-def test_cli_filter_preserves_exact_schema_records(tmp_path: Path) -> None:
+def test_cli_filter_preserves_shared_schema_records(tmp_path: Path) -> None:
+    """Test that filtering preserves exact schema records from input file.
+
+    When filtering an MCAP, the schema records should be copied verbatim from
+    the input file, not regenerated. This ensures:
+    1. Schema encoding is preserved
+    2. Schema data (IDL definitions) is identical
+    3. Any metadata or constants in schemas are preserved
+    4. Only schemas for included topics are written to output
+    """
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Create an input MCAP with messages using SAME type for each topic
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+        writer.write_message("/bar", int(2e9), Int32(data=2))
+
+    # Read schema records from input file
+    with McapRecordReaderFactory.from_file(input_path) as reader:
+        input_schemas = reader.get_schemas()
+        input_channels = reader.get_channels()
+
+    assert len(input_schemas) == 1, f"Expected 1 input schemas, got {len(input_schemas)}"
+    assert len(input_channels) == 1, f"Expected 1 input channels, got {len(input_channels)}"
+
+    # Filter the MCAP (filter to only /foo topic)
+    cli_main([
+        "filter",
+        str(input_path),
+        "--include-topic",
+        "/foo",
+        "--output",
+        str(output_path),
+    ])
+
+    # Read schema records from output file
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        output_schemas = reader.get_schemas()
+        output_channels = reader.get_channels()
+
+    assert len(output_schemas) == 1, f"Expected 1 output schema, got {len(output_schemas)}"
+    assert len(output_channels) == 1, f"Expected 1 output channel, got {len(output_channels)}"
+
+    # Verify that the output schema is byte-for-byte identical to the input schema
+    for schema_id, output_schema in output_schemas.items():
+        assert schema_id in input_schemas, f"Schema ID {schema_id} not found in input"
+
+        input_schema = input_schemas[schema_id]
+        assert output_schema.id == input_schema.id, f"Expected {output_schema.id}, got {input_schema.id}"
+        assert output_schema.name == input_schema.name, f"Expected {output_schema.name}, got {input_schema.name}"
+        assert output_schema.encoding == input_schema.encoding, f"Expected {output_schema.encoding}, got {input_schema.encoding}"
+        assert output_schema.data == input_schema.data, f"Expected {output_schema.data.decode()}, got {input_schema.data.decode()}"
+
+
+def test_cli_filter_preserves_schema_records(tmp_path: Path) -> None:
     """Test that filtering preserves exact schema records from input file.
 
     When filtering an MCAP, the schema records should be copied verbatim from
@@ -362,3 +417,36 @@ def test_cli_filter_preserves_exact_schema_records(tmp_path: Path) -> None:
         assert output_schema.name == input_schema.name, f"Expected {output_schema.name}, got {input_schema.name}"
         assert output_schema.encoding == input_schema.encoding, f"Expected {output_schema.encoding}, got {input_schema.encoding}"
         assert output_schema.data == input_schema.data, f"Expected {output_schema.data.decode()}, got {input_schema.data.decode()}"
+
+
+def test_cli_filter_empty_result_creates_empty_mcap(tmp_path: Path) -> None:
+    """Test that filtering with no matching topics creates an empty MCAP.
+
+    When include/exclude patterns result in zero topics being selected,
+    the output should be a valid but empty MCAP file (no messages),
+    not a copy of all messages from the input.
+    """
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "out.mcap"
+
+    # Create input MCAP with messages
+    _create_mcap(input_path)
+
+    # Verify input has messages
+    with McapFileReader.from_file(input_path) as reader:
+        input_topics = reader.get_topics()
+        input_message_count = sum(1 for _ in reader.messages(input_topics))
+        assert input_message_count > 0, "Input should have messages"
+
+    # Filter to a non-existent topic
+    cli_main([
+        "filter",
+        str(input_path),
+        "--include-topic",
+        "/does/not/exist",
+        "--output",
+        str(output_path),
+    ])
+
+    # Verify output exists and is a valid MCAP
+    assert not output_path.exists(), "No output file expected"

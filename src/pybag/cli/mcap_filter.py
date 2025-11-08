@@ -80,6 +80,11 @@ def filter_mcap(
         # Get channel IDs for included topics
         channel_ids_to_include = {topic_to_channel_id[topic] for topic in topics_to_include}
 
+        # If no topics match the filters, create an empty MCAP (no messages)
+        if not channel_ids_to_include:
+            logger.info("No topics match the include/exclude filters.")
+            return output_path
+
         # Step 2: Write the filtered MCAP using factory
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
@@ -93,7 +98,7 @@ def filter_mcap(
             sequence_counters = defaultdict(int)
 
             for msg_record in reader.get_messages(
-                channel_id=list(channel_ids_to_include) if channel_ids_to_include else None,
+                channel_id=list(channel_ids_to_include),
                 start_timestamp=start_ns,
                 end_timestamp=end_ns,
                 in_log_time_order=False
