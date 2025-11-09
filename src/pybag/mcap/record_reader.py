@@ -190,18 +190,56 @@ class McapChunkedReader(BaseMcapRecordReader):
     # Helpful Constructors
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapChunkedReader':
+    def from_file(
+        file_path: Path | str,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> 'McapChunkedReader':
+        """Create a new MCAP reader from a file.
+
+        Args:
+            file_path: Path to the MCAP file
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            A McapChunkedReader instance
         """
-        Create a new MCAP reader from a file.
-        """
-        return McapChunkedReader(FileReader(file_path))
+        return McapChunkedReader(
+            FileReader(file_path),
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+        )
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapChunkedReader':
+    def from_bytes(
+        data: bytes,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> 'McapChunkedReader':
+        """Create a new MCAP reader from a bytes object.
+
+        Args:
+            data: Bytes containing the MCAP file data
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            A McapChunkedReader instance
         """
-        Create a new MCAP reader from a bytes object.
-        """
-        return McapChunkedReader(BytesReader(data))
+        return McapChunkedReader(
+            BytesReader(data),
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+        )
 
     # Destructors
 
@@ -719,7 +757,10 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     Args:
         file: The file to read from.
         enable_crc_check: Whether to validate the crc values in the mcap
-        enable_summary_reconstruction: Whether to reconstruct summary sections if missing
+        enable_summary_reconstruction:
+            - 'missing' allows reconstruction if the summary section is missing.
+            - 'never' throws an exception if the summary (or summary offset) section is missing.
+            - 'always' forces reconstruction even if the summary section is present.
     """
 
     def __init__(
@@ -784,18 +825,56 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     # Helpful Constructors
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapNonChunkedReader':
+    def from_file(
+        file_path: Path | str,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> 'McapNonChunkedReader':
+        """Create a new MCAP reader from a file.
+
+        Args:
+            file_path: Path to the MCAP file
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            A McapNonChunkedReader instance
         """
-        Create a new MCAP reader from a file.
-        """
-        return McapNonChunkedReader(FileReader(file_path))
+        return McapNonChunkedReader(
+            FileReader(file_path),
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+        )
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapNonChunkedReader':
+    def from_bytes(
+        data: bytes,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> 'McapNonChunkedReader':
+        """Create a new MCAP reader from a bytes object.
+
+        Args:
+            data: Bytes containing the MCAP file data
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            A McapNonChunkedReader instance
         """
-        Create a new MCAP reader from a bytes object.
-        """
-        return McapNonChunkedReader(BytesReader(data))
+        return McapNonChunkedReader(
+            BytesReader(data),
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+        )
 
     # Destructors
 
@@ -1072,44 +1151,104 @@ class McapRecordReaderFactory:
     """Factory to create a McapFileSequentialReader or McapFileRandomAccessReader."""
 
     @staticmethod
-    def from_file(file_path: Path | str) -> BaseMcapRecordReader:
-        """Create a new MCAP reader from a file."""
+    def from_file(
+        file_path: Path | str,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> BaseMcapRecordReader:
+        """Create a new MCAP reader from a file.
+
+        Args:
+            file_path: Path to the MCAP file
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            Appropriate reader instance (chunked or non-chunked)
+
+        Raises:
+            NotImplementedError: If summary is missing and reconstruction is disabled
+        """
         try:
             # Try to create a chunked reader first
-            return McapChunkedReader.from_file(file_path)
+            return McapChunkedReader.from_file(
+                file_path,
+                enable_crc_check=enable_crc_check,
+                enable_summary_reconstruction=enable_summary_reconstruction,
+            )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
             # TODO: Handle chunked MCAP files that lack chunk indexes by decoding CHUNK records directly.
             logger.warning('No chunk indexes detected, using non-chunked reader')
-            return McapNonChunkedReader.from_file(file_path)
-        except McapNoSummarySectionError:
-            # If no summary section exists, fall back to sequential reader
-            # TODO: Implement the sequential reader
-            logger.warning('No summary section exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
-        except McapNoSummaryIndexError:
-            # If no summary index exists, fall back to sequential reader
-            # TODO: Use sequential reader? Or just create the index?
-            logger.warning('No summary index exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
+            return McapNonChunkedReader.from_file(
+                file_path,
+                enable_crc_check=enable_crc_check,
+                enable_summary_reconstruction=enable_summary_reconstruction,
+            )
+        except (McapNoSummarySectionError, McapNoSummaryIndexError) as e:
+            # Only raise if reconstruction is explicitly disabled
+            if enable_summary_reconstruction == 'never':
+                logger.error('Summary section missing and reconstruction is disabled')
+                raise NotImplementedError(
+                    'Sequential readers are not implemented yet. '
+                    'Use enable_summary_reconstruction="missing" to reconstruct summaries.'
+                ) from e
+            # This should never happen since 'missing' mode should reconstruct
+            # But if it does, provide helpful error message
+            logger.error(f'Unexpected error with reconstruction mode "{enable_summary_reconstruction}": {e}')
+            raise
 
     @staticmethod
-    def from_bytes(data: bytes) -> BaseMcapRecordReader:
-        """Create a new MCAP reader from a bytes object."""
+    def from_bytes(
+        data: bytes,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> BaseMcapRecordReader:
+        """Create a new MCAP reader from a bytes object.
+
+        Args:
+            data: Bytes containing the MCAP file data
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            Appropriate reader instance (chunked or non-chunked)
+
+        Raises:
+            NotImplementedError: If summary is missing and reconstruction is disabled
+        """
         try:
             # Try to create a chunked reader first
-            return McapChunkedReader.from_bytes(data)
+            return McapChunkedReader.from_bytes(
+                data,
+                enable_crc_check=enable_crc_check,
+                enable_summary_reconstruction=enable_summary_reconstruction,
+            )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
             logger.warning('No chunk indexes detected, using non-chunked reader')
-            return McapNonChunkedReader.from_bytes(data)
-        except McapNoSummarySectionError:
-            # If no summary section exists, fall back to sequential reader
-            # TODO: Implement the sequential reader
-            logger.warning('No summary section exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
-        except McapNoSummaryIndexError:
-            # If no summary index exists, fall back to sequential reader
-            # TODO: Use sequential reader? Or just create the index?
-            logger.warning('No summary index exists in MCAP, falling back to sequential reader')
-            raise NotImplementedError('Sequential readers are not implemented yet')
+            return McapNonChunkedReader.from_bytes(
+                data,
+                enable_crc_check=enable_crc_check,
+                enable_summary_reconstruction=enable_summary_reconstruction,
+            )
+        except (McapNoSummarySectionError, McapNoSummaryIndexError) as e:
+            # Only raise if reconstruction is explicitly disabled
+            if enable_summary_reconstruction == 'never':
+                logger.error('Summary section missing and reconstruction is disabled')
+                raise NotImplementedError(
+                    'Sequential readers are not implemented yet. '
+                    'Use enable_summary_reconstruction="missing" to reconstruct summaries.'
+                ) from e
+            # This should never happen since 'missing' mode should reconstruct
+            # But if it does, provide helpful error message
+            logger.error(f'Unexpected error with reconstruction mode "{enable_summary_reconstruction}": {e}')
+            raise

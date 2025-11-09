@@ -130,19 +130,6 @@ def filter_mcap(
     return output_path
 
 
-def _filter_mcap_from_args(args: argparse.Namespace) -> None:
-    filter_mcap(
-        args.input,
-        output_path=args.output,
-        include_topics=args.include_topic,
-        exclude_topics=args.exclude_topic,
-        start_time=args.start_time,
-        end_time=args.end_time,
-        chunk_size=args.chunk_size,
-        chunk_compression=args.chunk_compression,
-    )
-
-
 def add_parser(subparsers) -> None:
     parser = subparsers.add_parser(
         "filter",
@@ -199,7 +186,18 @@ def add_parser(subparsers) -> None:
     parser.add_argument(
         "--chunk-compression",
         type=str,
-        choices=['lz4', 'zstd', None],
+        choices=['lz4', 'zstd'],
         help=dedent("""Compression used for the chunk records.""")
     )
-    parser.set_defaults(func=_filter_mcap_from_args)
+    parser.set_defaults(
+        func=lambda args: filter_mcap(
+            args.input,
+            output_path=args.output,
+            include_topics=args.include_topic,
+            exclude_topics=args.exclude_topic,
+            start_time=args.start_time,
+            end_time=args.end_time,
+            chunk_size=args.chunk_size,
+            chunk_compression=args.chunk_compression,
+        )
+    )
