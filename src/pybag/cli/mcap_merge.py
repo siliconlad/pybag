@@ -23,6 +23,13 @@ def merge_mcap(
         chunk_size: Optional chunk size in bytes for output file
         chunk_compression: Optional compression algorithm (lz4 or zstd)
     """
+    # Validate that all input files have the same profile
+    for path in inputs:
+        with McapRecordReaderFactory.from_file(path) as reader:
+            header = reader.get_header()
+            if header.profile != "ros2":
+                raise ValueError(f"Expected profile 'ros2' got {header.profile} ({path})")
+
     # Track schemas globally using (name, encoding, data) as key
     next_schema_id = 1
     schemas: dict[tuple[str, str, bytes], SchemaRecord] = {}
@@ -40,7 +47,7 @@ def merge_mcap(
         FileWriter(output),
         chunk_size=chunk_size,
         chunk_compression=chunk_compression,
-        profile="ros2"
+        profile="ros2"  # TODO: Support other profiles
     ) as writer:
         # First pass: Write all schemas and channels from all files
         # This ensures channels without messages are preserved
