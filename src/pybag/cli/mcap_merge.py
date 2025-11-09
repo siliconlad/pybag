@@ -22,13 +22,6 @@ def merge_mcap(
         output: Path to output merged MCAP file
         chunk_size: Optional chunk size in bytes for output file
         chunk_compression: Optional compression algorithm (lz4 or zstd)
-
-    The merge process:
-    1. Deduplicates schemas across all input files (same name/encoding/data → same ID)
-    2. Assigns new channel IDs to avoid conflicts between input files
-    3. Merges messages in log time order across all files using heap-based merge
-    4. Renumbers message sequences per channel starting from 0
-    5. Writes a valid MCAP with proper statistics and summary sections
     """
     # Track schemas globally using (name, encoding, data) as key
     next_schema_id = 1
@@ -114,7 +107,7 @@ def merge_mcap(
         iterators = [lazy_message_iterator(i, path) for i, path in enumerate(inputs)]
 
         # Merge messages in log time order, breaking ties with file order
-        for log_time, file_index, message in heapq.merge(*iterators, key=lambda x: (x[0], x[1])):
+        for _, file_index, message in heapq.merge(*iterators, key=lambda x: (x[0], x[1])):
             # Look up the new channel ID for this message
             channel_key = (file_index, message.channel_id)
             new_channel_id = channel_id_map[channel_key]
