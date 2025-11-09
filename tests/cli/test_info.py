@@ -1,10 +1,10 @@
-from pathlib import Path
-from io import StringIO
 import sys
+from io import StringIO
+from pathlib import Path
 
 from pybag.cli.main import main as cli_main
 from pybag.mcap_writer import McapFileWriter
-from pybag.ros2.humble.std_msgs import Int32, Empty
+from pybag.ros2.humble.std_msgs import Empty, Int32
 
 
 def test_cli_info_basic(tmp_path: Path, capsys) -> None:
