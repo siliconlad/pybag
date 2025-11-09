@@ -186,7 +186,7 @@ def add_parser(subparsers) -> None:
     parser.add_argument(
         "--chunk-compression",
         type=str,
-        choices=['lz4', 'zstd', None],
+        choices=['lz4', 'zstd'],
         help=dedent("""Compression used for the chunk records.""")
     )
     parser.set_defaults(
