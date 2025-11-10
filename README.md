@@ -13,6 +13,17 @@ uv add pybag-sdk
 
 ## Quick Start
 
+```bash
+# Get file information
+pybag info data.mcap
+
+# Filter messages
+pybag filter data.mcap -o output.mcap --include-topic /camera
+
+# Merge multiple files
+pybag merge input1.mcap input2.mcap -o output.mcap
+```
+
 ### Reading MCAP Files
 
 ```python
@@ -27,10 +38,12 @@ with McapFileReader.from_file("data.mcap") as reader:
 
 ```python
 from pybag.mcap_writer import McapFileWriter
-import pybag.ros2.humble.std_msgs as std_msgs
+from pybag.ros2.humble import std_msgs
 
 with McapFileWriter.open("output.mcap") as writer:
-    writer.write_message("/status", 1000, std_msgs.String(data="hello"))
+    log_time_ns = 1000
+    msg = std_msgs.String(data="hello")
+    writer.write_message("/status", log_time_ns, msg)
 ```
 
 ### Custom Messages
@@ -47,25 +60,4 @@ class SensorData:
 
 with McapFileWriter.open("sensors.mcap") as writer:
     writer.write_message("/sensor", 1000, SensorData(25.5, 60.0))
-```
-
-## Features
-
-- Read and write MCAP files without ROS installation
-- Support for ROS2 message types (Humble distribution)
-- Topic filtering and time-based queries
-- Compression support (LZ4, zstd)
-- Custom message type definitions
-
-## CLI
-
-```bash
-# Get file information
-pybag info data.mcap
-
-# Filter messages
-pybag filter data.mcap output.mcap --topic /camera --start 1000 --end 2000
-
-# Merge multiple files
-pybag merge output.mcap input1.mcap input2.mcap
 ```
