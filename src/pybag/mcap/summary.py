@@ -66,12 +66,14 @@ class McapChunkedSummary:
         self._enable_reconstruction = enable_reconstruction
         self._check_crc = enable_crc_check
 
-        # Initialize cache variables
+        # Summary offset mapping (not cached data, just metadata for navigation)
         self._summary_offset: dict[RecordId, Offset] = {}
-        self._cached_schemas: dict[SchemaId, SchemaRecord] | None = None
-        self._cached_channels: dict[ChannelId, ChannelRecord] | None = None
-        self._cached_chunk_indexes: list[ChunkIndexRecord] | None = None
-        self._cached_statistics: StatisticsRecord | None = None
+
+        # Temporary storage for reconstructed summary (only used during initialization)
+        self._built_schemas: dict[SchemaId, SchemaRecord] | None = None
+        self._built_channels: dict[ChannelId, ChannelRecord] | None = None
+        self._built_chunk_indexes: list[ChunkIndexRecord] | None = None
+        self._built_statistics: StatisticsRecord | None = None
         self._message_indexes: dict[Offset, dict[ChannelId, MessageIndexRecord]] = {}
 
         # Read footer to determine if summary sections exist
@@ -247,7 +249,7 @@ class McapChunkedSummary:
         # TODO: Is this the best place to do this?
         found_chunk_indexes.sort(key=lambda ci: ci.message_start_time)
 
-        self._cached_statistics = StatisticsRecord(
+        self._built_statistics = StatisticsRecord(
             message_count=message_count,
             schema_count=len(found_schemas),
             channel_count=len(found_channels),
@@ -258,22 +260,21 @@ class McapChunkedSummary:
             message_end_time=message_end_time or 0,
             channel_message_counts=channel_message_counts,
         )
-        self._cached_schemas = found_schemas
-        self._cached_channels = found_channels
-        self._cached_chunk_indexes = found_chunk_indexes
+        self._built_schemas = found_schemas
+        self._built_channels = found_channels
+        self._built_chunk_indexes = found_chunk_indexes
 
     def get_schemas(self) -> dict[SchemaId, SchemaRecord]:
         """Get all schemas defined in the MCAP file.
 
-        Uses lazy loading: checks cache first, then loads from summary if available,
-        otherwise returns pre-built data from _build_summary().
+        Fetches from built summary if available, otherwise loads from file.
 
         Returns:
             Dictionary mapping schema ID to SchemaRecord
         """
-        # Note _cached_schemas can be an empty dict!
-        if self._cached_schemas is not None:
-            return self._cached_schemas
+        # If we built the summary during initialization, return that
+        if self._built_schemas is not None:
+            return self._built_schemas
 
         schemas: dict[SchemaId, SchemaRecord] = {}
 
@@ -283,7 +284,6 @@ class McapChunkedSummary:
             while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
                 if record := McapRecordParser.parse_schema(self._file):
                     schemas[record.id] = record
-            self._cached_schemas = schemas
             return schemas
 
         # If schema is not in summary section, must search data section
@@ -291,8 +291,7 @@ class McapChunkedSummary:
             # If reconstruction not allowed, return empty
             if self._enable_reconstruction == 'never':
                 logging.warning('No schema records found in summary and searching is disabled.')
-                self._cached_schemas = schemas
-                return self._cached_schemas
+                return schemas
 
             # Search for schema records in the summary section
             logging.warning('No schema records found in summary offset. Searching through file!')
@@ -313,25 +312,23 @@ class McapChunkedSummary:
                             McapRecordParser.skip_record(reader)
                 else:
                     McapRecordParser.skip_record(self._file)
-            self._cached_schemas = schemas
             return schemas
 
-        # Either we built self._cached_schemas
+        # Either we built self._built_schemas
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
     def get_channels(self) -> dict[ChannelId, ChannelRecord]:
         """Get all channels defined in the MCAP file.
 
-        Uses lazy loading: checks cache first, then loads from summary if available,
-        otherwise returns pre-built data from _build_summary().
+        Fetches from built summary if available, otherwise loads from file.
 
         Returns:
             Dictionary mapping channel ID to ChannelRecord
         """
-        # Note _cached_channels could be an empty dict!
-        if self._cached_channels is not None:
-            return self._cached_channels
+        # If we built the summary during initialization, return that
+        if self._built_channels is not None:
+            return self._built_channels
 
         channels: dict[ChannelId, ChannelRecord] = {}
 
@@ -341,7 +338,6 @@ class McapChunkedSummary:
             while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
                 channel = McapRecordParser.parse_channel(self._file)
                 channels[channel.id] = channel
-            self._cached_channels = channels
             return channels
 
         # If channel is not in summary section, must search data section
@@ -349,8 +345,7 @@ class McapChunkedSummary:
             # If reconstruction not allowed, return empty
             if self._enable_reconstruction == 'never':
                 logging.warning('No channel records found in summary and reconstruction is disabled.')
-                self._cached_channels = {}
-                return self._cached_channels
+                return {}
 
             # Search for channel records in the summary section
             logging.warning('No channel records found in summary offset. Searching through file!')
@@ -371,24 +366,22 @@ class McapChunkedSummary:
                             McapRecordParser.skip_record(reader)
                 else:
                     McapRecordParser.skip_record(self._file)
-            self._cached_channels = channels
             return channels
 
-        # Either we built self._cached_channels
+        # Either we built self._built_channels
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
     def get_chunk_indexes(self) -> list[ChunkIndexRecord]:
         """Get all chunk indexes, sorted by message_start_time.
 
-        Uses lazy loading: checks cache first, then loads from summary if available,
-        otherwise returns pre-built data from _build_summary().
+        Fetches from built summary if available, otherwise loads from file.
 
         Returns:
             List of ChunkIndexRecords sorted by message_start_time
         """
-        if self._cached_chunk_indexes is not None:
-            return self._cached_chunk_indexes
+        if self._built_chunk_indexes is not None:
+            return self._built_chunk_indexes
 
         chunk_indexes: list[ChunkIndexRecord] = []
 
@@ -401,7 +394,6 @@ class McapChunkedSummary:
             # Sort chunk indexes by message start time
             # TODO: Is this the best place to do this?
             chunk_indexes.sort(key=lambda ci: ci.message_start_time)
-            self._cached_chunk_indexes = chunk_indexes
             return chunk_indexes
 
         # If chunk index is not in summary section, must search data section
@@ -409,8 +401,7 @@ class McapChunkedSummary:
             # If reconstruction not allowed, return empty
             if self._enable_reconstruction == 'never':
                 logging.warning('No chunk index records found in summary and reconstruction is disabled.')
-                self._cached_chunk_indexes = []
-                return self._cached_chunk_indexes
+                return []
 
             # Search for chunk index records in the summary section
             logging.warning('No chunk index records found in summary offset. Searching through file!')
@@ -491,10 +482,9 @@ class McapChunkedSummary:
             # Sort chunk indexes by message start time
             # TODO: Is this the best place to do this?
             chunk_indexes.sort(key=lambda ci: ci.message_start_time)
-            self._cached_chunk_indexes = chunk_indexes
             return chunk_indexes
 
-        # Either we built self._cached_chunked_indexes
+        # Either we built self._built_chunk_indexes
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
@@ -538,20 +528,18 @@ class McapChunkedSummary:
     def get_statistics(self) -> StatisticsRecord | None:
         """Get statistics about the MCAP file.
 
-        Uses lazy loading: checks cache first, then loads from summary if available,
-        or calculates from chunk indexes, otherwise returns pre-built data.
+        Fetches from built summary if available, otherwise loads from file.
 
         Returns:
             StatisticsRecord containing file statistics
         """
-        if self._cached_statistics is not None:
-            return self._cached_statistics
+        if self._built_statistics is not None:
+            return self._built_statistics
 
         # If statistics is in summary offset, load from summary section
         if self._has_summary and McapRecordType.STATISTICS in self._summary_offset:
             _ = self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS])
             statistics = McapRecordParser.parse_statistics(self._file)
-            self._cached_statistics = statistics
             return statistics
 
         # If statistics is not in summary section, then we must recreate from data section
@@ -632,7 +620,7 @@ class McapChunkedSummary:
                     McapRecordParser.skip_record(self._file)
 
             # Create statistics record from collected data
-            self._cached_statistics = StatisticsRecord(
+            return StatisticsRecord(
                 message_count=message_count,
                 schema_count=len(schema_ids),
                 channel_count=len(channel_ids),
@@ -643,9 +631,8 @@ class McapChunkedSummary:
                 message_end_time=message_end_time or 0,
                 channel_message_counts=dict(channel_message_counts),
             )
-            return self._cached_statistics
 
-        # Either we built self._cached_statistics
+        # Either we built self._built_statistics
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
@@ -679,11 +666,13 @@ class McapNonChunkedSummary:
         self._enable_reconstruction = enable_reconstruction
         self._check_crc = enable_crc_check
 
-        # Initialize cache variables for lazy loading
+        # Summary offset mapping (not cached data, just metadata for navigation)
         self._summary_offset: dict[RecordId, Offset] = {}
-        self._cached_schemas: dict[SchemaId, SchemaRecord] | None = None
-        self._cached_channels: dict[ChannelId, ChannelRecord] | None = None
-        self._cached_statistics: StatisticsRecord | None = None
+
+        # Temporary storage for reconstructed summary (only used during initialization)
+        self._built_schemas: dict[SchemaId, SchemaRecord] | None = None
+        self._built_channels: dict[ChannelId, ChannelRecord] | None = None
+        self._built_statistics: StatisticsRecord | None = None
 
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         self._footer: FooterRecord = McapRecordParser.parse_footer(self._file)
@@ -765,7 +754,7 @@ class McapNonChunkedSummary:
                 McapRecordParser.skip_record(self._file)
 
         # Create statistics record from collected data
-        self._cached_statistics = StatisticsRecord(
+        self._built_statistics = StatisticsRecord(
             message_count=message_count,
             schema_count=len(found_schemas),
             channel_count=len(found_channels),
@@ -776,14 +765,14 @@ class McapNonChunkedSummary:
             message_end_time=message_end_time or 0,
             channel_message_counts=channel_message_counts,
         )
-        self._cached_schemas = found_schemas
-        self._cached_channels = found_channels
+        self._built_schemas = found_schemas
+        self._built_channels = found_channels
 
     def get_schemas(self) -> dict[SchemaId, SchemaRecord]:
         """Get all schemas defined in the MCAP file."""
-        # Note _cached_schemas could be an empty dict!
-        if self._cached_schemas is not None:
-            return self._cached_schemas
+        # If we built the summary during initialization, return that
+        if self._built_schemas is not None:
+            return self._built_schemas
 
         schemas: dict[SchemaId, SchemaRecord] = {}
 
@@ -793,7 +782,6 @@ class McapNonChunkedSummary:
             while McapRecordParser.peek_record(self._file) == McapRecordType.SCHEMA:
                 if record := McapRecordParser.parse_schema(self._file):
                     schemas[record.id] = record
-            self._cached_schemas = schemas
             return schemas
 
         # If schema is not in summary section, then we must search data section
@@ -801,7 +789,6 @@ class McapNonChunkedSummary:
             # If reconstruction not allowed, return empty
             if self._enable_reconstruction == 'never':
                 logging.warning('No schema records found in summary and reconstruction is disabled.')
-                self._cached_schemas = schemas
                 return schemas
 
             # Search for schema records in the data section
@@ -813,18 +800,17 @@ class McapNonChunkedSummary:
                     continue
                 if record := McapRecordParser.parse_schema(self._file):
                     schemas[record.id] = record
-            self._cached_schemas = schemas
             return schemas
 
-        # Either we built self._cached_schemas
+        # Either we built self._built_schemas
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
     def get_channels(self) -> dict[ChannelId, ChannelRecord]:
         """Get all channels defined in the MCAP file."""
-        # Note _cached_channels could be an empty dict!
-        if self._cached_channels is not None:
-            return self._cached_channels
+        # If we built the summary during initialization, return that
+        if self._built_channels is not None:
+            return self._built_channels
 
         channels: dict[ChannelId, ChannelRecord] = {}
 
@@ -834,7 +820,6 @@ class McapNonChunkedSummary:
             while McapRecordParser.peek_record(self._file) == McapRecordType.CHANNEL:
                 if record := McapRecordParser.parse_channel(self._file):
                     channels[record.id] = record
-            self._cached_channels = channels
             return channels
 
         # If channel is not in summary section, then we must search data section
@@ -842,7 +827,6 @@ class McapNonChunkedSummary:
             # If we reconstruction not allowed, return empty
             if self._enable_reconstruction == 'never':
                 logging.warning('No channel records found in summary and reconstruction is disabled.')
-                self._cached_channels = channels
                 return channels
 
             # Search for channel records in the data section
@@ -854,23 +838,21 @@ class McapNonChunkedSummary:
                     continue
                 if record := McapRecordParser.parse_channel(self._file):
                     channels[record.id] = record
-            self._cached_channels = channels
             return channels
 
-        # Either we built self._cached_channels
+        # Either we built self._built_channels
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
     def get_statistics(self) -> StatisticsRecord | None:
         """Get statistics about the MCAP file."""
-        if self._cached_statistics is not None:
-            return self._cached_statistics
+        if self._built_statistics is not None:
+            return self._built_statistics
 
         # If statistics is in offset, then assume complete and return all
         if self._has_summary and McapRecordType.STATISTICS in self._summary_offset:
             _ = self._file.seek_from_start(self._summary_offset[McapRecordType.STATISTICS])
             record = McapRecordParser.parse_statistics(self._file)
-            self._cached_statistics = record
             return record
 
         # If statistics is not in summary section, then we must recreate from data section
@@ -918,7 +900,7 @@ class McapNonChunkedSummary:
                     McapRecordParser.skip_record(self._file)
 
             # Create statistics record from collected data
-            self._cached_statistics = StatisticsRecord(
+            return StatisticsRecord(
                 message_count=message_count,
                 schema_count=schema_count,
                 channel_count=channel_count,
@@ -929,9 +911,8 @@ class McapNonChunkedSummary:
                 message_end_time=message_end_time or 0,
                 channel_message_counts=channel_message_counts,
             )
-            return self._cached_statistics
 
-        # Either we built self._cached_statistics
+        # Either we built self._built_statistics
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 

@@ -162,6 +162,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
+        max_cache_size: Maximum number of items to cache. None means unlimited. Default is None.
     """
 
     def __init__(
@@ -170,21 +171,27 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ):
         self._file = file
         self._check_crc = enable_crc_check
+        self._max_cache_size = max_cache_size
 
         self._version = McapRecordParser.parse_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
 
-        # Mcap summary abstraction
+        # Mcap summary abstraction (no caching in summary layer)
         self._summary = McapChunkedSummary(
             self._file,
             enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
         )
 
-        # Caches for message indexes
+        # Caches managed by reader
+        self._cached_schemas: dict[int, SchemaRecord] | None = None
+        self._cached_channels: dict[int, ChannelRecord] | None = None
+        self._cached_chunk_indexes: list[ChunkIndexRecord] | None = None
+        self._cached_statistics: StatisticsRecord | None = None
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
     # Helpful Constructors
@@ -195,6 +202,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -205,6 +213,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            max_cache_size: Maximum number of items to cache. None means unlimited.
 
         Returns:
             A McapChunkedReader instance
@@ -213,6 +222,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
+            max_cache_size=max_cache_size,
         )
 
     @staticmethod
@@ -221,6 +231,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a bytes object.
 
@@ -231,6 +242,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            max_cache_size: Maximum number of items to cache. None means unlimited.
 
         Returns:
             A McapChunkedReader instance
@@ -239,6 +251,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             BytesReader(data),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
+            max_cache_size=max_cache_size,
         )
 
     # Destructors
@@ -269,9 +282,11 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     def get_statistics(self) -> StatisticsRecord:
         """Get the statistics record from the MCAP file."""
-        if (record := self._summary.get_statistics()) is None:
-            raise McapNoStatisticsError("No statistics record found in MCAP")
-        return record
+        if self._cached_statistics is None:
+            if (record := self._summary.get_statistics()) is None:
+                raise McapNoStatisticsError("No statistics record found in MCAP")
+            self._cached_statistics = record
+        return self._cached_statistics
 
     # Schema Management
 
@@ -282,7 +297,11 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping schema IDs to SchemaInfo objects.
         """
-        return self._summary.get_schemas()
+        if self._cached_schemas is not None:
+            return self._cached_schemas
+
+        self._cached_schemas = self._summary.get_schemas()
+        return self._cached_schemas
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """
@@ -335,7 +354,11 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping channel IDs to channel information.
         """
-        return self._summary.get_channels()
+        if self._cached_channels is not None:
+            return self._cached_channels
+
+        self._cached_channels = self._summary.get_channels()
+        return self._cached_channels
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """
@@ -380,6 +403,13 @@ class McapChunkedReader(BaseMcapRecordReader):
                 message_index[channel_id].records.sort(key=lambda x: (x[0], x[1]))
         else:
             message_index = self._summary.get_message_indexes(chunk_index)
+
+        # Apply cache size limit if configured
+        if self._max_cache_size is not None and len(self._message_indexes) >= self._max_cache_size:
+            # Simple FIFO eviction: remove oldest entry
+            first_key = next(iter(self._message_indexes))
+            del self._message_indexes[first_key]
+
         self._message_indexes[key] = message_index
 
         return message_index
@@ -410,14 +440,18 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A list of ChunkIndexRecord objects.
         """
+        # Load and cache chunk indexes if not already cached
+        if self._cached_chunk_indexes is None:
+            self._cached_chunk_indexes = self._summary.get_chunk_indexes()
+
         if channel_id is None:
-            return self._summary.get_chunk_indexes()
+            return self._cached_chunk_indexes
 
         # Normalize to list for consistent processing
         channel_ids = [channel_id] if isinstance(channel_id, int) else channel_id
 
         chunk_indexes: list[ChunkIndexRecord] = []
-        for chunk_index in self._summary.get_chunk_indexes():
+        for chunk_index in self._cached_chunk_indexes:
             # Check if any of the requested channels are in this chunk
             if any(cid in chunk_index.message_index_offsets for cid in channel_ids):
                 chunk_indexes.append(chunk_index)
@@ -761,6 +795,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
+        max_cache_size: Maximum number of items to cache. None means unlimited. Default is None.
     """
 
     def __init__(
@@ -769,12 +804,16 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ):
         self._file = file
         self._check_crc = enable_crc_check
+        self._max_cache_size = max_cache_size
 
-        self._schemas: dict[int, SchemaRecord] | None = None
-        self._channels: dict[int, ChannelRecord] | None = None
+        # Caches managed by reader
+        self._cached_schemas: dict[int, SchemaRecord] | None = None
+        self._cached_channels: dict[int, ChannelRecord] | None = None
+        self._cached_statistics: StatisticsRecord | None = None
 
         # Parse file structure
         self._version = McapRecordParser.parse_magic_bytes(self._file)
@@ -788,8 +827,8 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         self._message_indexes = self._build_message_index()
 
         # Check if this is indeed a non-chunked file
-        self._statistics = self._summary.get_statistics()
-        if self._statistics and self._statistics.chunk_count > 0:
+        self._cached_statistics = self._summary.get_statistics()
+        if self._cached_statistics and self._cached_statistics.chunk_count > 0:
             error_msg = 'MCAP file contains chunks, use McapChunkedReader instead'
             raise McapUnexpectedChunkIndexError(error_msg)
 
@@ -830,6 +869,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ) -> 'McapNonChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -840,6 +880,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            max_cache_size: Maximum number of items to cache. None means unlimited.
 
         Returns:
             A McapNonChunkedReader instance
@@ -848,6 +889,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
+            max_cache_size=max_cache_size,
         )
 
     @staticmethod
@@ -856,6 +898,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ) -> 'McapNonChunkedReader':
         """Create a new MCAP reader from a bytes object.
 
@@ -866,6 +909,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            max_cache_size: Maximum number of items to cache. None means unlimited.
 
         Returns:
             A McapNonChunkedReader instance
@@ -874,6 +918,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             BytesReader(data),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
+            max_cache_size=max_cache_size,
         )
 
     # Destructors
@@ -904,9 +949,9 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
     def get_statistics(self) -> StatisticsRecord:  # TODO: Also return None here?
         """Get the statistics record from the MCAP file."""
-        if self._statistics is None:
+        if self._cached_statistics is None:
             raise McapNoStatisticsError('No statistics record!')
-        return self._statistics
+        return self._cached_statistics
 
     # Schema Management
 
@@ -917,9 +962,9 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping schema IDs to SchemaInfo objects.
         """
-        if self._schemas is None:
-            self._schemas = self._summary.get_schemas()
-        return self._schemas
+        if self._cached_schemas is None:
+            self._cached_schemas = self._summary.get_schemas()
+        return self._cached_schemas
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
         """
@@ -972,9 +1017,9 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         Returns:
             A dictionary mapping channel IDs to channel information.
         """
-        if self._channels is None:
-            self._channels = self._summary.get_channels()
-        return self._channels
+        if self._cached_channels is None:
+            self._cached_channels = self._summary.get_channels()
+        return self._cached_channels
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
         """
@@ -1156,6 +1201,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file.
 
@@ -1166,6 +1212,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            max_cache_size: Maximum number of items to cache. None means unlimited.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1179,6 +1226,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                max_cache_size=max_cache_size,
             )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
@@ -1188,6 +1236,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                max_cache_size=max_cache_size,
             )
         except (McapNoSummarySectionError, McapNoSummaryIndexError) as e:
             # Only raise if reconstruction is explicitly disabled
@@ -1208,6 +1257,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        max_cache_size: int | None = None,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a bytes object.
 
@@ -1218,6 +1268,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            max_cache_size: Maximum number of items to cache. None means unlimited.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1231,6 +1282,7 @@ class McapRecordReaderFactory:
                 data,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                max_cache_size=max_cache_size,
             )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
@@ -1239,6 +1291,7 @@ class McapRecordReaderFactory:
                 data,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                max_cache_size=max_cache_size,
             )
         except (McapNoSummarySectionError, McapNoSummaryIndexError) as e:
             # Only raise if reconstruction is explicitly disabled

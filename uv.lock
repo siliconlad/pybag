@@ -319,6 +319,9 @@ zstd = [
 ]
 
 [package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
 test = [
     { name = "mcap" },
     { name = "mcap-ros2-support" },
@@ -337,6 +340,7 @@ requires-dist = [
 provides-extras = ["zstd", "lz4"]
 
 [package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.4.1" }]
 test = [
     { name = "mcap", specifier = ">=1.2.2" },
     { name = "mcap-ros2-support", specifier = ">=0.5.5" },
