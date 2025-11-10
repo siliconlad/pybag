@@ -1,6 +1,5 @@
 """MCAP info CLI command."""
 
-import argparse
 from pathlib import Path
 from textwrap import dedent
 
@@ -122,10 +121,6 @@ def info_mcap(input_path: str | Path) -> None:
                 print(f"  {topic:<{max_topic_len}}  {messages:>{max_msgs_len}}  {freq:>10}  {encoding:<15}  {schema}")
 
 
-def _info_mcap_from_args(args: argparse.Namespace) -> None:
-    info_mcap(args.input)
-
-
 def add_parser(subparsers) -> None:
     parser = subparsers.add_parser(
         "info",
@@ -140,4 +135,4 @@ def add_parser(subparsers) -> None:
         """)
     )
     parser.add_argument("input", help="Path to MCAP file (*.mcap)")
-    parser.set_defaults(func=_info_mcap_from_args)
+    parser.set_defaults(func=lambda args: info_mcap(args.input))
