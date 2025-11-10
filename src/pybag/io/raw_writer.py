@@ -7,19 +7,13 @@ class BaseWriter(ABC):
     """Abstract base class for binary writers."""
 
     @abstractmethod
-    def write(self, data: bytes) -> int:
-        """Write bytes."""
-        ...  # pragma: no cover
+    def write(self, data: bytes) -> int: ...
 
     @abstractmethod
-    def tell(self) -> int:
-        """Get the current position in the writer."""
-        ...  # pragma: no cover
+    def tell(self) -> int: ...
 
     @abstractmethod
-    def close(self) -> None:
-        """Close the writer."""
-        ...  # pragma: no cover
+    def close(self) -> None: ...
 
 
 class FileWriter(BaseWriter):

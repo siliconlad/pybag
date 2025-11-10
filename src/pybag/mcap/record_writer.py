@@ -273,46 +273,22 @@ class BaseMcapRecordWriter(ABC):
     """
 
     @abstractmethod
-    def write_schema(self, schema: SchemaRecord) -> None:
-        """Write a schema record to the MCAP file.
-
-        Args:
-            schema: The schema record to write.
-        """
-        ...  # pragma: no cover
+    def write_schema(self, schema: SchemaRecord) -> None: ...
 
     @abstractmethod
-    def write_channel(self, channel: ChannelRecord) -> None:
-        """Write a channel record to the MCAP file.
-
-        Args:
-            channel: The channel record to write.
-        """
-        ...  # pragma: no cover
+    def write_channel(self, channel: ChannelRecord) -> None: ...
 
     @abstractmethod
-    def write_message(self, message: MessageRecord) -> None:
-        """Write a message record to the MCAP file.
-
-        Args:
-            message: The message record to write.
-        """
-        ...  # pragma: no cover
+    def write_message(self, message: MessageRecord) -> None: ...
 
     @abstractmethod
-    def close(self) -> None:
-        """Finalize the MCAP file by writing summary section and footer."""
-        ...  # pragma: no cover
+    def close(self) -> None: ...
 
     @abstractmethod
-    def __enter__(self) -> 'BaseMcapRecordWriter':
-        """Context manager entry."""
-        ...  # pragma: no cover
+    def __enter__(self) -> 'BaseMcapRecordWriter': ...
 
     @abstractmethod
-    def __exit__(self, exc_type, exc, tb) -> None:
-        """Context manager exit."""
-        ...  # pragma: no cover
+    def __exit__(self, exc_type, exc, tb) -> None: ...
 
     def _write_summary_section(
         self,

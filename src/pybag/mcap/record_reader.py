@@ -37,108 +37,67 @@ from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 logger = logging.getLogger(__name__)
 
 
-# TODO: Is this the minimal set of methods needed?
 class BaseMcapRecordReader(ABC):
-    @abstractmethod
-    def __enter__(self) -> 'BaseMcapRecordReader':
-        ...  # pragma: no cover
+    """Abstract base class for MCAP record readers."""
 
     @abstractmethod
-    def __exit__(self, exc_type, exc_value, traceback):
-        ...  # pragma: no cover
+    def __enter__(self) -> 'BaseMcapRecordReader': ...
 
     @abstractmethod
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        ...  # pragma: no cover
+    def __exit__(self, exc_type, exc_value, traceback): ...
 
     @abstractmethod
-    def get_header(self) -> HeaderRecord:
-        """Get the header record from the MCAP file."""
-        ...  # pragma: no cover
+    def close(self) -> None: ...
 
     @abstractmethod
-    def get_footer(self) -> FooterRecord:
-        """Get the footer record from the MCAP file."""
-        ...  # pragma: no cover
+    def get_header(self) -> HeaderRecord: ...
 
     @abstractmethod
-    def get_statistics(self) -> StatisticsRecord:
-        """Get the statistics record from the MCAP file."""
-        ...  # pragma: no cover
+    def get_footer(self) -> FooterRecord: ...
+
+    @abstractmethod
+    def get_statistics(self) -> StatisticsRecord: ...
 
     # Schema Management
+    @abstractmethod
+    def get_schemas(self) -> dict[int, SchemaRecord]: ...
 
     @abstractmethod
-    def get_schemas(self) -> dict[int, SchemaRecord]:
-        """Get all schemas defined in the MCAP file."""
-        ...  # pragma: no cover
+    def get_schema(self, schema_id: int) -> SchemaRecord | None: ...
 
     @abstractmethod
-    def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        """Get a schema by its ID."""
-        ...  # pragma: no cover
+    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None: ...
 
     @abstractmethod
-    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        """Get the schema for a given channel ID."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        """Get the schema for a given message."""
-        ...  # pragma: no cover
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord: ...
 
     # Channel Management
+    @abstractmethod
+    def get_channels(self) -> dict[int, ChannelRecord]: ...
 
     @abstractmethod
-    def get_channels(self) -> dict[int, ChannelRecord]:
-        """Get all channels/topics in the MCAP file."""
-        ...  # pragma: no cover
+    def get_channel(self, channel_id: int) -> ChannelRecord | None: ...
 
     @abstractmethod
-    def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        """Get a channel by its ID."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_channel_id(self, topic: str) -> int | None:
-        """Get a channel ID by its topic."""
-        ...  # pragma: no cover
+    def get_channel_id(self, topic: str) -> int | None: ...
 
     # Message Index Management
+    @abstractmethod
+    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]: ...
 
     @abstractmethod
-    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
-        """Get all message indexes from the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
-        """Get a message index for a given channel ID."""
-        ...  # pragma: no cover
+    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None: ...
 
     # Chunk Management
+    @abstractmethod
+    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]: ...
 
     @abstractmethod
-    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
-        """Get all chunk indexes from the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
-        """Get a chunk by its index."""
-        ...  # pragma: no cover
+    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord: ...
 
     # Message Management
-
     @abstractmethod
-    def get_message(
-        self,
-        channel_id: int,
-        timestamp: int | None = None,
-    ) -> MessageRecord | None:
-        ...  # pragma: no cover
+    def get_message(self, channel_id: int, timestamp: int | None = None) -> MessageRecord | None: ...
 
     @abstractmethod
     def get_messages(
@@ -148,8 +107,7 @@ class BaseMcapRecordReader(ABC):
         end_timestamp: int | None = None,
         *,
         in_log_time_order: bool = True,
-    ) -> Generator[MessageRecord, None, None]:
-        ...  # pragma: no cover
+    ) -> Generator[MessageRecord, None, None]: ...
 
 
 class McapChunkedReader(BaseMcapRecordReader):
@@ -196,19 +154,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> 'McapChunkedReader':
-        """Create a new MCAP reader from a file.
-
-        Args:
-            file_path: Path to the MCAP file
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            A McapChunkedReader instance
-        """
+        """Create reader from file path."""
         return McapChunkedReader(
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
@@ -222,19 +168,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> 'McapChunkedReader':
-        """Create a new MCAP reader from a bytes object.
-
-        Args:
-            data: Bytes containing the MCAP file data
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            A McapChunkedReader instance
-        """
+        """Create reader from bytes."""
         return McapChunkedReader(
             BytesReader(data),
             enable_crc_check=enable_crc_check,
@@ -258,17 +192,14 @@ class McapChunkedReader(BaseMcapRecordReader):
     # Getters for records
 
     def get_header(self) -> HeaderRecord:
-        """Get the header record from the MCAP file."""
         self._file.seek_from_start(MAGIC_BYTES_SIZE)
         return McapRecordParser.parse_header(self._file)
 
     def get_footer(self) -> FooterRecord:
-        """Get the footer record from the MCAP file."""
         self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         return McapRecordParser.parse_footer(self._file)
 
     def get_statistics(self) -> StatisticsRecord:
-        """Get the statistics record from the MCAP file."""
         if (record := self._summary.get_statistics()) is None:
             raise McapNoStatisticsError("No statistics record found in MCAP")
         return record
@@ -276,51 +207,18 @@ class McapChunkedReader(BaseMcapRecordReader):
     # Schema Management
 
     def get_schemas(self) -> dict[int, SchemaRecord]:
-        """
-        Get all schemas defined in the MCAP file.
-
-        Returns:
-            A dictionary mapping schema IDs to SchemaInfo objects.
-        """
         return self._summary.get_schemas()
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        """
-        Get a schema by its ID.
-
-        Args:
-            schema_id: The ID of the schema.
-
-        Returns:
-            The schema or None if the schema does not exist.
-        """
         return self.get_schemas().get(schema_id)
 
     def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        """
-        Get the schema for a given channel ID.
-
-        Args:
-            channel_id: The ID of the channel.
-
-        Returns:
-            The schema of the channel or None if the channel/schema does not exist.
-        """
         channel = self.get_channel(channel_id)
         if channel is None:
             return None
         return self.get_schema(channel.schema_id)
 
     def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        """
-        Get the schema for a given message.
-
-        Args:
-            message: The message to get the schema for.
-
-        Returns:
-            The schema for the message.
-        """
         schema = self.get_channel_schema(message.channel_id)
         if schema is None:
             raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
@@ -329,28 +227,12 @@ class McapChunkedReader(BaseMcapRecordReader):
     # Channel Management
 
     def get_channels(self) -> dict[int, ChannelRecord]:
-        """
-        Get all channels/topics in the MCAP file.
-
-        Returns:
-            A dictionary mapping channel IDs to channel information.
-        """
         return self._summary.get_channels()
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        """
-        Get channel information by its ID.
-
-        Args:
-            channel_id: The ID of the channel.
-
-        Returns:
-            The channel information or None if the channel does not exist.
-        """
         return self.get_channels().get(channel_id)
 
     def get_channel_id(self, topic: str) -> int | None:
-        """Get a channel ID by its topic."""
         for channel in self.get_channels().values():
             if channel.topic == topic:
                 return channel.id
@@ -359,15 +241,6 @@ class McapChunkedReader(BaseMcapRecordReader):
     # Message Index Management
 
     def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
-        """
-        Get all message indexes from the MCAP file.
-
-        Args:
-            chunk_index: The chunk index to get the message indexes from.
-
-        Returns:
-            A list of MessageIndexRecord objects.
-        """
         key = chunk_index.chunk_start_offset
         if key in self._message_indexes:
             return self._message_indexes[key]
@@ -385,31 +258,11 @@ class McapChunkedReader(BaseMcapRecordReader):
         return message_index
 
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
-        """
-        Get a message index for a given channel ID.
-
-        Args:
-            chunk_index: The chunk index to get the message indexes from.
-            channel_id: The ID of the channel.
-
-        Returns:
-            A MessageIndexRecord object or None if the channel does not exist for the chunk.
-        """
         return self.get_message_indexes(chunk_index).get(channel_id)
 
     # Chunk Management
 
     def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
-        """
-        Get all chunk indexes from the MCAP file.
-
-        Args:
-            channel_id: The ID of the channel(s) to get the chunk indexes for.
-                        Can be a single int, a list of ints, or None for all channels.
-
-        Returns:
-            A list of ChunkIndexRecord objects.
-        """
         if channel_id is None:
             return self._summary.get_chunk_indexes()
 
@@ -431,15 +284,6 @@ class McapChunkedReader(BaseMcapRecordReader):
         return chunk_indexes
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
-        """
-        Get a chunk by its index.
-
-        Args:
-            chunk_index: The chunk index to get the chunk from.
-
-        Returns:
-            A ChunkRecord object.
-        """
         self._file.seek_from_start(chunk_index.chunk_start_offset)
         return McapRecordParser.parse_chunk(self._file)
 
@@ -831,19 +675,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> 'McapNonChunkedReader':
-        """Create a new MCAP reader from a file.
-
-        Args:
-            file_path: Path to the MCAP file
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            A McapNonChunkedReader instance
-        """
+        """Create reader from file path."""
         return McapNonChunkedReader(
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
@@ -857,19 +689,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> 'McapNonChunkedReader':
-        """Create a new MCAP reader from a bytes object.
-
-        Args:
-            data: Bytes containing the MCAP file data
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            A McapNonChunkedReader instance
-        """
+        """Create reader from bytes."""
         return McapNonChunkedReader(
             BytesReader(data),
             enable_crc_check=enable_crc_check,
@@ -893,17 +713,14 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     # Getters for records
 
     def get_header(self) -> HeaderRecord:
-        """Get the header record from the MCAP file."""
         _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
         return McapRecordParser.parse_header(self._file)
 
     def get_footer(self) -> FooterRecord:
-        """Get the footer record from the MCAP file."""
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         return McapRecordParser.parse_footer(self._file)
 
     def get_statistics(self) -> StatisticsRecord:  # TODO: Also return None here?
-        """Get the statistics record from the MCAP file."""
         if self._statistics is None:
             raise McapNoStatisticsError('No statistics record!')
         return self._statistics
@@ -911,53 +728,20 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     # Schema Management
 
     def get_schemas(self) -> dict[int, SchemaRecord]:
-        """
-        Get all schemas defined in the MCAP file.
-
-        Returns:
-            A dictionary mapping schema IDs to SchemaInfo objects.
-        """
         if self._schemas is None:
             self._schemas = self._summary.get_schemas()
         return self._schemas
 
     def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        """
-        Get a schema by its ID.
-
-        Args:
-            schema_id: The ID of the schema.
-
-        Returns:
-            The schema or None if the schema does not exist.
-        """
         return self.get_schemas().get(schema_id)
 
     def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        """
-        Get the schema for a given channel ID.
-
-        Args:
-            channel_id: The ID of the channel.
-
-        Returns:
-            The schema of the channel or None if the channel/schema does not exist.
-        """
         channel = self.get_channel(channel_id)
         if channel is None:
             return None
         return self.get_schema(channel.schema_id)
 
     def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        """
-        Get the schema for a given message.
-
-        Args:
-            message: The message to get the schema for.
-
-        Returns:
-            The schema for the message.
-        """
         schema = self.get_channel_schema(message.channel_id)
         if schema is None:
             raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
@@ -966,30 +750,14 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     # Channel Management
 
     def get_channels(self) -> dict[int, ChannelRecord]:
-        """
-        Get all channels/topics in the MCAP file.
-
-        Returns:
-            A dictionary mapping channel IDs to channel information.
-        """
         if self._channels is None:
             self._channels = self._summary.get_channels()
         return self._channels
 
     def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        """
-        Get channel information by its ID.
-
-        Args:
-            channel_id: The ID of the channel.
-
-        Returns:
-            The channel information or None if the channel does not exist.
-        """
         return self.get_channels().get(channel_id)
 
     def get_channel_id(self, topic: str) -> int | None:
-        """Get a channel ID by its topic."""
         for channel in self.get_channels().values():
             if channel.topic == topic:
                 return channel.id
@@ -998,41 +766,21 @@ class McapNonChunkedReader(BaseMcapRecordReader):
     # Message Index Management (placeholders for compatibility)
 
     def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
-        """
-        Get all message indexes from the MCAP file.
-
-        Note: Non-chunked files don't have chunk indexes or message indexes.
-        This method is provided for interface compatibility.
-        """
+        """Non-chunked files don't have message indexes."""
         return {}
 
     def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
-        """
-        Get a message index for a given channel ID.
-
-        Note: Non-chunked files don't have chunk indexes or message indexes.
-        This method is provided for interface compatibility.
-        """
+        """Non-chunked files don't have message indexes."""
         return None
 
     # Chunk Management (placeholders for compatibility)
 
     def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
-        """
-        Get all chunk indexes from the MCAP file.
-
-        Note: Non-chunked files don't have chunks.
-        This method is provided for interface compatibility.
-        """
+        """Non-chunked files don't have chunks."""
         return []
 
     def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
-        """
-        Get a chunk by its index.
-
-        Note: Non-chunked files don't have chunks.
-        This method is provided for interface compatibility.
-        """
+        """Non-chunked files don't have chunks."""
         raise McapNoChunkError('Non-chunked MCAP files do not have chunks')
 
     # Message Management
@@ -1148,7 +896,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
 
 class McapRecordReaderFactory:
-    """Factory to create a McapFileSequentialReader or McapFileRandomAccessReader."""
+    """Factory to create appropriate MCAP reader (chunked or non-chunked)."""
 
     @staticmethod
     def from_file(
@@ -1157,22 +905,7 @@ class McapRecordReaderFactory:
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> BaseMcapRecordReader:
-        """Create a new MCAP reader from a file.
-
-        Args:
-            file_path: Path to the MCAP file
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            Appropriate reader instance (chunked or non-chunked)
-
-        Raises:
-            NotImplementedError: If summary is missing and reconstruction is disabled
-        """
+        """Create reader from file path."""
         try:
             # Try to create a chunked reader first
             return McapChunkedReader.from_file(
@@ -1209,22 +942,7 @@ class McapRecordReaderFactory:
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ) -> BaseMcapRecordReader:
-        """Create a new MCAP reader from a bytes object.
-
-        Args:
-            data: Bytes containing the MCAP file data
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            Appropriate reader instance (chunked or non-chunked)
-
-        Raises:
-            NotImplementedError: If summary is missing and reconstruction is disabled
-        """
+        """Create reader from bytes."""
         try:
             # Try to create a chunked reader first
             return McapChunkedReader.from_bytes(

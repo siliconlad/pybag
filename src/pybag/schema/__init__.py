@@ -94,24 +94,16 @@ class Schema:
 
 class SchemaDecoder(ABC):
     @abstractmethod
-    def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:
-        """Decode a schema into a Python object."""
-        ...  # pragma: no cover
+    def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]: ...
 
 
 class SchemaEncoder(ABC):
     @classmethod
     @abstractmethod
-    def encoding(cls) -> str:
-        """The encoding to use for the schema."""
-        ...  # pragma: no cover
+    def encoding(cls) -> str: ...
 
     @abstractmethod
-    def encode(self, schema: Message | type[Message]) -> bytes:
-        """Encode a schema into a bytes object."""
-        ...  # pragma: no cover
+    def encode(self, schema: Message | type[Message]) -> bytes: ...
 
     @abstractmethod
-    def parse_schema(self, schema: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
-        """Parse a schema into a Python object."""
-        ...  # pragma: no cover
+    def parse_schema(self, schema: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]: ...
