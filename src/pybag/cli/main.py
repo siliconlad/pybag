@@ -1,6 +1,6 @@
 import argparse
 
-from pybag.cli import mcap_filter, mcap_merge, mcap_info
+from pybag.cli import mcap_filter, mcap_info, mcap_merge
 
 
 def build_parser() -> argparse.ArgumentParser:
