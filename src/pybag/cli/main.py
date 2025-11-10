@@ -1,6 +1,6 @@
 import argparse
 
-from pybag.cli import mcap_filter, mcap_merge
+from pybag.cli import mcap_filter, mcap_info, mcap_merge
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -19,6 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     # TODO: Have some of entrypoint registration?
     mcap_filter.add_parser(subparsers)
     mcap_merge.add_parser(subparsers)
+    mcap_info.add_parser(subparsers)
 
     return parser
 
