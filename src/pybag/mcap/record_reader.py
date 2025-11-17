@@ -110,7 +110,64 @@ class BaseMcapRecordReader(ABC):
     ) -> Generator[MessageRecord, None, None]: ...
 
 
-class McapChunkedReader(BaseMcapRecordReader):
+class McapRecordReader(BaseMcapRecordReader):
+    """Concrete base class with shared implementation for MCAP readers."""
+
+    _file: BaseReader
+    _check_crc: bool
+
+    # Context Managers
+
+    def __enter__(self) -> 'McapRecordReader':
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Close the MCAP file and release all resources."""
+        self._file.close()
+
+    # Getters for records
+
+    def get_header(self) -> HeaderRecord:
+        self._file.seek_from_start(MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_header(self._file)
+
+    def get_footer(self) -> FooterRecord:
+        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+        return McapRecordParser.parse_footer(self._file)
+
+    # Schema Management
+
+    def get_schema(self, schema_id: int) -> SchemaRecord | None:
+        return self.get_schemas().get(schema_id)
+
+    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
+        channel = self.get_channel(channel_id)
+        if channel is None:
+            return None
+        return self.get_schema(channel.schema_id)
+
+    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
+        schema = self.get_channel_schema(message.channel_id)
+        if schema is None:
+            raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
+        return schema
+
+    # Channel Management
+
+    def get_channel(self, channel_id: int) -> ChannelRecord | None:
+        return self.get_channels().get(channel_id)
+
+    def get_channel_id(self, topic: str) -> int | None:
+        for channel in self.get_channels().values():
+            if channel.topic == topic:
+                return channel.id
+        return None
+
+
+class McapChunkedReader(McapRecordReader):
     """Class to efficiently get records from a chunked MCAP file.
 
     Args:
@@ -175,30 +232,6 @@ class McapChunkedReader(BaseMcapRecordReader):
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
 
-    # Destructors
-
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        self._file.close()
-
-    # Context Managers
-
-    def __enter__(self) -> 'McapChunkedReader':
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
-
-    # Getters for records
-
-    def get_header(self) -> HeaderRecord:
-        self._file.seek_from_start(MAGIC_BYTES_SIZE)
-        return McapRecordParser.parse_header(self._file)
-
-    def get_footer(self) -> FooterRecord:
-        self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        return McapRecordParser.parse_footer(self._file)
-
     def get_statistics(self) -> StatisticsRecord:
         if (record := self._summary.get_statistics()) is None:
             raise McapNoStatisticsError("No statistics record found in MCAP")
@@ -209,34 +242,10 @@ class McapChunkedReader(BaseMcapRecordReader):
     def get_schemas(self) -> dict[int, SchemaRecord]:
         return self._summary.get_schemas()
 
-    def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        return self.get_schemas().get(schema_id)
-
-    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        channel = self.get_channel(channel_id)
-        if channel is None:
-            return None
-        return self.get_schema(channel.schema_id)
-
-    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        schema = self.get_channel_schema(message.channel_id)
-        if schema is None:
-            raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
-        return schema
-
     # Channel Management
 
     def get_channels(self) -> dict[int, ChannelRecord]:
         return self._summary.get_channels()
-
-    def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        return self.get_channels().get(channel_id)
-
-    def get_channel_id(self, topic: str) -> int | None:
-        for channel in self.get_channels().values():
-            if channel.topic == topic:
-                return channel.id
-        return None
 
     # Message Index Management
 
@@ -591,7 +600,7 @@ class McapChunkedReader(BaseMcapRecordReader):
     # - Attachment Index
 
 
-class McapNonChunkedReader(BaseMcapRecordReader):
+class McapNonChunkedReader(McapRecordReader):
     """Class to efficiently get records from an mcap file with no chunks.
 
     This reader handles MCAP files that don't contain chunks but have a proper
@@ -696,30 +705,6 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
 
-    # Destructors
-
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        self._file.close()
-
-    # Context Managers
-
-    def __enter__(self) -> 'McapNonChunkedReader':
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
-
-    # Getters for records
-
-    def get_header(self) -> HeaderRecord:
-        _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
-        return McapRecordParser.parse_header(self._file)
-
-    def get_footer(self) -> FooterRecord:
-        _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        return McapRecordParser.parse_footer(self._file)
-
     def get_statistics(self) -> StatisticsRecord:  # TODO: Also return None here?
         if self._statistics is None:
             raise McapNoStatisticsError('No statistics record!')
@@ -732,36 +717,12 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             self._schemas = self._summary.get_schemas()
         return self._schemas
 
-    def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        return self.get_schemas().get(schema_id)
-
-    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        channel = self.get_channel(channel_id)
-        if channel is None:
-            return None
-        return self.get_schema(channel.schema_id)
-
-    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        schema = self.get_channel_schema(message.channel_id)
-        if schema is None:
-            raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
-        return schema
-
     # Channel Management
 
     def get_channels(self) -> dict[int, ChannelRecord]:
         if self._channels is None:
             self._channels = self._summary.get_channels()
         return self._channels
-
-    def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        return self.get_channels().get(channel_id)
-
-    def get_channel_id(self, topic: str) -> int | None:
-        for channel in self.get_channels().values():
-            if channel.topic == topic:
-                return channel.id
-        return None
 
     # Message Index Management (placeholders for compatibility)
 

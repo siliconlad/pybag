@@ -95,6 +95,17 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
         'wstring': t.wstring,
     }
 
+    def get_elem_annotation(elem_type: SchemaFieldType) -> Any:
+        """Get annotation for an array/sequence element type."""
+        if isinstance(elem_type, Primitive):
+            return _PRIMITIVE_TYPE_MAP.get(elem_type.type, Any)
+        elif isinstance(elem_type, String):
+            return _PRIMITIVE_TYPE_MAP.get(elem_type.type, str)
+        elif isinstance(elem_type, Complex):
+            sub_schema = sub_schemas[elem_type.type]
+            return create_dataclass_type(sub_schema)
+        return Any
+
     def schema_type_to_annotation(field_type: SchemaFieldType) -> Any:
         """Convert a schema field type to a proper type annotation."""
         if isinstance(field_type, Primitive):
@@ -102,37 +113,14 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
         elif isinstance(field_type, String):
             return _PRIMITIVE_TYPE_MAP.get(field_type.type, str)
         elif isinstance(field_type, Array):
-            elem_type = field_type.type
-            if isinstance(elem_type, Primitive):
-                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, Any)
-                return Annotated[list[elem_annotation], ("array", elem_annotation, field_type.length)]  # type: ignore[valid-type]
-            elif isinstance(elem_type, String):
-                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, str)
-                return Annotated[list[elem_annotation], ("array", elem_annotation, field_type.length)]  # type: ignore[valid-type]
-            elif isinstance(elem_type, Complex):
-                # Create sub-type if needed - use Any for list element since type is dynamic
-                sub_schema = sub_schemas[elem_type.type]
-                elem_annotation = create_dataclass_type(sub_schema)
-                return Annotated[list[Any], ("array", elem_annotation, field_type.length)]
-            else:
-                return Annotated[list[Any], ("array", Any, field_type.length)]
+            elem_annotation = get_elem_annotation(field_type.type)
+            list_type = list[Any] if isinstance(field_type.type, Complex) else list[elem_annotation]  # type: ignore[valid-type]
+            return Annotated[list_type, ("array", elem_annotation, field_type.length)]  # type: ignore[return-value]
         elif isinstance(field_type, Sequence):
-            elem_type = field_type.type
-            if isinstance(elem_type, Primitive):
-                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, Any)
-                return Annotated[list[elem_annotation], ("array", elem_annotation, None)]  # type: ignore[valid-type]
-            elif isinstance(elem_type, String):
-                elem_annotation = _PRIMITIVE_TYPE_MAP.get(elem_type.type, str)
-                return Annotated[list[elem_annotation], ("array", elem_annotation, None)]  # type: ignore[valid-type]
-            elif isinstance(elem_type, Complex):
-                # Create sub-type if needed - use Any for list element since type is dynamic
-                sub_schema = sub_schemas[elem_type.type]
-                elem_annotation = create_dataclass_type(sub_schema)
-                return Annotated[list[Any], ("array", elem_annotation, None)]
-            else:
-                return Annotated[list[Any], ("array", Any, None)]
+            elem_annotation = get_elem_annotation(field_type.type)
+            list_type = list[Any] if isinstance(field_type.type, Complex) else list[elem_annotation]  # type: ignore[valid-type]
+            return Annotated[list_type, ("array", elem_annotation, None)]  # type: ignore[return-value]
         elif isinstance(field_type, Complex):
-            # Create sub-type if needed
             sub_schema = sub_schemas[field_type.type]
             sub_type = create_dataclass_type(sub_schema)
             return Annotated[sub_type, ("complex", field_type.type)]
