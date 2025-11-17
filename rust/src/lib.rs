@@ -1,8 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::exceptions::PyValueError;
-use pyo3::types::PyBytes;
-use std::io::{Cursor, Write};
-use byteorder::{ByteOrder, LittleEndian, BigEndian, ReadBytesExt};
+use pyo3::types::{PyBytes, PyTuple};
+use byteorder::{ByteOrder, LittleEndian, BigEndian};
 
 /// BytesWriter for aligned byte writing
 #[pyclass]
@@ -426,6 +425,212 @@ impl RustCdrDecoder {
     #[getter]
     fn _is_little_endian(&self) -> bool {
         self.is_little_endian
+    }
+
+    // High-performance batched operations for primitives
+    fn read_int32_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(4);
+        if self.position + (count * 4) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_i32(&self.data[self.position..self.position + 4])
+            } else {
+                BigEndian::read_i32(&self.data[self.position..self.position + 4])
+            };
+            values.push(value);
+            self.position += 4;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_uint32_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(4);
+        if self.position + (count * 4) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_u32(&self.data[self.position..self.position + 4])
+            } else {
+                BigEndian::read_u32(&self.data[self.position..self.position + 4])
+            };
+            values.push(value);
+            self.position += 4;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_int64_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(8);
+        if self.position + (count * 8) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_i64(&self.data[self.position..self.position + 8])
+            } else {
+                BigEndian::read_i64(&self.data[self.position..self.position + 8])
+            };
+            values.push(value);
+            self.position += 8;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_uint64_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(8);
+        if self.position + (count * 8) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_u64(&self.data[self.position..self.position + 8])
+            } else {
+                BigEndian::read_u64(&self.data[self.position..self.position + 8])
+            };
+            values.push(value);
+            self.position += 8;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_float32_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(4);
+        if self.position + (count * 4) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_f32(&self.data[self.position..self.position + 4])
+            } else {
+                BigEndian::read_f32(&self.data[self.position..self.position + 4])
+            };
+            values.push(value);
+            self.position += 4;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_float64_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(8);
+        if self.position + (count * 8) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_f64(&self.data[self.position..self.position + 8])
+            } else {
+                BigEndian::read_f64(&self.data[self.position..self.position + 8])
+            };
+            values.push(value);
+            self.position += 8;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_int16_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(2);
+        if self.position + (count * 2) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_i16(&self.data[self.position..self.position + 2])
+            } else {
+                BigEndian::read_i16(&self.data[self.position..self.position + 2])
+            };
+            values.push(value);
+            self.position += 2;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_uint16_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(2);
+        if self.position + (count * 2) > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let value = if self.is_little_endian {
+                LittleEndian::read_u16(&self.data[self.position..self.position + 2])
+            } else {
+                BigEndian::read_u16(&self.data[self.position..self.position + 2])
+            };
+            values.push(value);
+            self.position += 2;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_bool_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(1);
+        if self.position + count > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(self.data[self.position] != 0);
+            self.position += 1;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_int8_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(1);
+        if self.position + count > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(self.data[self.position] as i8);
+            self.position += 1;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
+    }
+
+    fn read_uint8_batch<'py>(&mut self, py: Python<'py>, count: usize) -> PyResult<Bound<'py, PyTuple>> {
+        self.align(1);
+        if self.position + count > self.data.len() {
+            return Err(PyValueError::new_err("Not enough data to read"));
+        }
+
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            values.push(self.data[self.position]);
+            self.position += 1;
+        }
+
+        Ok(PyTuple::new_bound(py, values))
     }
 }
 

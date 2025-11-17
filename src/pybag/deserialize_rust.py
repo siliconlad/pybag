@@ -5,7 +5,7 @@ from pybag.encoding import MessageDecoder
 from pybag.encoding.cdr_rust import CdrDecoder
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.schema import SchemaDecoder
-from pybag.schema.compiler import compile_schema
+from pybag.schema.compiler_rust import compile_schema_rust_optimized as compile_schema
 from pybag.schema.ros2msg import Ros2MsgSchemaDecoder
 
 
