@@ -162,7 +162,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
-        max_cache_size: Maximum number of items to cache. None means unlimited. Default is None.
+        max_cache_size: Maximum cache size in bytes for message indexes. None means unlimited. Default is None.
     """
 
     def __init__(
@@ -193,6 +193,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         self._cached_chunk_indexes: list[ChunkIndexRecord] | None = None
         self._cached_statistics: StatisticsRecord | None = None
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
+        self._message_indexes_cache_size: int = 0  # Track cache size in bytes
 
     # Helpful Constructors
 
@@ -213,7 +214,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            max_cache_size: Maximum number of items to cache. None means unlimited.
+            max_cache_size: Maximum cache size in bytes for message indexes. None means unlimited.
 
         Returns:
             A McapChunkedReader instance
@@ -242,7 +243,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            max_cache_size: Maximum number of items to cache. None means unlimited.
+            max_cache_size: Maximum cache size in bytes for message indexes. None means unlimited.
 
         Returns:
             A McapChunkedReader instance
@@ -381,6 +382,35 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     # Message Index Management
 
+    @staticmethod
+    def _estimate_message_index_size(message_indexes: dict[int, MessageIndexRecord]) -> int:
+        """Estimate the size in bytes of a message index cache entry.
+
+        This is an approximation of memory usage for cache management.
+
+        Args:
+            message_indexes: Dictionary of channel_id to MessageIndexRecord
+
+        Returns:
+            Estimated size in bytes
+        """
+        # Base dict overhead: ~240 bytes for empty dict + 8 bytes per entry
+        size = 240 + len(message_indexes) * 8
+
+        for channel_id, msg_index in message_indexes.items():
+            # Key (int): ~28 bytes
+            size += 28
+            # MessageIndexRecord object overhead: ~56 bytes base
+            size += 56
+            # channel_id field: ~28 bytes
+            size += 28
+            # records list overhead: ~56 bytes + 8 bytes per element
+            size += 56 + len(msg_index.records) * 8
+            # Each tuple in records: 2 ints, ~72 bytes per tuple
+            size += len(msg_index.records) * 72
+
+        return size
+
     def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
         """
         Get all message indexes from the MCAP file.
@@ -404,13 +434,23 @@ class McapChunkedReader(BaseMcapRecordReader):
         else:
             message_index = self._summary.get_message_indexes(chunk_index)
 
-        # Apply cache size limit if configured
-        if self._max_cache_size is not None and len(self._message_indexes) >= self._max_cache_size:
-            # Simple FIFO eviction: remove oldest entry
-            first_key = next(iter(self._message_indexes))
-            del self._message_indexes[first_key]
+        # Estimate size of new entry
+        entry_size = self._estimate_message_index_size(message_index)
+
+        # Apply cache size limit if configured (in bytes)
+        if self._max_cache_size is not None:
+            # Evict entries until we have room for the new entry
+            while (self._message_indexes_cache_size + entry_size > self._max_cache_size
+                   and len(self._message_indexes) > 0):
+                # Simple FIFO eviction: remove oldest entry
+                first_key = next(iter(self._message_indexes))
+                evicted_entry = self._message_indexes[first_key]
+                evicted_size = self._estimate_message_index_size(evicted_entry)
+                del self._message_indexes[first_key]
+                self._message_indexes_cache_size -= evicted_size
 
         self._message_indexes[key] = message_index
+        self._message_indexes_cache_size += entry_size
 
         return message_index
 
@@ -795,7 +835,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
-        max_cache_size: Maximum number of items to cache. None means unlimited. Default is None.
+        max_cache_size: Maximum cache size in bytes (currently unused for non-chunked reader). Default is None.
     """
 
     def __init__(
@@ -880,7 +920,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            max_cache_size: Maximum number of items to cache. None means unlimited.
+            max_cache_size: Maximum cache size in bytes (currently unused for non-chunked reader).
 
         Returns:
             A McapNonChunkedReader instance
@@ -909,7 +949,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            max_cache_size: Maximum number of items to cache. None means unlimited.
+            max_cache_size: Maximum cache size in bytes (currently unused for non-chunked reader).
 
         Returns:
             A McapNonChunkedReader instance
@@ -1212,7 +1252,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            max_cache_size: Maximum number of items to cache. None means unlimited.
+            max_cache_size: Maximum cache size in bytes for message indexes. None means unlimited.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1268,7 +1308,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            max_cache_size: Maximum number of items to cache. None means unlimited.
+            max_cache_size: Maximum cache size in bytes for message indexes. None means unlimited.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
