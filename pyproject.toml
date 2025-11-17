@@ -14,8 +14,8 @@ zstd = ["zstandard>=0.23.0"]
 lz4 = ["lz4>=4.4.3"]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [dependency-groups]
 test = [
@@ -37,5 +37,7 @@ log_cli_level = "DEBUG"
 addopts = "--cov=pybag --benchmark-sort=mean"
 testpaths = ["tests"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pybag"]
+[tool.maturin]
+python-source = "src"
+module-name = "pybag.pybag_rust"
+features = ["pyo3/extension-module"]

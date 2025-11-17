@@ -1,0 +1,13 @@
+[package]
+name = "pybag_rust"
+version = "0.5.0"
+edition = "2021"
+
+[lib]
+name = "pybag_rust"
+crate-type = ["cdylib"]
+path = "rust/src/lib.rs"
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module"] }
+byteorder = "1.5"

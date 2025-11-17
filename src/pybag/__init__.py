@@ -1,4 +1,4 @@
-from importlib.metadata import version
+from importlib.metadata import version, PackageNotFoundError
 
 from .types import (
     Array,
@@ -20,4 +20,7 @@ from .types import (
     wstring
 )
 
-__version__ = version("pybag-sdk")
+try:
+    __version__ = version("pybag-sdk")
+except PackageNotFoundError:
+    __version__ = "0.5.0-dev"
