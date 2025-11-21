@@ -14,8 +14,8 @@ zstd = ["zstandard>=0.23.0"]
 lz4 = ["lz4>=4.4.3"]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "wheel", "Cython>=3.0.0"]
+build-backend = "setuptools.build_meta"
 
 [dependency-groups]
 test = [
@@ -26,6 +26,7 @@ test = [
     "mcap-ros2-support>=0.5.5",
     "rosbags>=0.10.10",
     "numpy>=2.2.3",
+    "Cython>=3.0.0",
 ]
 
 [tool.isort]
@@ -37,5 +38,8 @@ log_cli_level = "DEBUG"
 addopts = "--cov=pybag --benchmark-sort=mean"
 testpaths = ["tests"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pybag"]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true
