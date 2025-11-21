@@ -195,6 +195,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        buffering: int = 1024 * 1024,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -205,12 +206,13 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            buffering: Buffer size for file reads (default 1MB)
 
         Returns:
             A McapChunkedReader instance
         """
         return McapChunkedReader(
-            FileReader(file_path),
+            FileReader(file_path, buffering=buffering),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
@@ -830,6 +832,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        buffering: int = 1024 * 1024,
     ) -> 'McapNonChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -840,12 +843,13 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            buffering: Buffer size for file reads (default 1MB)
 
         Returns:
             A McapNonChunkedReader instance
         """
         return McapNonChunkedReader(
-            FileReader(file_path),
+            FileReader(file_path, buffering=buffering),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
@@ -1156,6 +1160,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        buffering: int = 1024 * 1024,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file.
 
@@ -1166,6 +1171,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            buffering: Buffer size for file reads (default 1MB)
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1179,6 +1185,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                buffering=buffering,
             )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
@@ -1188,6 +1195,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                buffering=buffering,
             )
         except (McapNoSummarySectionError, McapNoSummaryIndexError) as e:
             # Only raise if reconstruction is explicitly disabled

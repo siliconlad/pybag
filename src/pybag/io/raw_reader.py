@@ -48,9 +48,10 @@ class BaseReader(ABC):
 
 
 class FileReader(BaseReader):
-    def __init__(self, file_path: Path | str, mode: str = 'rb'):
+    def __init__(self, file_path: Path | str, mode: str = 'rb', buffering: int = 1024 * 1024):
         self._file_path = Path(file_path).absolute()
-        self._file = open(self._file_path, mode)
+        # Configure larger buffer for sequential reads (default 1MB)
+        self._file = open(self._file_path, mode, buffering=buffering)
 
     def peek(self, size: int) -> bytes:
         # Returns empty bytes when end of file
