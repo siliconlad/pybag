@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 pybag = "pybag.cli.main:main"
+pybag-precompile = "scripts.precompile_messages:main"
 
 [build-system]
 requires = ["hatchling"]

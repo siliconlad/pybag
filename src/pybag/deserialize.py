@@ -25,7 +25,16 @@ class MessageDeserializer:
         decoder = self._message_decoder(message.data)
         if schema.id not in self._compiled:
             msg_schema, schema_msgs = self._schema_decoder.parse_schema(schema)
-            self._compiled[schema.id] = compile_schema(msg_schema, schema_msgs)
+
+            # Try to use pre-compiled decoder first
+            from pybag import precompiled
+            precompiled_decoder = precompiled.get_decoder(msg_schema.name)
+
+            if precompiled_decoder is not None:
+                self._compiled[schema.id] = precompiled_decoder
+            else:
+                # Fall back to runtime compilation
+                self._compiled[schema.id] = compile_schema(msg_schema, schema_msgs)
         return self._compiled[schema.id](decoder)
 
 

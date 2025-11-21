@@ -61,3 +61,29 @@ class SensorData:
 with McapFileWriter.open("sensors.mcap") as writer:
     writer.write_message("/sensor", 1000, SensorData(25.5, 60.0))
 ```
+
+## Performance Optimizations
+
+### Pre-compiled Message Types
+
+pybag includes pre-compiled encoder/decoder functions for standard ROS2 message types, providing significant performance improvements for first-time message serialization/deserialization:
+
+- **28-53x faster** serialization on first use
+- **142-269x faster** deserialization on first use
+
+Pre-compiled message types include:
+- `builtin_interfaces` (Time, Duration)
+- `std_msgs` (Header, String, Int32, Float64, etc.)
+- `geometry_msgs` (Point, Pose, Transform, Twist, etc.)
+- `nav_msgs` (Odometry, Path, OccupancyGrid, etc.)
+- `sensor_msgs` (Image, LaserScan, PointCloud2, Imu, etc.)
+
+The pre-compilation is automatic and transparent - no code changes required. Custom message types automatically fall back to runtime compilation.
+
+#### Re-generating Pre-compiled Messages
+
+If you need to regenerate the pre-compiled message types (e.g., after adding new standard messages):
+
+```bash
+python scripts/precompile_messages.py
+```
