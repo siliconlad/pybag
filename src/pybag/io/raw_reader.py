@@ -107,9 +107,8 @@ class BytesReader(BaseReader):
         return self._position
 
     def align(self, size: int) -> 'BytesReader':
-        # Faster bit-based alignment for power-of-2 sizes (2, 4, 8)
-        remainder = self._position & (size - 1)
-        if remainder:
+        # Faster bit-based alignment for power-of-2 sizes only
+        if remainder := self._position & (size - 1):
             self._position += size - remainder
         return self
 
