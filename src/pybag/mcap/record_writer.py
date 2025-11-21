@@ -4,6 +4,10 @@ import zlib
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Literal
 
+import lz4.frame
+import zstandard as zstd
+
+from pybag import __version__
 from pybag.io.raw_writer import BaseWriter, BytesWriter, CrcWriter
 from pybag.mcap.records import (
     AttachmentIndexRecord,
@@ -433,7 +437,6 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
         self._channel_message_counts: dict[int, int] = {}
 
         # Write file header
-        from pybag import __version__
         McapRecordWriter.write_magic_bytes(self._writer)
         header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
         McapRecordWriter.write_header(self._writer, header)
@@ -564,7 +567,6 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._current_message_index: dict[int, list[tuple[int, int]]] = {}
 
         # Write file header
-        from pybag import __version__
         McapRecordWriter.write_magic_bytes(self._writer)
         header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
         McapRecordWriter.write_header(self._writer, header)
@@ -578,10 +580,8 @@ class McapChunkedWriter(BaseMcapRecordWriter):
     def _create_chunk_compressor(self) -> Callable[[bytes], bytes]:
         """Create a compression function based on the configured algorithm."""
         if self._chunk_compression == "lz4":
-            import lz4.frame
             return lz4.frame.compress
         elif self._chunk_compression == "zstd":
-            import zstandard as zstd
             return zstd.ZstdCompressor().compress
         elif self._chunk_compression == "":
             return lambda x: x

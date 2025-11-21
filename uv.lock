@@ -309,12 +309,8 @@ wheels = [
 name = "pybag-sdk"
 version = "0.5.0"
 source = { editable = "." }
-
-[package.optional-dependencies]
-lz4 = [
+dependencies = [
     { name = "lz4" },
-]
-zstd = [
     { name = "zstandard" },
 ]
 
@@ -331,10 +327,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lz4", marker = "extra == 'lz4'", specifier = ">=4.4.3" },
-    { name = "zstandard", marker = "extra == 'zstd'", specifier = ">=0.23.0" },
+    { name = "lz4", specifier = ">=4.4.3" },
+    { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["zstd", "lz4"]
 
 [package.metadata.requires-dev]
 test = [
