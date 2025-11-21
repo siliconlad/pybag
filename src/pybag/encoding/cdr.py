@@ -19,6 +19,20 @@ class CdrDecoder(MessageDecoder):
         # Skip first 4 bytes
         self._data = BytesReader(data[4:])
 
+        # Pre-compute format strings to avoid repeated endianness checks
+        prefix = '<' if self._is_little_endian else '>'
+        self._fmt_int8 = prefix + 'b'
+        self._fmt_uint8 = prefix + 'B'
+        self._fmt_char = prefix + 'c'
+        self._fmt_int16 = prefix + 'h'
+        self._fmt_uint16 = prefix + 'H'
+        self._fmt_int32 = prefix + 'i'
+        self._fmt_uint32 = prefix + 'I'
+        self._fmt_int64 = prefix + 'q'
+        self._fmt_uint64 = prefix + 'Q'
+        self._fmt_float32 = prefix + 'f'
+        self._fmt_float64 = prefix + 'd'
+
     def parse(self, type_str: str) -> Any:
         return getattr(self, type_str)()
 
@@ -30,14 +44,14 @@ class CdrDecoder(MessageDecoder):
 
     def int8(self) -> int:
         value = struct.unpack(
-            '<b' if self._is_little_endian else '>b',
+            self._fmt_int8,
             self._data.align(1).read(1)
         )[0]
         return value
 
     def uint8(self) -> int:
         value = struct.unpack(
-            '<B' if self._is_little_endian else '>B',
+            self._fmt_uint8,
             self._data.align(1).read(1)
         )[0]
         return value
@@ -47,63 +61,63 @@ class CdrDecoder(MessageDecoder):
 
     def char(self) -> str:
         value = struct.unpack(
-            '<c' if self._is_little_endian else '>c',
+            self._fmt_char,
             self._data.align(1).read(1)
         )[0]
         return value.decode()
 
     def int16(self) -> int:
         value = struct.unpack(
-            '<h' if self._is_little_endian else '>h',
+            self._fmt_int16,
             self._data.align(2).read(2)
         )[0]
         return value
 
     def uint16(self) -> int:
         value = struct.unpack(
-            '<H' if self._is_little_endian else '>H',
+            self._fmt_uint16,
             self._data.align(2).read(2)
         )[0]
         return value
 
     def int32(self) -> int:
         value = struct.unpack(
-            '<i' if self._is_little_endian else '>i',
+            self._fmt_int32,
             self._data.align(4).read(4)
         )[0]
         return value
 
     def uint32(self) -> int:
         value = struct.unpack(
-            '<I' if self._is_little_endian else '>I',
+            self._fmt_uint32,
             self._data.align(4).read(4)
         )[0]
         return value
 
     def int64(self) -> int:
         value = struct.unpack(
-            '<q' if self._is_little_endian else '>q',
+            self._fmt_int64,
             self._data.align(8).read(8)
         )[0]
         return value
 
     def uint64(self) -> int:
         value = struct.unpack(
-            '<Q' if self._is_little_endian else '>Q',
+            self._fmt_uint64,
             self._data.align(8).read(8)
         )[0]
         return value
 
     def float32(self) -> float:
         value = struct.unpack(
-            '<f' if self._is_little_endian else '>f',
+            self._fmt_float32,
             self._data.align(4).read(4)
         )[0]
         return value
 
     def float64(self) -> float:
         value = struct.unpack(
-            '<d' if self._is_little_endian else '>d',
+            self._fmt_float64,
             self._data.align(8).read(8)
         )[0]
         return value
@@ -145,6 +159,20 @@ class CdrEncoder(MessageEncoder):
         endian_flag = 1 if self._is_little_endian else 0
         self._header = bytes([0x00, endian_flag, 0x00, 0x00])
 
+        # Pre-compute format strings to avoid repeated endianness checks
+        prefix = '<' if self._is_little_endian else '>'
+        self._fmt_int8 = prefix + 'b'
+        self._fmt_uint8 = prefix + 'B'
+        self._fmt_char = prefix + 'c'
+        self._fmt_int16 = prefix + 'h'
+        self._fmt_uint16 = prefix + 'H'
+        self._fmt_int32 = prefix + 'i'
+        self._fmt_uint32 = prefix + 'I'
+        self._fmt_int64 = prefix + 'q'
+        self._fmt_uint64 = prefix + 'Q'
+        self._fmt_float32 = prefix + 'f'
+        self._fmt_float64 = prefix + 'd'
+
     @classmethod
     def encoding(cls) -> str:
         return "cdr"
@@ -165,13 +193,11 @@ class CdrEncoder(MessageEncoder):
 
     def int8(self, value: int) -> None:
         self._payload.align(1)
-        fmt = "<b" if self._is_little_endian else ">b"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_int8, value))
 
     def uint8(self, value: int) -> None:
         self._payload.align(1)
-        fmt = "<B" if self._is_little_endian else ">B"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_uint8, value))
 
     def byte(self, value: bytes) -> None:
         self._payload.align(1)
@@ -179,48 +205,39 @@ class CdrEncoder(MessageEncoder):
 
     def char(self, value: str) -> None:
         self._payload.align(1)
-        fmt = "<c" if self._is_little_endian else ">c"
-        self._payload.write(struct.pack(fmt, value.encode()))
+        self._payload.write(struct.pack(self._fmt_char, value.encode()))
 
     def int16(self, value: int) -> None:
         self._payload.align(2)
-        fmt = "<h" if self._is_little_endian else ">h"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_int16, value))
 
     def uint16(self, value: int) -> None:
         self._payload.align(2)
-        fmt = "<H" if self._is_little_endian else ">H"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_uint16, value))
 
     def int32(self, value: int) -> None:
         self._payload.align(4)
-        fmt = "<i" if self._is_little_endian else ">i"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_int32, value))
 
     def uint32(self, value: int) -> None:
         self._payload.align(4)
-        fmt = "<I" if self._is_little_endian else ">I"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_uint32, value))
 
     def int64(self, value: int) -> None:
         self._payload.align(8)
-        fmt = "<q" if self._is_little_endian else ">q"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_int64, value))
 
     def uint64(self, value: int) -> None:
         self._payload.align(8)
-        fmt = "<Q" if self._is_little_endian else ">Q"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_uint64, value))
 
     def float32(self, value: float) -> None:
         self._payload.align(4)
-        fmt = "<f" if self._is_little_endian else ">f"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_float32, value))
 
     def float64(self, value: float) -> None:
         self._payload.align(8)
-        fmt = "<d" if self._is_little_endian else ">d"
-        self._payload.write(struct.pack(fmt, value))
+        self._payload.write(struct.pack(self._fmt_float64, value))
 
     def string(self, value: str) -> None:
         encoded = value.encode()
