@@ -55,9 +55,11 @@ class BytesWriter(BaseWriter):
         return len(self._buffer)
 
     def align(self, size: int) -> None:
+        # Faster bit-based alignment for power-of-2 sizes (2, 4, 8)
         current_length = len(self._buffer)
-        if current_length % size > 0:
-            padding = size - (current_length % size)
+        remainder = current_length & (size - 1)
+        if remainder:
+            padding = size - remainder
             self._buffer.extend(b"\x00" * padding)
 
     def size(self) -> int:
