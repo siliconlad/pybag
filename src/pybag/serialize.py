@@ -1,6 +1,8 @@
 from dataclasses import is_dataclass
 from typing import Callable
 
+from google.protobuf.message import Message as ProtobufMessage
+
 from pybag.encoding import MessageEncoder
 from pybag.encoding.cdr import CdrEncoder
 from pybag.mcap.records import ChannelRecord, SchemaRecord
@@ -48,17 +50,66 @@ class MessageSerializer:
         return self._schema_encoder.encode(schema)
 
 
+class ProtobufMessageSerializer:
+    """Serialize protobuf messages directly using their native serialization."""
+
+    def __init__(self, schema_encoder: SchemaEncoder) -> None:
+        self._schema_encoder = schema_encoder
+
+    @property
+    def schema_encoding(self) -> str:
+        return "protobuf"
+
+    @property
+    def message_encoding(self) -> str:
+        return "protobuf"
+
+    def serialize_message(self, message: ProtobufMessage, *, little_endian: bool = True) -> bytes:
+        """Serialize a protobuf message.
+
+        Args:
+            message: The protobuf message to serialize.
+            little_endian: Ignored for protobuf (kept for interface compatibility).
+
+        Returns:
+            The serialized message bytes.
+        """
+        if not isinstance(message, ProtobufMessage):
+            raise TypeError(f"Expected protobuf Message instance, got {type(message)}")
+        return message.SerializeToString()
+
+    def serialize_schema(self, schema: type[ProtobufMessage]) -> bytes:
+        """Serialize a protobuf message schema as a FileDescriptorSet.
+
+        Args:
+            schema: The protobuf message class.
+
+        Returns:
+            The serialized FileDescriptorSet.
+        """
+        return self._schema_encoder.encode(schema)
+
+
 class MessageSerializerFactory:
     """Factory for creating message serializers."""
 
     @staticmethod
-    def from_profile(profile: str) -> MessageSerializer | None:
+    def from_profile(profile: str) -> MessageSerializer | ProtobufMessageSerializer | None:
         if profile == "ros2":
             return MessageSerializer(Ros2MsgSchemaEncoder(), CdrEncoder)
+        elif profile == "protobuf":
+            from pybag.schema.protobuf import ProtobufSchemaEncoder
+            return ProtobufMessageSerializer(ProtobufSchemaEncoder())
         return None
 
     @staticmethod
-    def from_channel(channel: ChannelRecord, schema: SchemaRecord) -> MessageSerializer | None:
+    def from_channel(
+        channel: ChannelRecord,
+        schema: SchemaRecord
+    ) -> MessageSerializer | ProtobufMessageSerializer | None:
         if channel.message_encoding == "cdr" and schema.encoding == "ros2msg":
             return MessageSerializer(Ros2MsgSchemaEncoder(), CdrEncoder)
+        elif channel.message_encoding == "protobuf" and schema.encoding == "protobuf":
+            from pybag.schema.protobuf import ProtobufSchemaEncoder
+            return ProtobufMessageSerializer(ProtobufSchemaEncoder())
         return None

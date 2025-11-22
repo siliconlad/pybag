@@ -4,10 +4,12 @@ import logging
 from pathlib import Path
 from typing import Literal
 
+from google.protobuf.message import Message as ProtobufMessage
+
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
-from pybag.serialize import MessageSerializer, MessageSerializerFactory
+from pybag.serialize import MessageSerializer, MessageSerializerFactory, ProtobufMessageSerializer
 from pybag.types import Message
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ class McapFileWriter:
         message_serializer = MessageSerializerFactory.from_profile(self._profile)
         if message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
-        self._message_serializer: MessageSerializer = message_serializer
+        self._message_serializer: MessageSerializer | ProtobufMessageSerializer = message_serializer
 
         # High-level tracking
         self._next_schema_id = 1  # Schema ID must be non-zero
@@ -95,7 +97,7 @@ class McapFileWriter:
             chunk_compression=chunk_compression,
         )
 
-    def add_channel(self, topic: str, channel_type: type[Message]) -> int:
+    def add_channel(self, topic: str, channel_type: type[Message] | type[ProtobufMessage]) -> int:
         """Add a channel to the MCAP output.
 
         If the topic already exists, returns the existing channel ID.
@@ -113,17 +115,25 @@ class McapFileWriter:
             return channel_id
 
         # Register the schema if it's not already registered
-        if (schema_id := self._schemas.get(channel_type)) is None:
+        if (schema_id := self._schemas.get(channel_type)) is None:  # type: ignore[arg-type]
             schema_id = self._next_schema_id
             self._next_schema_id += 1
 
-            # Check that the channel type has a __msg_name__ attribute
-            if not hasattr(channel_type, '__msg_name__'):
-                raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
+            # Get the message name
+            if isinstance(self._message_serializer, ProtobufMessageSerializer):
+                # For protobuf, use the fully qualified name from DESCRIPTOR
+                if not issubclass(channel_type, ProtobufMessage):
+                    raise ValueError(f"Channel type {channel_type} must be a protobuf Message")
+                msg_name = channel_type.DESCRIPTOR.full_name
+            else:
+                # For ROS2/dataclass messages, use __msg_name__ attribute
+                if not hasattr(channel_type, '__msg_name__'):
+                    raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
+                msg_name = channel_type.__msg_name__
 
             schema_record = SchemaRecord(
                 id=schema_id,
-                name=channel_type.__msg_name__,
+                name=msg_name,
                 encoding=self._message_serializer.schema_encoding,
                 data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
             )
@@ -152,7 +162,7 @@ class McapFileWriter:
         self,
         topic: str,
         timestamp: int,
-        message: Message,
+        message: Message | ProtobufMessage,
         publish_time: int | None = None
     ) -> None:
         """Write a message to a topic at a given timestamp.
@@ -166,7 +176,7 @@ class McapFileWriter:
             publish_time: The publish timestamp (nanoseconds). If None, defaults to timestamp.
         """
         # Ensure the channel exists
-        channel_id = self.add_channel(topic, type(message))
+        channel_id = self.add_channel(topic, type(message))  # type: ignore[arg-type]
 
         # Get and increment sequence number
         sequence = self._sequences[channel_id]
@@ -181,7 +191,7 @@ class McapFileWriter:
             sequence=sequence,
             log_time=timestamp,
             publish_time=actual_publish_time,
-            data=self._message_serializer.serialize_message(message),
+            data=self._message_serializer.serialize_message(message),  # type: ignore[arg-type]
         )
 
         # Delegate to low-level writer

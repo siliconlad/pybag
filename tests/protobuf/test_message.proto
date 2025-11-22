@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package pybag.test;
+
+message Point {
+  double x = 1;
+  double y = 2;
+  double z = 3;
+}
+
+message Header {
+  uint32 seq = 1;
+  int64 timestamp = 2;
+  string frame_id = 3;
+}
+
+message PointWithHeader {
+  Header header = 1;
+  Point point = 2;
+}
