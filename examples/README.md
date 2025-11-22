@@ -14,7 +14,9 @@ H.264 compression can dramatically reduce the storage space required for image d
 ## Files
 
 - `h264_compression.py` - Core utilities for H.264 compression/decompression
+- `reencode_mcap.py` - Command-line tool to re-encode image topics in existing MCAP files
 - `compare_image_compression.py` - Demonstration script comparing Image vs CompressedImage
+- `test_reencode.py` - Test script for the reencode_mcap utility
 
 ## Installation
 
@@ -26,6 +28,58 @@ pip install -e .  # Install pybag
 ```
 
 ## Usage
+
+### Re-encode Existing MCAP Files (Quick Start)
+
+The easiest way to compress image topics in existing MCAP files is to use the command-line tool:
+
+```bash
+# Re-encode a single image topic
+python reencode_mcap.py input.mcap output.mcap /camera/image_raw
+
+# Re-encode with custom quality (lower = better quality)
+python reencode_mcap.py input.mcap output.mcap /camera/image_raw --quality 18
+
+# Re-encode to a different topic name
+python reencode_mcap.py input.mcap output.mcap /camera/image_raw --output-topic /camera/h264
+
+# Re-encode with MCAP chunk compression
+python reencode_mcap.py input.mcap output.mcap /camera/image_raw --chunk-compression zstd
+```
+
+**Example:**
+```bash
+cd examples
+python reencode_mcap.py my_bag.mcap my_bag_compressed.mcap /camera/image_raw
+```
+
+This will:
+1. Read all messages from `my_bag.mcap`
+2. Re-encode `/camera/image_raw` (Image) to H.264 CompressedImage
+3. Copy all other topics unchanged
+4. Write to `my_bag_compressed.mcap`
+
+Typical results: **99.5% file size reduction** for camera images
+
+### Programmatic Re-encoding
+
+```python
+from reencode_mcap import reencode_image_topic
+
+stats = reencode_image_topic(
+    input_mcap='input.mcap',
+    output_mcap='output.mcap',
+    image_topic='/camera/image_raw',
+    quality=23,           # CRF: 0-51 (lower is better)
+    preset='medium',      # Encoding speed
+    output_topic=None,    # Use same topic name
+    chunk_compression=None,  # Optional: 'lz4' or 'zstd'
+    verbose=True
+)
+
+print(f"Compression ratio: {stats['compression_ratio']:.2f}x")
+print(f"Space saved: {stats['percent_saved']:.1f}%")
+```
 
 ### Basic Compression
 
