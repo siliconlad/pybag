@@ -41,13 +41,13 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str, *, chunk_cache_size: int = 8) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_file(file_path, chunk_cache_size=chunk_cache_size)
+    def from_file(file_path: Path | str) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_file(file_path)
         return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(data: bytes, *, chunk_cache_size: int = 8) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_bytes(data, chunk_cache_size=chunk_cache_size)
+    def from_bytes(data: bytes) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_bytes(data)
         return McapFileReader(reader)
 
     @property

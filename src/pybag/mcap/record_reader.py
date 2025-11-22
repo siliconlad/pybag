@@ -163,6 +163,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
+        chunk_cache_size: The number of decompressed chunks to store in memory at a time.
     """
 
     def __init__(
@@ -171,7 +172,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        chunk_cache_size: int = 8,
+        chunk_cache_size: int = 1,
     ):
         self._file = file
         self._check_crc = enable_crc_check
@@ -190,7 +191,6 @@ class McapChunkedReader(BaseMcapRecordReader):
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
         # LRU cache for decompressed chunks (key: chunk_start_offset)
-        from functools import lru_cache
         self._decompress_chunk_cached = lru_cache(maxsize=chunk_cache_size)(self._decompress_chunk_impl)
 
     # Helpful Constructors
@@ -201,7 +201,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        chunk_cache_size: int = 8,
+        chunk_cache_size: int = 1,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -212,7 +212,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            chunk_cache_size: Maximum number of decompressed chunks to cache (default: 8)
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
 
         Returns:
             A McapChunkedReader instance
@@ -230,7 +230,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        chunk_cache_size: int = 8,
+        chunk_cache_size: int = 1,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a bytes object.
 
@@ -241,7 +241,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            chunk_cache_size: Maximum number of decompressed chunks to cache (default: 8)
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
 
         Returns:
             A McapChunkedReader instance
@@ -469,17 +469,6 @@ class McapChunkedReader(BaseMcapRecordReader):
         chunk = McapRecordParser.parse_chunk(self._file)
         return decompress_chunk(chunk, check_crc=self._check_crc)
 
-    def _get_decompressed_chunk(self, chunk_offset: int) -> bytes:
-        """Get decompressed chunk data, using cache if available.
-
-        Args:
-            chunk_offset: The chunk's start offset (cache key)
-
-        Returns:
-            Decompressed chunk data
-        """
-        return self._decompress_chunk_cached(chunk_offset)
-
     # Message Management
 
     def get_message(
@@ -519,8 +508,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                     continue
 
                 # Read data from chunk (using cache)
-                decompressed = self._get_decompressed_chunk(chunk_index.chunk_start_offset)
-                reader = BytesReader(decompressed)
+                reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
                 _ = reader.seek_from_start(offset)
                 return McapRecordParser.parse_message(reader)
         return None
@@ -649,8 +637,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not offsets:
                 continue
 
-            decompressed = self._get_decompressed_chunk(chunk_index.chunk_start_offset)
-            reader = BytesReader(decompressed)
+            reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
@@ -708,9 +695,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 return
 
             # Load the chunk once and parse messages as needed (using cache)
-            decompressed = self._get_decompressed_chunk(chunk_index.chunk_start_offset)
-            reader = BytesReader(decompressed)
-
+            reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for timestamp, offset in message_refs:
                 reader.seek_from_start(offset)
                 message = McapRecordParser.parse_message(reader)
@@ -772,8 +757,7 @@ class McapChunkedReader(BaseMcapRecordReader):
 
             entries.sort(key=lambda x: x[1])
 
-            decompressed = self._get_decompressed_chunk(chunk_index.chunk_start_offset)
-            reader = BytesReader(decompressed)
+            reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for _, offset in entries:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
@@ -1193,7 +1177,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        chunk_cache_size: int = 8,
+        chunk_cache_size: int = 1,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file.
 
@@ -1248,7 +1232,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        chunk_cache_size: int = 8,
+        chunk_cache_size: int = 1,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a bytes object.
 
@@ -1259,7 +1243,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            chunk_cache_size: Maximum number of decompressed chunks to cache (default: 8)
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
