@@ -214,3 +214,156 @@ def test_metadata_index_in_summary():
 
     finally:
         temp_path.unlink()
+
+
+def test_read_attachments():
+    """Test reading attachments from an MCAP file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write MCAP with attachments
+        with McapFileWriter.open(temp_path, chunk_size=None) as writer:
+            writer.write_attachment(
+                name="file1.txt",
+                data=b"content1",
+                media_type="text/plain",
+                log_time=1000,
+            )
+            writer.write_attachment(
+                name="file2.bin",
+                data=b"\x00\x01\x02",
+                media_type="application/octet-stream",
+                log_time=2000,
+            )
+            writer.write_attachment(
+                name="file1.txt",  # Duplicate name
+                data=b"content2",
+                media_type="text/plain",
+                log_time=3000,
+            )
+
+        # Read all attachments
+        with McapFileReader.from_file(temp_path) as reader:
+            all_attachments = reader.get_attachments()
+            assert len(all_attachments) == 3
+            assert all_attachments[0].name == "file1.txt"
+            assert all_attachments[0].data == b"content1"
+            assert all_attachments[0].media_type == "text/plain"
+            assert all_attachments[1].name == "file2.bin"
+            assert all_attachments[1].data == b"\x00\x01\x02"
+
+        # Read attachments by name
+        with McapFileReader.from_file(temp_path) as reader:
+            file1_attachments = reader.get_attachments(name="file1.txt")
+            assert len(file1_attachments) == 2
+            assert all(a.name == "file1.txt" for a in file1_attachments)
+
+            file2_attachments = reader.get_attachments(name="file2.bin")
+            assert len(file2_attachments) == 1
+            assert file2_attachments[0].name == "file2.bin"
+
+            # Non-existent name should return empty list
+            no_attachments = reader.get_attachments(name="nonexistent.txt")
+            assert len(no_attachments) == 0
+
+    finally:
+        temp_path.unlink()
+
+
+def test_read_metadata():
+    """Test reading metadata from an MCAP file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write MCAP with metadata
+        with McapFileWriter.open(temp_path, chunk_size=None) as writer:
+            writer.write_metadata(
+                name="device_info",
+                metadata={"device_id": "123", "firmware": "v1.2.3"}
+            )
+            writer.write_metadata(
+                name="session_info",
+                metadata={"location": "lab", "operator": "alice"}
+            )
+            writer.write_metadata(
+                name="device_info",  # Duplicate name
+                metadata={"device_id": "456", "firmware": "v2.0.0"}
+            )
+
+        # Read all metadata
+        with McapFileReader.from_file(temp_path) as reader:
+            all_metadata = reader.get_metadata()
+            assert len(all_metadata) == 3
+            assert all_metadata[0].name == "device_info"
+            assert all_metadata[0].metadata == {"device_id": "123", "firmware": "v1.2.3"}
+            assert all_metadata[1].name == "session_info"
+            assert all_metadata[1].metadata == {"location": "lab", "operator": "alice"}
+
+        # Read metadata by name
+        with McapFileReader.from_file(temp_path) as reader:
+            device_metadata = reader.get_metadata(name="device_info")
+            assert len(device_metadata) == 2
+            assert all(m.name == "device_info" for m in device_metadata)
+
+            session_metadata = reader.get_metadata(name="session_info")
+            assert len(session_metadata) == 1
+            assert session_metadata[0].name == "session_info"
+            assert session_metadata[0].metadata == {"location": "lab", "operator": "alice"}
+
+            # Non-existent name should return empty list
+            no_metadata = reader.get_metadata(name="nonexistent")
+            assert len(no_metadata) == 0
+
+    finally:
+        temp_path.unlink()
+
+
+def test_read_attachments_chunked():
+    """Test reading attachments from a chunked MCAP file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write chunked MCAP with attachments
+        with McapFileWriter.open(temp_path, chunk_size=1024, chunk_compression="lz4") as writer:
+            writer.write_attachment(
+                name="config.yaml",
+                data=b"key: value",
+                media_type="text/yaml",
+            )
+
+        # Read attachments
+        with McapFileReader.from_file(temp_path) as reader:
+            attachments = reader.get_attachments()
+            assert len(attachments) == 1
+            assert attachments[0].name == "config.yaml"
+            assert attachments[0].data == b"key: value"
+
+    finally:
+        temp_path.unlink()
+
+
+def test_read_metadata_chunked():
+    """Test reading metadata from a chunked MCAP file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write chunked MCAP with metadata
+        with McapFileWriter.open(temp_path, chunk_size=1024, chunk_compression="lz4") as writer:
+            writer.write_metadata(
+                name="test",
+                metadata={"key": "value"}
+            )
+
+        # Read metadata
+        with McapFileReader.from_file(temp_path) as reader:
+            metadata = reader.get_metadata()
+            assert len(metadata) == 1
+            assert metadata[0].name == "test"
+            assert metadata[0].metadata == {"key": "value"}
+
+    finally:
+        temp_path.unlink()

@@ -178,6 +178,32 @@ class McapFileReader:
             if filter is None or filter(decoded):
                 yield decoded
 
+    def get_attachments(self, name: str | None = None):
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects containing attachment data.
+        """
+        from pybag.mcap.records import AttachmentRecord
+        return self._reader.get_attachments(name)
+
+    def get_metadata(self, name: str | None = None):
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects containing metadata key-value pairs.
+        """
+        from pybag.mcap.records import MetadataRecord
+        return self._reader.get_metadata(name)
+
     def close(self) -> None:
         """Close the MCAP reader and release all resources."""
         self._reader.close()

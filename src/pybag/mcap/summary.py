@@ -15,10 +15,12 @@ from pybag.mcap.record_parser import (
     McapRecordType
 )
 from pybag.mcap.records import (
+    AttachmentIndexRecord,
     ChannelRecord,
     ChunkIndexRecord,
     FooterRecord,
     MessageIndexRecord,
+    MetadataIndexRecord,
     SchemaRecord,
     StatisticsRecord,
     decompress_chunk
@@ -665,8 +667,43 @@ class McapChunkedSummary:
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
-    # TODO: Implement attachment index
-    # TODO: Implement metadata index
+    def get_attachment_indexes(self) -> list[AttachmentIndexRecord]:
+        """Get all attachment indexes from the MCAP file.
+
+        Returns:
+            List of AttachmentIndexRecord objects.
+        """
+        attachment_indexes: list[AttachmentIndexRecord] = []
+
+        # If attachment index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.ATTACHMENT_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.ATTACHMENT_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.ATTACHMENT_INDEX:
+                attachment_index = McapRecordParser.parse_attachment_index(self._file)
+                attachment_indexes.append(attachment_index)
+            return attachment_indexes
+
+        # No attachment indexes found
+        return attachment_indexes
+
+    def get_metadata_indexes(self) -> list[MetadataIndexRecord]:
+        """Get all metadata indexes from the MCAP file.
+
+        Returns:
+            List of MetadataIndexRecord objects.
+        """
+        metadata_indexes: list[MetadataIndexRecord] = []
+
+        # If metadata index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.METADATA_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.METADATA_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.METADATA_INDEX:
+                metadata_index = McapRecordParser.parse_metadata_index(self._file)
+                metadata_indexes.append(metadata_index)
+            return metadata_indexes
+
+        # No metadata indexes found
+        return metadata_indexes
 
 
 class McapNonChunkedSummary:
@@ -966,5 +1003,43 @@ class McapNonChunkedSummary:
         # Either we built self._cached_statistics
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
+
+    def get_attachment_indexes(self) -> list[AttachmentIndexRecord]:
+        """Get all attachment indexes from the MCAP file.
+
+        Returns:
+            List of AttachmentIndexRecord objects.
+        """
+        attachment_indexes: list[AttachmentIndexRecord] = []
+
+        # If attachment index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.ATTACHMENT_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.ATTACHMENT_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.ATTACHMENT_INDEX:
+                attachment_index = McapRecordParser.parse_attachment_index(self._file)
+                attachment_indexes.append(attachment_index)
+            return attachment_indexes
+
+        # No attachment indexes found
+        return attachment_indexes
+
+    def get_metadata_indexes(self) -> list[MetadataIndexRecord]:
+        """Get all metadata indexes from the MCAP file.
+
+        Returns:
+            List of MetadataIndexRecord objects.
+        """
+        metadata_indexes: list[MetadataIndexRecord] = []
+
+        # If metadata index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.METADATA_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.METADATA_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.METADATA_INDEX:
+                metadata_index = McapRecordParser.parse_metadata_index(self._file)
+                metadata_indexes.append(metadata_index)
+            return metadata_indexes
+
+        # No metadata indexes found
+        return metadata_indexes
 
     # TODO: Maybe build message index here?
