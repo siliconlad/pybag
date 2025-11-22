@@ -14,7 +14,9 @@ H.264 compression can dramatically reduce the storage space required for image d
 ## Files
 
 - `h264_compression.py` - Core utilities for H.264 compression/decompression
-- `reencode_mcap.py` - Command-line tool to re-encode image topics in existing MCAP files
+- `reencode_mcap.py` - Command-line tool to re-encode image topics with H.264
+- `decode_mcap.py` - Command-line tool to decode H.264 images back to raw Image messages
+- `decode_examples.py` - Examples demonstrating various decoding techniques
 - `compare_image_compression.py` - Demonstration script comparing Image vs CompressedImage
 - `test_reencode.py` - Test script for the reencode_mcap utility
 
@@ -136,6 +138,82 @@ checkerboard_img = create_test_image(pattern='checkerboard')
 noise_img = create_test_image(pattern='noise')
 solid_img = create_test_image(pattern='solid')
 ```
+
+## Decoding H.264 Compressed Images
+
+### Decode Entire MCAP Files (Quick Start)
+
+Use the command-line tool to decode H.264 compressed topics back to raw images:
+
+```bash
+# Decode a compressed topic back to raw images
+python decode_mcap.py compressed.mcap decoded.mcap /camera/image_compressed
+
+# Decode with specific output encoding
+python decode_mcap.py compressed.mcap decoded.mcap /camera/h264 --encoding bgr8
+
+# Decode to a different topic name
+python decode_mcap.py compressed.mcap decoded.mcap /camera/h264 --output-topic /camera/image_raw
+```
+
+**Example workflow:**
+```bash
+# 1. Compress images
+python reencode_mcap.py original.mcap compressed.mcap /camera/image_raw
+
+# 2. Later, decode them back
+python decode_mcap.py compressed.mcap decoded.mcap /camera/image_raw
+```
+
+### Programmatic Decoding
+
+```python
+from decode_mcap import decode_compressed_topic
+
+stats = decode_compressed_topic(
+    input_mcap='compressed.mcap',
+    output_mcap='decoded.mcap',
+    compressed_topic='/camera/image_compressed',
+    output_encoding='rgb8',   # rgb8, bgr8, mono8, etc.
+    verbose=True
+)
+
+print(f"Decoded {stats['decoded_messages']} images")
+```
+
+### Decode Individual Messages
+
+```python
+from pybag.mcap_reader import McapFileReader
+from h264_compression import h264_compressed_to_image
+
+# Read and decode H.264 compressed images
+with McapFileReader.from_file('compressed.mcap') as reader:
+    for msg in reader.messages('/camera/image_compressed'):
+        compressed = msg.data  # CompressedImage message
+
+        # Decode to raw Image
+        decoded = h264_compressed_to_image(compressed, encoding='rgb8')
+
+        print(f"Decoded: {decoded.width}x{decoded.height} {decoded.encoding}")
+        # Now you can use decoded.data (raw pixel data)
+```
+
+### Decode Examples
+
+Run the comprehensive examples demonstrating various decoding techniques:
+
+```bash
+cd examples
+python decode_examples.py
+```
+
+This demonstrates:
+1. **Single message decode** - Basic compression/decompression
+2. **Reading from MCAP** - Decode entire files
+3. **Multiple encodings** - Decode to rgb8, bgr8, mono8
+4. **Streaming decode** - Process frames in real-time
+5. **Selective decode** - Decode only certain frames (e.g., keyframes)
 
 ## Running the Comparison Demo
 
