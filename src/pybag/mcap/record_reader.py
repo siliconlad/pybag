@@ -37,133 +37,27 @@ from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 logger = logging.getLogger(__name__)
 
 
-# TODO: Is this the minimal set of methods needed?
 class BaseMcapRecordReader(ABC):
-    @abstractmethod
-    def __enter__(self) -> 'BaseMcapRecordReader':
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def __exit__(self, exc_type, exc_value, traceback):
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_header(self) -> HeaderRecord:
-        """Get the header record from the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_footer(self) -> FooterRecord:
-        """Get the footer record from the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_statistics(self) -> StatisticsRecord:
-        """Get the statistics record from the MCAP file."""
-        ...  # pragma: no cover
-
-    # Schema Management
-
-    @abstractmethod
-    def get_schemas(self) -> dict[int, SchemaRecord]:
-        """Get all schemas defined in the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        """Get a schema by its ID."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        """Get the schema for a given channel ID."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        """Get the schema for a given message."""
-        ...  # pragma: no cover
-
-    # Channel Management
-
-    @abstractmethod
-    def get_channels(self) -> dict[int, ChannelRecord]:
-        """Get all channels/topics in the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        """Get a channel by its ID."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_channel_id(self, topic: str) -> int | None:
-        """Get a channel ID by its topic."""
-        ...  # pragma: no cover
-
-    # Message Index Management
-
-    @abstractmethod
-    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
-        """Get all message indexes from the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
-        """Get a message index for a given channel ID."""
-        ...  # pragma: no cover
-
-    # Chunk Management
-
-    @abstractmethod
-    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
-        """Get all chunk indexes from the MCAP file."""
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
-        """Get a chunk by its index."""
-        ...  # pragma: no cover
-
-    # Message Management
-
-    @abstractmethod
-    def get_message(
-        self,
-        channel_id: int,
-        timestamp: int | None = None,
-    ) -> MessageRecord | None:
-        ...  # pragma: no cover
-
-    @abstractmethod
-    def get_messages(
-        self,
-        channel_id: int | list[int] | None = None,
-        start_timestamp: int | None = None,
-        end_timestamp: int | None = None,
-        *,
-        in_log_time_order: bool = True,
-    ) -> Generator[MessageRecord, None, None]:
-        ...  # pragma: no cover
-
-
-class McapChunkedReader(BaseMcapRecordReader):
-    """Class to efficiently get records from a chunked MCAP file.
-
-    Args:
-        file: The file to read from.
-        enable_crc_check: Whether to validate the crc values in the mcap
-        enable_summary_reconstruction:
-            - 'missing' allows reconstruction if the summary section is missing.
-            - 'never' throws an exception if the summary (or summary offset) section is missing.
-            - 'always' forces reconstruction even if the summary section is present.
+    """Base class for MCAP file readers with shared implementation logic.
+    
+    This class provides concrete implementations for all shared methods between
+    chunked and non-chunked readers, using a template method pattern for summary
+    creation. Subclasses only need to implement reading-strategy-specific methods.
+    
+    Template Method Pattern:
+        The base class constructor calls _create_summary(), an abstract method that
+        subclasses must implement. This allows the base class to handle common
+        initialization logic while delegating the summary creation strategy to
+        subclasses (McapChunkedReader creates McapChunkedSummary, while
+        McapNonChunkedReader creates McapNonChunkedSummary).
     """
-
+    
+    # Type hints for attributes shared across all readers
+    _file: BaseReader
+    _check_crc: bool
+    _version: str
+    _summary: McapChunkedSummary | McapNonChunkedSummary
+    
     def __init__(
         self,
         file: BaseReader,
@@ -171,31 +65,59 @@ class McapChunkedReader(BaseMcapRecordReader):
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ):
+        """Initialize the base reader.
+        
+        Args:
+            file: The file to read from
+            enable_crc_check: Whether to validate CRC values in the MCAP
+            enable_summary_reconstruction: Controls summary reconstruction behavior
+        """
         self._file = file
         self._check_crc = enable_crc_check
-
+        
+        # Parse version and create summary using template method
         self._version = McapRecordParser.parse_magic_bytes(self._file)
         logger.debug(f'MCAP version: {self._version}')
+        
+        self._summary = self._create_summary(enable_summary_reconstruction)
+    
+    @abstractmethod
+    def _create_summary(
+        self, 
+        enable_summary_reconstruction: Literal['never', 'missing', 'always']
+    ) -> McapChunkedSummary | McapNonChunkedSummary:
+        """Template method for creating the appropriate summary type.
+        
+        Args:
+            enable_summary_reconstruction: Controls summary reconstruction behavior
+            
+        Returns:
+            Appropriate summary instance for this reader type
+        """
+        ...  # pragma: no cover
+    
+    # Context Managers
+    
+    def __enter__(self) -> 'BaseMcapRecordReader':
+        return self
 
-        # Mcap summary abstraction
-        self._summary = McapChunkedSummary(
-            self._file,
-            enable_crc_check=self._check_crc,
-            enable_reconstruction=enable_summary_reconstruction,
-        )
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
 
-        # Caches for message indexes
-        self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
-
-    # Helpful Constructors
-
-    @staticmethod
+    def close(self) -> None:
+        """Close the MCAP file and release all resources."""
+        self._file.close()
+    
+    # Factory Methods
+    
+    @classmethod
     def from_file(
+        cls,
         file_path: Path | str,
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-    ) -> 'McapChunkedReader':
+    ) -> 'BaseMcapRecordReader':
         """Create a new MCAP reader from a file.
 
         Args:
@@ -207,21 +129,22 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'always': Always reconstruct even if summary exists
 
         Returns:
-            A McapChunkedReader instance
+            A reader instance of the appropriate type
         """
-        return McapChunkedReader(
+        return cls(
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
 
-    @staticmethod
+    @classmethod
     def from_bytes(
+        cls,
         data: bytes,
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-    ) -> 'McapChunkedReader':
+    ) -> 'BaseMcapRecordReader':
         """Create a new MCAP reader from a bytes object.
 
         Args:
@@ -233,29 +156,15 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'always': Always reconstruct even if summary exists
 
         Returns:
-            A McapChunkedReader instance
+            A reader instance of the appropriate type
         """
-        return McapChunkedReader(
+        return cls(
             BytesReader(data),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
 
-    # Destructors
-
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        self._file.close()
-
-    # Context Managers
-
-    def __enter__(self) -> 'McapChunkedReader':
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
-
-    # Getters for records
+    # Simple Getters
 
     def get_header(self) -> HeaderRecord:
         """Get the header record from the MCAP file."""
@@ -355,6 +264,98 @@ class McapChunkedReader(BaseMcapRecordReader):
             if channel.topic == topic:
                 return channel.id
         return None
+
+    # Abstract Methods - Subclasses must implement these
+
+    @abstractmethod
+    def get_message_indexes(self, chunk_index: ChunkIndexRecord) -> dict[int, MessageIndexRecord]:
+        """Get all message indexes from the MCAP file."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_message_index(self, chunk_index: ChunkIndexRecord, channel_id: int) -> MessageIndexRecord | None:
+        """Get a message index for a given channel ID."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_chunk_indexes(self, channel_id: int | list[int] | None = None) -> list[ChunkIndexRecord]:
+        """Get all chunk indexes from the MCAP file."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_chunk(self, chunk_index: ChunkIndexRecord) -> ChunkRecord:
+        """Get a chunk by its index."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_message(
+        self,
+        channel_id: int,
+        timestamp: int | None = None,
+    ) -> MessageRecord | None:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_messages(
+        self,
+        channel_id: int | list[int] | None = None,
+        start_timestamp: int | None = None,
+        end_timestamp: int | None = None,
+        *,
+        in_log_time_order: bool = True,
+    ) -> Generator[MessageRecord, None, None]:
+        ...  # pragma: no cover
+
+
+class McapChunkedReader(BaseMcapRecordReader):
+    """Class to efficiently get records from a chunked MCAP file.
+
+    Args:
+        file: The file to read from.
+        enable_crc_check: Whether to validate the crc values in the mcap
+        enable_summary_reconstruction:
+            - 'missing' allows reconstruction if the summary section is missing.
+            - 'never' throws an exception if the summary (or summary offset) section is missing.
+            - 'always' forces reconstruction even if the summary section is present.
+    """
+    
+    # Type narrowing: chunked reader always has a chunked summary
+    _summary: McapChunkedSummary
+
+    def __init__(
+        self,
+        file: BaseReader,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ):
+        # Call base class constructor which handles common initialization
+        super().__init__(
+            file,
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+        )
+        
+        # Chunked-specific: caches for message indexes
+        self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
+    
+    def _create_summary(
+        self, 
+        enable_summary_reconstruction: Literal['never', 'missing', 'always']
+    ) -> McapChunkedSummary:
+        """Create a chunked summary for this reader.
+        
+        Args:
+            enable_summary_reconstruction: Controls summary reconstruction behavior
+            
+        Returns:
+            McapChunkedSummary instance
+        """
+        return McapChunkedSummary(
+            self._file,
+            enable_crc_check=self._check_crc,
+            enable_reconstruction=enable_summary_reconstruction,
+        )
 
     # Message Index Management
 
@@ -762,6 +763,9 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
     """
+    
+    # Type narrowing: non-chunked reader always has a non-chunked summary
+    _summary: McapNonChunkedSummary
 
     def __init__(
         self,
@@ -770,21 +774,14 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
     ):
-        self._file = file
-        self._check_crc = enable_crc_check
-
-        self._schemas: dict[int, SchemaRecord] | None = None
-        self._channels: dict[int, ChannelRecord] | None = None
-
-        # Parse file structure
-        self._version = McapRecordParser.parse_magic_bytes(self._file)
-        logger.debug(f'MCAP version: {self._version}')
-
-        self._summary: McapNonChunkedSummary = McapNonChunkedSummary(
-            self._file,
-            enable_crc_check=self._check_crc,
-            enable_reconstruction=enable_summary_reconstruction,
+        # Call base class constructor which handles common initialization
+        super().__init__(
+            file,
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
         )
+        
+        # Build message index for efficient access
         self._message_indexes = self._build_message_index()
 
         # Check if this is indeed a non-chunked file
@@ -792,208 +789,53 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         if self._statistics and self._statistics.chunk_count > 0:
             error_msg = 'MCAP file contains chunks, use McapChunkedReader instead'
             raise McapUnexpectedChunkIndexError(error_msg)
+    
+    def _create_summary(
+        self, 
+        enable_summary_reconstruction: Literal['never', 'missing', 'always']
+    ) -> McapNonChunkedSummary:
+        """Create a non-chunked summary for this reader.
+        
+        Args:
+            enable_summary_reconstruction: Controls summary reconstruction behavior
+            
+        Returns:
+            McapNonChunkedSummary instance
+        """
+        return McapNonChunkedSummary(
+            self._file,
+            enable_crc_check=self._check_crc,
+            enable_reconstruction=enable_summary_reconstruction,
+        )
 
     def _build_message_index(self) -> dict[int, dict[int, list[int]]]:
-            """Build an index of all messages in the file by scanning the data section."""
-            logger.debug('Building message index for non-chunked MCAP')
+        """Build an index of all messages in the file by scanning the data section."""
+        logger.debug('Building message index for non-chunked MCAP')
 
-            # Start after header, end before summary section
-            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
-            _ = McapRecordParser.parse_header(self._file)
-
-            message_count = 0
-            message_index: dict[int, dict[int, list[int]]] = {}
-
-            while (record_type := McapRecordParser.peek_record(self._file)) != McapRecordType.DATA_END:
-                current_pos = self._file.tell()
-                try:
-                    if record_type == McapRecordType.MESSAGE:
-                        message = McapRecordParser.parse_message(self._file)
-                        channel_message_indexes = message_index.setdefault(message.channel_id, {})
-                        channel_log_time_offsets = channel_message_indexes.setdefault(message.log_time, [])
-                        channel_log_time_offsets.append(current_pos)
-                        message_count += 1
-                    else:
-                        # Skip non-message records in data section
-                        McapRecordParser.skip_record(self._file)
-                except Exception as e:
-                    logger.warning(f'Error parsing record at position {current_pos}: {e}')
-                    break
-            logger.debug(f'Built message index with {message_count} messages across {len(message_index)} channels')
-            return message_index
-
-    # Helpful Constructors
-
-    @staticmethod
-    def from_file(
-        file_path: Path | str,
-        *,
-        enable_crc_check: bool = False,
-        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-    ) -> 'McapNonChunkedReader':
-        """Create a new MCAP reader from a file.
-
-        Args:
-            file_path: Path to the MCAP file
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            A McapNonChunkedReader instance
-        """
-        return McapNonChunkedReader(
-            FileReader(file_path),
-            enable_crc_check=enable_crc_check,
-            enable_summary_reconstruction=enable_summary_reconstruction,
-        )
-
-    @staticmethod
-    def from_bytes(
-        data: bytes,
-        *,
-        enable_crc_check: bool = False,
-        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-    ) -> 'McapNonChunkedReader':
-        """Create a new MCAP reader from a bytes object.
-
-        Args:
-            data: Bytes containing the MCAP file data
-            enable_crc_check: Whether to validate CRC values
-            enable_summary_reconstruction: Controls summary reconstruction behavior:
-                - 'missing': Reconstruct if summary is missing (default)
-                - 'never': Raise error if summary is missing
-                - 'always': Always reconstruct even if summary exists
-
-        Returns:
-            A McapNonChunkedReader instance
-        """
-        return McapNonChunkedReader(
-            BytesReader(data),
-            enable_crc_check=enable_crc_check,
-            enable_summary_reconstruction=enable_summary_reconstruction,
-        )
-
-    # Destructors
-
-    def close(self) -> None:
-        """Close the MCAP file and release all resources."""
-        self._file.close()
-
-    # Context Managers
-
-    def __enter__(self) -> 'McapNonChunkedReader':
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.close()
-
-    # Getters for records
-
-    def get_header(self) -> HeaderRecord:
-        """Get the header record from the MCAP file."""
+        # Start after header, end before summary section
         _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
-        return McapRecordParser.parse_header(self._file)
+        _ = McapRecordParser.parse_header(self._file)
 
-    def get_footer(self) -> FooterRecord:
-        """Get the footer record from the MCAP file."""
-        _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-        return McapRecordParser.parse_footer(self._file)
+        message_count = 0
+        message_index: dict[int, dict[int, list[int]]] = {}
 
-    def get_statistics(self) -> StatisticsRecord:  # TODO: Also return None here?
-        """Get the statistics record from the MCAP file."""
-        if self._statistics is None:
-            raise McapNoStatisticsError('No statistics record!')
-        return self._statistics
-
-    # Schema Management
-
-    def get_schemas(self) -> dict[int, SchemaRecord]:
-        """
-        Get all schemas defined in the MCAP file.
-
-        Returns:
-            A dictionary mapping schema IDs to SchemaInfo objects.
-        """
-        if self._schemas is None:
-            self._schemas = self._summary.get_schemas()
-        return self._schemas
-
-    def get_schema(self, schema_id: int) -> SchemaRecord | None:
-        """
-        Get a schema by its ID.
-
-        Args:
-            schema_id: The ID of the schema.
-
-        Returns:
-            The schema or None if the schema does not exist.
-        """
-        return self.get_schemas().get(schema_id)
-
-    def get_channel_schema(self, channel_id: int) -> SchemaRecord | None:
-        """
-        Get the schema for a given channel ID.
-
-        Args:
-            channel_id: The ID of the channel.
-
-        Returns:
-            The schema of the channel or None if the channel/schema does not exist.
-        """
-        channel = self.get_channel(channel_id)
-        if channel is None:
-            return None
-        return self.get_schema(channel.schema_id)
-
-    def get_message_schema(self, message: MessageRecord) -> SchemaRecord:
-        """
-        Get the schema for a given message.
-
-        Args:
-            message: The message to get the schema for.
-
-        Returns:
-            The schema for the message.
-        """
-        schema = self.get_channel_schema(message.channel_id)
-        if schema is None:
-            raise McapUnknownSchemaError(f'Unknown schema for channel {message.channel_id}')
-        return schema
-
-    # Channel Management
-
-    def get_channels(self) -> dict[int, ChannelRecord]:
-        """
-        Get all channels/topics in the MCAP file.
-
-        Returns:
-            A dictionary mapping channel IDs to channel information.
-        """
-        if self._channels is None:
-            self._channels = self._summary.get_channels()
-        return self._channels
-
-    def get_channel(self, channel_id: int) -> ChannelRecord | None:
-        """
-        Get channel information by its ID.
-
-        Args:
-            channel_id: The ID of the channel.
-
-        Returns:
-            The channel information or None if the channel does not exist.
-        """
-        return self.get_channels().get(channel_id)
-
-    def get_channel_id(self, topic: str) -> int | None:
-        """Get a channel ID by its topic."""
-        for channel in self.get_channels().values():
-            if channel.topic == topic:
-                return channel.id
-        return None
+        while (record_type := McapRecordParser.peek_record(self._file)) != McapRecordType.DATA_END:
+            current_pos = self._file.tell()
+            try:
+                if record_type == McapRecordType.MESSAGE:
+                    message = McapRecordParser.parse_message(self._file)
+                    channel_message_indexes = message_index.setdefault(message.channel_id, {})
+                    channel_log_time_offsets = channel_message_indexes.setdefault(message.log_time, [])
+                    channel_log_time_offsets.append(current_pos)
+                    message_count += 1
+                else:
+                    # Skip non-message records in data section
+                    McapRecordParser.skip_record(self._file)
+            except Exception as e:
+                logger.warning(f'Error parsing record at position {current_pos}: {e}')
+                break
+        logger.debug(f'Built message index with {message_count} messages across {len(message_index)} channels')
+        return message_index
 
     # Message Index Management (placeholders for compatibility)
 

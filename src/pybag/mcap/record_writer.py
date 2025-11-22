@@ -276,23 +276,116 @@ class BaseMcapRecordWriter(ABC):
     binary serialization, chunking, compression, and summary section management.
     """
 
+    # Shared attributes (type hints for subclasses)
+    _writer: CrcWriter
+    _profile: str
+    _schema_records: dict[int, SchemaRecord]
+    _channel_records: dict[int, ChannelRecord]
+    _message_count: int
+    _chunk_count: int
+    _message_start_time: int | None
+    _message_end_time: int | None
+    _channel_message_counts: dict[int, int]
+
+    def __init__(self, writer: BaseWriter, *, profile: str = "ros2") -> None:
+        """Initialize the MCAP writer with shared tracking state.
+
+        Args:
+            writer: The underlying writer to write binary data to.
+            profile: The MCAP profile to use (default: "ros2").
+        """
+        self._writer = CrcWriter(writer)
+        self._profile = profile
+
+        # Tracking for summary section
+        self._schema_records = {}
+        self._channel_records = {}
+
+        # Statistics tracking
+        self._message_count = 0
+        self._chunk_count = 0
+        self._message_start_time = None
+        self._message_end_time = None
+        self._channel_message_counts = {}
+
+        # Write file header
+        self._write_header()
+
+    def _write_header(self) -> None:
+        """Write the MCAP magic bytes and header record."""
+        McapRecordWriter.write_magic_bytes(self._writer)
+        header = HeaderRecord(profile=self._profile, library=f"pybag {__version__}")
+        McapRecordWriter.write_header(self._writer, header)
+
     @abstractmethod
+    def _get_writer(self) -> BaseWriter:
+        """Get the writer to use for writing records.
+
+        Returns:
+            BaseWriter: For non-chunked writers, returns the main writer.
+                       For chunked writers, returns the chunk buffer.
+        """
+        ...  # pragma: no cover
+
     def write_schema(self, schema: SchemaRecord) -> None:
         """Write a schema record to the MCAP file.
 
         Args:
             schema: The schema record to write.
         """
-        ...  # pragma: no cover
+        McapRecordWriter.write_schema(self._get_writer(), schema)
+        if schema.id in self._schema_records:
+            logging.warning(f'Schema (id {schema.id}) already written to file')
+        else:
+            self._schema_records[schema.id] = schema
 
-    @abstractmethod
     def write_channel(self, channel: ChannelRecord) -> None:
         """Write a channel record to the MCAP file.
 
         Args:
             channel: The channel record to write.
         """
-        ...  # pragma: no cover
+        McapRecordWriter.write_channel(self._get_writer(), channel)
+        if channel.id in self._channel_records:
+            logging.warning(f'Channel (id {channel.id}) already written to file')
+        else:
+            self._channel_records[channel.id] = channel
+            self._channel_message_counts[channel.id] = 0
+
+    def _update_statistics(self, message: MessageRecord) -> None:
+        """Update statistics tracking with a new message.
+
+        Args:
+            message: The message record that was written.
+        """
+        self._message_count += 1
+        self._channel_message_counts[message.channel_id] += 1
+        self._message_start_time = min(
+            self._message_start_time or message.log_time,
+            message.log_time
+        )
+        self._message_end_time = max(
+            self._message_end_time or message.log_time,
+            message.log_time
+        )
+
+    def _create_statistics_record(self) -> StatisticsRecord:
+        """Create a statistics record from tracked counters.
+
+        Returns:
+            StatisticsRecord with current statistics.
+        """
+        return StatisticsRecord(
+            message_count=self._message_count,
+            schema_count=len(self._schema_records),
+            channel_count=len(self._channel_records),
+            attachment_count=0,  # TODO: Implement
+            metadata_count=0,    # TODO: Implement
+            chunk_count=self._chunk_count,
+            message_start_time=self._message_start_time or 0,
+            message_end_time=self._message_end_time or 0,
+            channel_message_counts=self._channel_message_counts,
+        )
 
     @abstractmethod
     def write_message(self, message: MessageRecord) -> None:
@@ -308,15 +401,13 @@ class BaseMcapRecordWriter(ABC):
         """Finalize the MCAP file by writing summary section and footer."""
         ...  # pragma: no cover
 
-    @abstractmethod
     def __enter__(self) -> 'BaseMcapRecordWriter':
         """Context manager entry."""
-        ...  # pragma: no cover
+        return self
 
-    @abstractmethod
     def __exit__(self, exc_type, exc, tb) -> None:
         """Context manager exit."""
-        ...  # pragma: no cover
+        self.close()
 
     def _write_summary_section(
         self,
@@ -422,63 +513,16 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
             writer: The underlying writer to write binary data to.
             profile: The MCAP profile to use (default: "ros2").
         """
-        self._writer = CrcWriter(writer)
-        self._profile = profile
+        super().__init__(writer, profile=profile)
 
-        # Tracking for summary section
-        self._schema_records: dict[int, SchemaRecord] = {}
-        self._channel_records: dict[int, ChannelRecord] = {}
-
-        # Statistics tracking
-        self._message_count = 0
-        self._chunk_count = 0
-        self._message_start_time: int | None = None
-        self._message_end_time: int | None = None
-        self._channel_message_counts: dict[int, int] = {}
-
-        # Write file header
-        McapRecordWriter.write_magic_bytes(self._writer)
-        header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
-        McapRecordWriter.write_header(self._writer, header)
-
-    def __enter__(self) -> 'McapNonChunkedWriter':
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
-
-    def write_schema(self, schema: SchemaRecord) -> None:
-        """Write a schema record immediately to the data section."""
-        McapRecordWriter.write_schema(self._writer, schema)
-        if schema.id in self._schema_records:
-            logging.warning(f'Schema (id {schema.id}) already written to file')
-        else:
-            self._schema_records[schema.id] = schema
-
-    def write_channel(self, channel: ChannelRecord) -> None:
-        """Write a channel record immediately to the data section."""
-        McapRecordWriter.write_channel(self._writer, channel)
-        if channel.id in self._channel_records:
-            logging.warning(f'Channel (id {channel.id}) already written to file')
-        else:
-            self._channel_records[channel.id] = channel
-            self._channel_message_counts[channel.id] = 0
+    def _get_writer(self) -> BaseWriter:
+        """Get the writer for non-chunked writing (main writer)."""
+        return self._writer
 
     def write_message(self, message: MessageRecord) -> None:
         """Write a message record immediately to the data section."""
         McapRecordWriter.write_message(self._writer, message)
-
-        # Update statistics
-        self._message_count += 1
-        self._channel_message_counts[message.channel_id] += 1
-        self._message_start_time = min(
-            self._message_start_time or message.log_time,
-            message.log_time
-        )
-        self._message_end_time = max(
-            self._message_end_time or message.log_time,
-            message.log_time
-        )
+        self._update_statistics(message)
 
     def close(self) -> None:
         """Finalize the file by writing summary section and footer."""
@@ -491,17 +535,7 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
             self._writer,
             schema_records=list(self._schema_records.values()),
             channel_records=list(self._channel_records.values()),
-            statistics_record=StatisticsRecord(
-                message_count=self._message_count,
-                schema_count=len(self._schema_records),
-                channel_count=len(self._channel_records),
-                attachment_count=0,  # TODO: Implement
-                metadata_count=0,    # TODO: Implement
-                chunk_count=self._chunk_count,
-                message_start_time=self._message_start_time or 0,
-                message_end_time=self._message_end_time or 0,
-                channel_message_counts=self._channel_message_counts,
-            )
+            statistics_record=self._create_statistics_record()
         )
 
         # Write footer record manually for CRC calculation
@@ -542,40 +576,21 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             chunk_compression: Compression algorithm ("lz4" or "zstd").
             profile: The MCAP profile to use (default: "ros2").
         """
-        self._writer = CrcWriter(writer)
-        self._profile = profile
+        super().__init__(writer, profile=profile)
+        
+        # Chunk-specific configuration
         self._chunk_size = chunk_size
         self._chunk_compression = chunk_compression or ""
         self._compress_chunk = self._create_chunk_compressor()
 
-        # Tracking for summary section
-        self._schema_records: dict[int, SchemaRecord] = {}
-        self._channel_records: dict[ int, ChannelRecord] = {}
+        # Chunk-specific tracking
         self._chunk_indexes: list[ChunkIndexRecord] = []
-
-        # Statistics tracking
-        self._message_count = 0
-        self._chunk_count = 0
-        self._message_start_time: int | None = None
-        self._message_end_time: int | None = None
-        self._channel_message_counts: dict[int, int] = {}
 
         # Current chunk buffering
         self._current_chunk_buffer: BytesWriter = BytesWriter()
         self._current_chunk_start_time: int | None = None
         self._current_chunk_end_time: int | None = None
         self._current_message_index: dict[int, list[tuple[int, int]]] = {}
-
-        # Write file header
-        McapRecordWriter.write_magic_bytes(self._writer)
-        header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
-        McapRecordWriter.write_header(self._writer, header)
-
-    def __enter__(self) -> 'McapChunkedWriter':
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
 
     def _create_chunk_compressor(self) -> Callable[[bytes], bytes]:
         """Create a compression function based on the configured algorithm."""
@@ -588,8 +603,33 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         else:
             raise ValueError(f"Unsupported chunk compression: {self._chunk_compression}")
 
+    def _get_writer(self) -> BaseWriter:
+        """Get the writer for chunked writing (chunk buffer)."""
+        return self._current_chunk_buffer
+
     def write_schema(self, schema: SchemaRecord) -> None:
-        """Write a schema record immediately to the data section (not buffered)."""
+        """Write a schema record immediately to the data section (not buffered).
+        
+        This method overrides the base class implementation to write directly to
+        self._writer instead of using self._get_writer(). This is necessary because:
+        
+        1. MCAP Specification Requirement: Per the MCAP specification, schemas must
+           appear in the data section before any chunks. They cannot be placed inside
+           chunk buffers, as chunks are meant for message data only.
+           
+        2. Data Section Ordering: The file structure requires schemas to be written
+           before chunk records are encountered. This ensures that when chunks are
+           decompressed and read, all referenced schemas are already available.
+           
+        3. Architectural Constraint: Unlike messages which are buffered in
+           self._current_chunk_buffer and periodically flushed as chunks, schemas
+           and channels must be written directly and immediately. This maintains
+           the correct MCAP file structure: [Header] -> [Schemas] -> [Channels] ->
+           [Chunks/Messages] -> [Summary] -> [Footer]
+           
+        Args:
+            schema: The schema record to write.
+        """
         McapRecordWriter.write_schema(self._writer, schema)
         if schema.id in self._schema_records:
             logging.warning(f'Schema (id {schema.id}) already written to file')
@@ -597,7 +637,29 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             self._schema_records[schema.id] = schema
 
     def write_channel(self, channel: ChannelRecord) -> None:
-        """Write a channel record immediately to the data section (not buffered)."""
+        """Write a channel record immediately to the data section (not buffered).
+        
+        This method overrides the base class implementation to write directly to
+        self._writer instead of using self._get_writer(). This is necessary because:
+        
+        1. MCAP Specification Requirement: Per the MCAP specification, channels must
+           appear in the data section before any chunks. They cannot be placed inside
+           chunk buffers, as chunks are meant for message data only.
+           
+        2. Data Section Ordering: The file structure requires channels to be written
+           after schemas but before chunk records. This ensures that when reading the
+           file, all channel definitions are available before encountering any
+           message data in chunks.
+           
+        3. Architectural Constraint: Unlike messages which are buffered in
+           self._current_chunk_buffer and periodically flushed as chunks, channels
+           (like schemas) must be written directly and immediately. This maintains
+           the correct MCAP file structure: [Header] -> [Schemas] -> [Channels] ->
+           [Chunks/Messages] -> [Summary] -> [Footer]
+           
+        Args:
+            channel: The channel record to write.
+        """
         McapRecordWriter.write_channel(self._writer, channel)
         if channel.id in self._channel_records:
             logging.warning(f'Channel (id {channel.id}) already written to file')
@@ -631,17 +693,8 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         if self._current_chunk_buffer.size() >= self._chunk_size:
             self._flush_chunk()
 
-        # Update statistics
-        self._message_count += 1
-        self._channel_message_counts[message.channel_id] += 1
-        self._message_start_time = min(
-            self._message_start_time or message.log_time,
-            message.log_time
-        )
-        self._message_end_time = max(
-            self._message_end_time or message.log_time,
-            message.log_time
-        )
+        # Update statistics using shared method
+        self._update_statistics(message)
 
     def _flush_chunk(self) -> None:
         """Compress and write the current chunk buffer to the file."""
@@ -709,17 +762,7 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             self._writer,
             schema_records=list(self._schema_records.values()),
             channel_records=list(self._channel_records.values()),
-            statistics_record=StatisticsRecord(
-                message_count=self._message_count,
-                schema_count=len(self._schema_records),
-                channel_count=len(self._channel_records),
-                attachment_count=0,  # TODO: Implement
-                metadata_count=0,    # TODO: Implement
-                chunk_count=self._chunk_count,
-                message_start_time=self._message_start_time or 0,
-                message_end_time=self._message_end_time or 0,
-                channel_message_counts=self._channel_message_counts,
-            ),
+            statistics_record=self._create_statistics_record(),
             chunk_indexes=self._chunk_indexes
         )
 
