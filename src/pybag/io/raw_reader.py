@@ -1,3 +1,4 @@
+import mmap
 import zlib
 from abc import ABC, abstractmethod
 from enum import IntEnum
@@ -73,6 +74,51 @@ class FileReader(BaseReader):
 
     def close(self) -> None:
         self._file.close()
+
+
+class MmapReader(BaseReader):
+    """Memory-mapped file reader for efficient random access to large files."""
+
+    def __init__(self, file_path: Path | str):
+        self._file_path = Path(file_path).absolute()
+        self._file = open(self._file_path, 'rb')
+        # Memory-map the file - mmap object behaves like a bytes object
+        self._mmap = mmap.mmap(self._file.fileno(), 0, access=mmap.ACCESS_READ)
+        self._position = 0
+
+    def peek(self, size: int) -> bytes:
+        # Returns empty bytes when end of file
+        return self._mmap[self._position:self._position + size]
+
+    def read(self, size: int | None = None) -> bytes:
+        if size is None:
+            result = self._mmap[self._position:]
+            self._position = len(self._mmap)
+            return result
+        result = self._mmap[self._position:self._position + size]
+        self._position += size
+        return result
+
+    def seek_from_start(self, offset: int) -> int:
+        self._position = offset
+        return self._position
+
+    def seek_from_end(self, offset: int) -> int:
+        self._position = len(self._mmap) - offset
+        return self._position
+
+    def seek_from_current(self, offset: int) -> int:
+        self._position += offset
+        return self._position
+
+    def tell(self) -> int:
+        return self._position
+
+    def close(self) -> None:
+        if self._mmap is not None:
+            self._mmap.close()
+        if self._file is not None:
+            self._file.close()
 
 
 class BytesReader(BaseReader):

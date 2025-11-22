@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Generator, Iterator, Literal
 
-from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.io.raw_reader import BaseReader, BytesReader, FileReader, MmapReader
 from pybag.mcap.error import (
     McapNoChunkError,
     McapNoChunkIndexError,
@@ -195,6 +195,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        use_mmap: bool = False,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -205,12 +206,14 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            use_mmap: Whether to use memory-mapped file I/O for better performance
 
         Returns:
             A McapChunkedReader instance
         """
+        reader = MmapReader(file_path) if use_mmap else FileReader(file_path)
         return McapChunkedReader(
-            FileReader(file_path),
+            reader,
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
@@ -830,6 +833,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        use_mmap: bool = False,
     ) -> 'McapNonChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -840,12 +844,14 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            use_mmap: Whether to use memory-mapped file I/O for better performance
 
         Returns:
             A McapNonChunkedReader instance
         """
+        reader = MmapReader(file_path) if use_mmap else FileReader(file_path)
         return McapNonChunkedReader(
-            FileReader(file_path),
+            reader,
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
@@ -1156,6 +1162,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        use_mmap: bool = False,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file.
 
@@ -1166,6 +1173,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            use_mmap: Whether to use memory-mapped file I/O for better performance
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1179,6 +1187,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                use_mmap=use_mmap,
             )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
@@ -1188,6 +1197,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                use_mmap=use_mmap,
             )
         except (McapNoSummarySectionError, McapNoSummaryIndexError) as e:
             # Only raise if reconstruction is explicitly disabled
