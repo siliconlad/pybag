@@ -134,6 +134,8 @@ class McapChunkedSummary:
         # Track message statistics
         message_count = 0
         chunk_count = 0
+        attachment_count = 0
+        metadata_count = 0
         message_start_time: int | None = None
         message_end_time: int | None = None
         channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -240,6 +242,12 @@ class McapChunkedSummary:
                 # TODO: Is there a way not to ignore?
                 logging.warning('Found Message record outside of a chunk! Ignoring...')
                 McapRecordParser.skip_record(self._file)
+            elif record_type == McapRecordType.ATTACHMENT:
+                attachment_count += 1
+                McapRecordParser.skip_record(self._file)
+            elif record_type == McapRecordType.METADATA:
+                metadata_count += 1
+                McapRecordParser.skip_record(self._file)
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -251,8 +259,8 @@ class McapChunkedSummary:
             message_count=message_count,
             schema_count=len(found_schemas),
             channel_count=len(found_channels),
-            attachment_count=0,  # Not tracked during reconstruction
-            metadata_count=0,  # Not tracked during reconstruction
+            attachment_count=attachment_count,
+            metadata_count=metadata_count,
             chunk_count=chunk_count,
             message_start_time=message_start_time or 0,
             message_end_time=message_end_time or 0,
@@ -565,6 +573,8 @@ class McapChunkedSummary:
             # Track message statistics
             chunk_count = 0
             message_count = 0
+            attachment_count = 0
+            metadata_count = 0
             message_start_time: int | None = None
             message_end_time: int | None = None
             channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -628,6 +638,12 @@ class McapChunkedSummary:
                 elif record_type == McapRecordType.MESSAGE:
                     logging.warning('Found Message record outside of a chunk! Ignoring...')
                     McapRecordParser.skip_record(self._file)
+                elif record_type == McapRecordType.ATTACHMENT:
+                    attachment_count += 1
+                    McapRecordParser.skip_record(self._file)
+                elif record_type == McapRecordType.METADATA:
+                    metadata_count += 1
+                    McapRecordParser.skip_record(self._file)
                 else:
                     McapRecordParser.skip_record(self._file)
 
@@ -636,8 +652,8 @@ class McapChunkedSummary:
                 message_count=message_count,
                 schema_count=len(schema_ids),
                 channel_count=len(channel_ids),
-                attachment_count=0,  # Not tracked during reconstruction
-                metadata_count=0,  # Not tracked during reconstruction
+                attachment_count=attachment_count,
+                metadata_count=metadata_count,
                 chunk_count=chunk_count,
                 message_start_time=message_start_time or 0,
                 message_end_time=message_end_time or 0,
@@ -730,6 +746,8 @@ class McapNonChunkedSummary:
         """Build summary information by scanning the data section."""
         # Track message statistics
         message_count = 0
+        attachment_count = 0
+        metadata_count = 0
         message_start_time: int | None = None
         message_end_time: int | None = None
         channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -761,6 +779,12 @@ class McapNonChunkedSummary:
                     message_start_time = log_time
                 if message_end_time is None or log_time > message_end_time:
                     message_end_time = log_time
+            elif record_type == McapRecordType.ATTACHMENT:
+                attachment_count += 1
+                McapRecordParser.skip_record(self._file)
+            elif record_type == McapRecordType.METADATA:
+                metadata_count += 1
+                McapRecordParser.skip_record(self._file)
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -769,8 +793,8 @@ class McapNonChunkedSummary:
             message_count=message_count,
             schema_count=len(found_schemas),
             channel_count=len(found_channels),
-            attachment_count=0,  # Not tracked during reconstruction
-            metadata_count=0,  # Not tracked during reconstruction
+            attachment_count=attachment_count,
+            metadata_count=metadata_count,
             chunk_count=0,  # Non-chunked files have no chunks
             message_start_time=message_start_time or 0,
             message_end_time=message_end_time or 0,
@@ -885,6 +909,8 @@ class McapNonChunkedSummary:
             schema_count = 0
             channel_count = 0
             message_count = 0
+            attachment_count = 0
+            metadata_count = 0
             message_start_time: int | None = None
             message_end_time: int | None = None
             channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -914,6 +940,12 @@ class McapNonChunkedSummary:
                         message_start_time = log_time
                     if message_end_time is None or log_time > message_end_time:
                         message_end_time = log_time
+                elif record_type == McapRecordType.ATTACHMENT:
+                    attachment_count += 1
+                    McapRecordParser.skip_record(self._file)
+                elif record_type == McapRecordType.METADATA:
+                    metadata_count += 1
+                    McapRecordParser.skip_record(self._file)
                 else:
                     McapRecordParser.skip_record(self._file)
 
@@ -922,8 +954,8 @@ class McapNonChunkedSummary:
                 message_count=message_count,
                 schema_count=schema_count,
                 channel_count=channel_count,
-                attachment_count=0,  # Not tracked during reconstruction
-                metadata_count=0,  # Not tracked during reconstruction
+                attachment_count=attachment_count,
+                metadata_count=metadata_count,
                 chunk_count=0,  # Non-chunked files have no chunks
                 message_start_time=message_start_time or 0,
                 message_end_time=message_end_time or 0,

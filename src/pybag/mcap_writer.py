@@ -187,6 +187,63 @@ class McapFileWriter:
         # Delegate to low-level writer
         self._record_writer.write_message(record)
 
+    def write_attachment(
+        self,
+        name: str,
+        data: bytes,
+        media_type: str = "application/octet-stream",
+        log_time: int | None = None,
+        create_time: int | None = None,
+        crc: int = 0
+    ) -> None:
+        """Write an attachment to the MCAP file.
+
+        Attachments are auxiliary files embedded in the MCAP, such as calibration data,
+        configuration files, or other metadata files.
+
+        Args:
+            name: Name of the attachment (e.g., "camera_calibration.yaml").
+            data: Binary data of the attachment.
+            media_type: MIME type of the attachment (default: "application/octet-stream").
+            log_time: Log timestamp (nanoseconds). If None, defaults to 0.
+            create_time: Creation timestamp (nanoseconds). If None, defaults to log_time.
+            crc: CRC32 checksum of the data. If 0, no checksum is included.
+        """
+        actual_log_time = log_time if log_time is not None else 0
+        actual_create_time = create_time if create_time is not None else actual_log_time
+
+        from pybag.mcap.records import AttachmentRecord
+        record = AttachmentRecord(
+            log_time=actual_log_time,
+            create_time=actual_create_time,
+            name=name,
+            media_type=media_type,
+            data=data,
+            crc=crc,
+        )
+        self._record_writer.write_attachment(record)
+
+    def write_metadata(
+        self,
+        name: str,
+        metadata: dict[str, str]
+    ) -> None:
+        """Write a metadata record to the MCAP file.
+
+        Metadata records contain key-value pairs describing the recording,
+        such as device information, environment settings, or other contextual data.
+
+        Args:
+            name: Name/identifier for this metadata record.
+            metadata: Dictionary of key-value pairs (both strings).
+        """
+        from pybag.mcap.records import MetadataRecord
+        record = MetadataRecord(
+            name=name,
+            metadata=metadata,
+        )
+        self._record_writer.write_metadata(record)
+
     def close(self) -> None:
         """Finalize the MCAP file by writing summary section and footer.
 
