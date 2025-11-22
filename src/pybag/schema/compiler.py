@@ -132,10 +132,10 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             else:
                 return Annotated[list[Any], ("array", Any, None)]
         elif isinstance(field_type, Complex):
-            # Create sub-type if needed
+            # Create sub-type if needed - use Any for type annotation since sub_type is runtime
             sub_schema = sub_schemas[field_type.type]
             sub_type = create_dataclass_type(sub_schema)
-            return Annotated[sub_type, ("complex", field_type.type)]
+            return Annotated[Any, ("complex", field_type.type)]
         else:
             return Any
 
