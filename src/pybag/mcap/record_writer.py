@@ -309,6 +309,15 @@ class BaseMcapRecordWriter(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
+    def flush_chunk(self) -> None:
+        """Flush the current chunk if applicable.
+
+        For chunked writers, this forces the current chunk to be written even if
+        it hasn't reached the size threshold. For non-chunked writers, this is a no-op.
+        """
+        ...  # pragma: no cover
+
+    @abstractmethod
     def __enter__(self) -> 'BaseMcapRecordWriter':
         """Context manager entry."""
         ...  # pragma: no cover
@@ -479,6 +488,10 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
             self._message_end_time or message.log_time,
             message.log_time
         )
+
+    def flush_chunk(self) -> None:
+        """No-op for non-chunked writer."""
+        pass
 
     def close(self) -> None:
         """Finalize the file by writing summary section and footer."""
@@ -693,6 +706,16 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._current_chunk_start_time = None
         self._current_chunk_end_time = None
         self._current_message_index = {}
+
+    def flush_chunk(self) -> None:
+        """Flush the current chunk buffer to the file.
+
+        Forces the current chunk to be written even if it hasn't reached the
+        size threshold. This is useful when switching topics to ensure that
+        each chunk only contains messages from one topic.
+        """
+        if self._current_chunk_buffer.size() > 0:
+            self._flush_chunk()
 
     def close(self) -> None:
         """Finalize the file by flushing remaining chunk and writing summary."""
