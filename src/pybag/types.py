@@ -50,7 +50,7 @@ class _ConstantType(Generic[T]):
 class _ArrayType:
     """Generic type for arrays that accepts both single type and type+length."""
     @classmethod
-    def __class_getitem__(cls, params: Any) -> type[list]:
+    def __class_getitem__(cls, params: Any) -> Any:
         if isinstance(params, tuple):
             # Array[type, length] - fixed size array
             if len(params) == 2:
