@@ -30,6 +30,15 @@ def _format_duration(duration_ns: int) -> str:
         return f"{hours}h {minutes}m {seconds:.2f}s"
 
 
+def _format_bandwidth(msg_count: int, duration_ns: int) -> str:
+    """Placeholder for bandwidth calculation. Returns 'N/A' until message size information is available."""
+    if duration_ns <= 0:
+        return "N/A"
+
+    # TODO: Calculate bandwidth once message size information is available
+    return "N/A"
+
+
 def info_mcap(input_path: str | Path) -> None:
     """Display information about an MCAP file."""
     input_path = Path(input_path).resolve()
@@ -60,9 +69,18 @@ def info_mcap(input_path: str | Path) -> None:
         print(f"  Duration:    {_format_duration(duration_ns)}")
         print()
 
+        # Collect unique encodings
+        encodings = set()
+        for channel in channels.values():
+            if channel.schema_id != 0 and channel.schema_id in schemas:
+                schema = schemas[channel.schema_id]
+                encodings.add(schema.encoding)
+        encoding_str = ", ".join(sorted(encodings)) if encodings else "N/A"
+
         # Print general statistics
         print("Statistics:")
         print(f"  Profile:        {header.profile}")
+        print(f"  Encoding:       {encoding_str}")
         print(f"  Library:        {header.library}")
         print(f"  Messages:       {stats.message_count:,}")
         print(f"  Channels:       {stats.channel_count}")
@@ -84,18 +102,11 @@ def info_mcap(input_path: str | Path) -> None:
                 # Calculate frequency (messages per second)
                 frequency = msg_count / _ns_to_seconds(duration_ns) if duration_ns > 0 else 0
 
-                # Get schema encoding if available
-                schema_encoding = "N/A"
-                if channel.schema_id != 0 and channel.schema_id in schemas:
-                    schema = schemas[channel.schema_id]
-                    schema_encoding = schema.encoding
-
                 topic_info.append({
                     'topic': channel.topic,
                     'messages': msg_count,
-                    'encoding': channel.message_encoding,
-                    'schema_encoding': schema_encoding,
                     'frequency': frequency,
+                    'bandwidth': _format_bandwidth(msg_count, duration_ns),
                     'schema_name': schemas[channel.schema_id].name if channel.schema_id != 0 and channel.schema_id in schemas else "N/A"
                 })
 
@@ -105,20 +116,27 @@ def info_mcap(input_path: str | Path) -> None:
             # Find max widths for alignment
             max_topic_len = max(len(t['topic']) for t in topic_info)
             max_msgs_len = max(len(f"{t['messages']:,}") for t in topic_info)
+            max_freq_len = max(len(f"{t['frequency']:.2f}" if t['frequency'] < 1000 else f"{t['frequency']:.1f}") for t in topic_info)
+            max_bandwidth_len = max(len(t['bandwidth']) for t in topic_info)
+
+            # Ensure column widths are at least as wide as the header text
+            messages_col_width = max(max_msgs_len, len('Messages'))
+            freq_col_width = max(max_freq_len, len('Freq (Hz)'))
+            bandwidth_col_width = max(max_bandwidth_len, len('Bandwidth'))
 
             # Print header
-            print(f"  {'Topic':<{max_topic_len}}  {'Messages':>{max_msgs_len}}  {'Freq (Hz)':>10}  {'Encoding':<15}  Schema")
-            print(f"  {'-' * max_topic_len}  {'-' * max_msgs_len}  {'-' * 10}  {'-' * 15}  {'-' * 20}")
+            print(f"  {'Topic':<{max_topic_len}}  {'Messages':>{messages_col_width}}  {'Freq (Hz)':>{freq_col_width}}  {'Bandwidth':>{bandwidth_col_width}}  Schema")
+            print(f"  {'-' * max_topic_len}  {'-' * messages_col_width}  {'-' * freq_col_width}  {'-' * bandwidth_col_width}  {'-' * 20}")
 
             # Print each topic
             for info in topic_info:
                 topic = info['topic']
                 messages = f"{info['messages']:,}"
                 freq = f"{info['frequency']:.2f}" if info['frequency'] < 1000 else f"{info['frequency']:.1f}"
-                encoding = info['encoding']
+                bandwidth = info['bandwidth']
                 schema = info['schema_name']
 
-                print(f"  {topic:<{max_topic_len}}  {messages:>{max_msgs_len}}  {freq:>10}  {encoding:<15}  {schema}")
+                print(f"  {topic:<{max_topic_len}}  {messages:>{messages_col_width}}  {freq:>{freq_col_width}}  {bandwidth:>{bandwidth_col_width}}  {schema}")
 
 
 def add_parser(subparsers) -> None:
@@ -129,9 +147,9 @@ def add_parser(subparsers) -> None:
             Display statistics and information about an MCAP file including:
             - File name and path
             - Start/end time and duration
-            - Profile and library
+            - Profile, encoding, and library
             - Message, channel, and schema counts
-            - Per-topic statistics (message count, encoding, frequency)
+            - Per-topic statistics (message count, frequency, bandwidth)
         """)
     )
     parser.add_argument("input", help="Path to MCAP file (*.mcap)")
