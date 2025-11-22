@@ -85,5 +85,7 @@ The pre-compilation is automatic and transparent - no code changes required. Cus
 If you need to regenerate the pre-compiled message types (e.g., after adding new standard messages):
 
 ```bash
-python scripts/precompile_messages.py
+python scripts/generate_messages.py --distro humble --precompile
 ```
+
+For more advanced options (different distros, specific packages, generating dataclasses), see [scripts/README.md](scripts/README.md).
