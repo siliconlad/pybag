@@ -15,10 +15,12 @@ from pybag.mcap.record_parser import (
     McapRecordType
 )
 from pybag.mcap.records import (
+    AttachmentIndexRecord,
     ChannelRecord,
     ChunkIndexRecord,
     FooterRecord,
     MessageIndexRecord,
+    MetadataIndexRecord,
     SchemaRecord,
     StatisticsRecord,
     decompress_chunk
@@ -134,6 +136,8 @@ class McapChunkedSummary:
         # Track message statistics
         message_count = 0
         chunk_count = 0
+        attachment_count = 0
+        metadata_count = 0
         message_start_time: int | None = None
         message_end_time: int | None = None
         channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -240,6 +244,12 @@ class McapChunkedSummary:
                 # TODO: Is there a way not to ignore?
                 logging.warning('Found Message record outside of a chunk! Ignoring...')
                 McapRecordParser.skip_record(self._file)
+            elif record_type == McapRecordType.ATTACHMENT:
+                attachment_count += 1
+                McapRecordParser.skip_record(self._file)
+            elif record_type == McapRecordType.METADATA:
+                metadata_count += 1
+                McapRecordParser.skip_record(self._file)
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -251,8 +261,8 @@ class McapChunkedSummary:
             message_count=message_count,
             schema_count=len(found_schemas),
             channel_count=len(found_channels),
-            attachment_count=0,  # Not tracked during reconstruction
-            metadata_count=0,  # Not tracked during reconstruction
+            attachment_count=attachment_count,
+            metadata_count=metadata_count,
             chunk_count=chunk_count,
             message_start_time=message_start_time or 0,
             message_end_time=message_end_time or 0,
@@ -565,6 +575,8 @@ class McapChunkedSummary:
             # Track message statistics
             chunk_count = 0
             message_count = 0
+            attachment_count = 0
+            metadata_count = 0
             message_start_time: int | None = None
             message_end_time: int | None = None
             channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -628,6 +640,12 @@ class McapChunkedSummary:
                 elif record_type == McapRecordType.MESSAGE:
                     logging.warning('Found Message record outside of a chunk! Ignoring...')
                     McapRecordParser.skip_record(self._file)
+                elif record_type == McapRecordType.ATTACHMENT:
+                    attachment_count += 1
+                    McapRecordParser.skip_record(self._file)
+                elif record_type == McapRecordType.METADATA:
+                    metadata_count += 1
+                    McapRecordParser.skip_record(self._file)
                 else:
                     McapRecordParser.skip_record(self._file)
 
@@ -636,8 +654,8 @@ class McapChunkedSummary:
                 message_count=message_count,
                 schema_count=len(schema_ids),
                 channel_count=len(channel_ids),
-                attachment_count=0,  # Not tracked during reconstruction
-                metadata_count=0,  # Not tracked during reconstruction
+                attachment_count=attachment_count,
+                metadata_count=metadata_count,
                 chunk_count=chunk_count,
                 message_start_time=message_start_time or 0,
                 message_end_time=message_end_time or 0,
@@ -649,8 +667,43 @@ class McapChunkedSummary:
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
-    # TODO: Implement attachment index
-    # TODO: Implement metadata index
+    def get_attachment_indexes(self) -> list[AttachmentIndexRecord]:
+        """Get all attachment indexes from the MCAP file.
+
+        Returns:
+            List of AttachmentIndexRecord objects.
+        """
+        attachment_indexes: list[AttachmentIndexRecord] = []
+
+        # If attachment index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.ATTACHMENT_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.ATTACHMENT_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.ATTACHMENT_INDEX:
+                attachment_index = McapRecordParser.parse_attachment_index(self._file)
+                attachment_indexes.append(attachment_index)
+            return attachment_indexes
+
+        # No attachment indexes found
+        return attachment_indexes
+
+    def get_metadata_indexes(self) -> list[MetadataIndexRecord]:
+        """Get all metadata indexes from the MCAP file.
+
+        Returns:
+            List of MetadataIndexRecord objects.
+        """
+        metadata_indexes: list[MetadataIndexRecord] = []
+
+        # If metadata index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.METADATA_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.METADATA_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.METADATA_INDEX:
+                metadata_index = McapRecordParser.parse_metadata_index(self._file)
+                metadata_indexes.append(metadata_index)
+            return metadata_indexes
+
+        # No metadata indexes found
+        return metadata_indexes
 
 
 class McapNonChunkedSummary:
@@ -730,6 +783,8 @@ class McapNonChunkedSummary:
         """Build summary information by scanning the data section."""
         # Track message statistics
         message_count = 0
+        attachment_count = 0
+        metadata_count = 0
         message_start_time: int | None = None
         message_end_time: int | None = None
         channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -761,6 +816,12 @@ class McapNonChunkedSummary:
                     message_start_time = log_time
                 if message_end_time is None or log_time > message_end_time:
                     message_end_time = log_time
+            elif record_type == McapRecordType.ATTACHMENT:
+                attachment_count += 1
+                McapRecordParser.skip_record(self._file)
+            elif record_type == McapRecordType.METADATA:
+                metadata_count += 1
+                McapRecordParser.skip_record(self._file)
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -769,8 +830,8 @@ class McapNonChunkedSummary:
             message_count=message_count,
             schema_count=len(found_schemas),
             channel_count=len(found_channels),
-            attachment_count=0,  # Not tracked during reconstruction
-            metadata_count=0,  # Not tracked during reconstruction
+            attachment_count=attachment_count,
+            metadata_count=metadata_count,
             chunk_count=0,  # Non-chunked files have no chunks
             message_start_time=message_start_time or 0,
             message_end_time=message_end_time or 0,
@@ -885,6 +946,8 @@ class McapNonChunkedSummary:
             schema_count = 0
             channel_count = 0
             message_count = 0
+            attachment_count = 0
+            metadata_count = 0
             message_start_time: int | None = None
             message_end_time: int | None = None
             channel_message_counts: dict[ChannelId, int] = defaultdict(int)
@@ -914,6 +977,12 @@ class McapNonChunkedSummary:
                         message_start_time = log_time
                     if message_end_time is None or log_time > message_end_time:
                         message_end_time = log_time
+                elif record_type == McapRecordType.ATTACHMENT:
+                    attachment_count += 1
+                    McapRecordParser.skip_record(self._file)
+                elif record_type == McapRecordType.METADATA:
+                    metadata_count += 1
+                    McapRecordParser.skip_record(self._file)
                 else:
                     McapRecordParser.skip_record(self._file)
 
@@ -922,8 +991,8 @@ class McapNonChunkedSummary:
                 message_count=message_count,
                 schema_count=schema_count,
                 channel_count=channel_count,
-                attachment_count=0,  # Not tracked during reconstruction
-                metadata_count=0,  # Not tracked during reconstruction
+                attachment_count=attachment_count,
+                metadata_count=metadata_count,
                 chunk_count=0,  # Non-chunked files have no chunks
                 message_start_time=message_start_time or 0,
                 message_end_time=message_end_time or 0,
@@ -934,5 +1003,43 @@ class McapNonChunkedSummary:
         # Either we built self._cached_statistics
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
+
+    def get_attachment_indexes(self) -> list[AttachmentIndexRecord]:
+        """Get all attachment indexes from the MCAP file.
+
+        Returns:
+            List of AttachmentIndexRecord objects.
+        """
+        attachment_indexes: list[AttachmentIndexRecord] = []
+
+        # If attachment index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.ATTACHMENT_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.ATTACHMENT_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.ATTACHMENT_INDEX:
+                attachment_index = McapRecordParser.parse_attachment_index(self._file)
+                attachment_indexes.append(attachment_index)
+            return attachment_indexes
+
+        # No attachment indexes found
+        return attachment_indexes
+
+    def get_metadata_indexes(self) -> list[MetadataIndexRecord]:
+        """Get all metadata indexes from the MCAP file.
+
+        Returns:
+            List of MetadataIndexRecord objects.
+        """
+        metadata_indexes: list[MetadataIndexRecord] = []
+
+        # If metadata index is in summary offset, load from summary section
+        if self._has_summary and McapRecordType.METADATA_INDEX in self._summary_offset:
+            _ = self._file.seek_from_start(self._summary_offset[McapRecordType.METADATA_INDEX])
+            while McapRecordParser.peek_record(self._file) == McapRecordType.METADATA_INDEX:
+                metadata_index = McapRecordParser.parse_metadata_index(self._file)
+                metadata_indexes.append(metadata_index)
+            return metadata_indexes
+
+        # No metadata indexes found
+        return metadata_indexes
 
     # TODO: Maybe build message index here?
