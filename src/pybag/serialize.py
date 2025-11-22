@@ -3,9 +3,11 @@ from typing import Callable
 
 from pybag.encoding import MessageEncoder
 from pybag.encoding.cdr import CdrEncoder
+from pybag.encoding.ros1 import Ros1Encoder
 from pybag.mcap.records import ChannelRecord, SchemaRecord
 from pybag.schema import SchemaEncoder
 from pybag.schema.compiler import compile_serializer
+from pybag.schema.ros1msg import Ros1MsgSchemaEncoder
 from pybag.schema.ros2msg import Ros2MsgSchemaEncoder
 from pybag.types import Message
 
@@ -55,10 +57,14 @@ class MessageSerializerFactory:
     def from_profile(profile: str) -> MessageSerializer | None:
         if profile == "ros2":
             return MessageSerializer(Ros2MsgSchemaEncoder(), CdrEncoder)
+        if profile == "ros1":
+            return MessageSerializer(Ros1MsgSchemaEncoder(), Ros1Encoder)
         return None
 
     @staticmethod
     def from_channel(channel: ChannelRecord, schema: SchemaRecord) -> MessageSerializer | None:
         if channel.message_encoding == "cdr" and schema.encoding == "ros2msg":
             return MessageSerializer(Ros2MsgSchemaEncoder(), CdrEncoder)
+        if channel.message_encoding == "ros1" and schema.encoding == "ros1msg":
+            return MessageSerializer(Ros1MsgSchemaEncoder(), Ros1Encoder)
         return None

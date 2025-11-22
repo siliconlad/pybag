@@ -408,15 +408,8 @@ def compile_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> Callab
                 return [f"{pad}encoder.{primitive}({value_expr})"]
 
             if isinstance(field_type, String):
-                value_var = new_var("value")
-                encoded_var = new_var("encoded")
-                return [
-                    f"{pad}{value_var} = {value_expr}",
-                    f"{pad}{encoded_var} = {value_var}.encode()",
-                    f"{pad}_payload.align(4)",
-                    f"{pad}_payload.write(struct_pack(fmt_prefix + 'I', len({encoded_var}) + 1))",
-                    f"{pad}_payload.write({encoded_var} + b'\\x00')",
-                ]
+                # Use encoder.string() method to support different encodings (ROS1 vs ROS2/CDR)
+                return [f"{pad}encoder.string({value_expr})"]
 
             if isinstance(field_type, Array):
                 elem = field_type.type
