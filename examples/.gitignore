@@ -1,0 +1,4 @@
+output/
+*.mcap
+__pycache__/
+*.pyc
