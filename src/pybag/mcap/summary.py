@@ -74,6 +74,8 @@ class McapChunkedSummary:
         self._cached_channels: dict[ChannelId, ChannelRecord] | None = None
         self._cached_chunk_indexes: list[ChunkIndexRecord] | None = None
         self._cached_statistics: StatisticsRecord | None = None
+        self._cached_metadata_indexes: dict[str, list[MetadataIndexRecord]] = defaultdict(list)
+        self._cached_attachment_indexes: dict[str, list[AttachmentIndexRecord]] = defaultdict(list)
         self._message_indexes: dict[Offset, dict[ChannelId, MessageIndexRecord]] = {}
 
         # Read footer to determine if summary sections exist
@@ -216,6 +218,12 @@ class McapChunkedSummary:
                             chunk_message_start_time = log_time
                         if chunk_message_end_time is None or log_time > chunk_message_end_time:
                             chunk_message_end_time = log_time
+                    elif chunk_record_type == McapRecordType.METADATA:
+                        logging.warning(f'Metadata in chunk! This is not allowed in mcap spec. Ignoring...')
+                        McapRecordParser.skip_record(reader)
+                    elif chunk_record_type == McapRecordType.ATTACHMENT:
+                        logging.warning(f'Attachment in chunk! This is not allowed in mcap spec. Ignoring...')
+                        McapRecordParser.skip_record(reader)
                     else:
                         McapRecordParser.skip_record(reader)
 
@@ -246,10 +254,28 @@ class McapChunkedSummary:
                 McapRecordParser.skip_record(self._file)
             elif record_type == McapRecordType.ATTACHMENT:
                 attachment_count += 1
-                McapRecordParser.skip_record(self._file)
+                start_offset = self._file.tell()
+                attachment_record = McapRecordParser.parse_attachment(self._file)
+                attachment_index = AttachmentIndexRecord(
+                    offset=start_offset,
+                    length=self._file.tell() - start_offset,
+                    log_time=attachment_record.log_time,
+                    create_time=attachment_record.create_time,
+                    data_size=len(attachment_record.data),
+                    name=attachment_record.name,
+                    media_type=attachment_record.media_type,
+                )
+                self._cached_attachment_indexes[attachment_record.name].append(attachment_index)
             elif record_type == McapRecordType.METADATA:
                 metadata_count += 1
-                McapRecordParser.skip_record(self._file)
+                start_offset = self._file.tell()
+                metadata_record = McapRecordParser.parse_metadata(self._file)
+                metadata_index = MetadataIndexRecord(
+                    offset=start_offset,
+                    length=self._file.tell() - start_offset,
+                    name=metadata_record.name,
+                )
+                self._cached_metadata_indexes[metadata_record.name].append(metadata_index)
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -667,43 +693,110 @@ class McapChunkedSummary:
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
-    def get_attachment_indexes(self) -> list[AttachmentIndexRecord]:
+    def get_attachment_indexes(self) -> dict[str, list[AttachmentIndexRecord]]:
         """Get all attachment indexes from the MCAP file.
 
         Returns:
             List of AttachmentIndexRecord objects.
         """
-        attachment_indexes: list[AttachmentIndexRecord] = []
+        if self._cached_attachment_indexes:
+            return self._cached_attachment_indexes
+
+        attachment_indexes: dict[str, list[AttachmentIndexRecord]] = defaultdict(list)
 
         # If attachment index is in summary offset, load from summary section
         if self._has_summary and McapRecordType.ATTACHMENT_INDEX in self._summary_offset:
             _ = self._file.seek_from_start(self._summary_offset[McapRecordType.ATTACHMENT_INDEX])
             while McapRecordParser.peek_record(self._file) == McapRecordType.ATTACHMENT_INDEX:
                 attachment_index = McapRecordParser.parse_attachment_index(self._file)
-                attachment_indexes.append(attachment_index)
+                attachment_indexes[attachment_index.name].append(attachment_index)
+            self._cached_attachment_indexes = attachment_indexes
             return attachment_indexes
 
-        # No attachment indexes found
-        return attachment_indexes
+        # If channel is not in summary section, must search data section
+        elif self._has_summary and McapRecordType.ATTACHMENT_INDEX not in self._summary_offset:
+            # If reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No attachment index records found in summary and reconstruction is disabled.')
+                self._cached_attachment_indexes = {}
+                return self._cached_attachment_indexes
 
-    def get_metadata_indexes(self) -> list[MetadataIndexRecord]:
+            # Search for channel records in the summary section
+            logging.warning('No attachment index records found in summary offset. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while McapRecordParser.peek_record(self._file) != McapRecordType.DATA_END:
+                next_record = McapRecordParser.peek_record(self._file)
+                if next_record == McapRecordType.ATTACHMENT:
+                    start_offset = self._file.tell()
+                    attachment_record = McapRecordParser.parse_attachment(self._file)
+                    attachment_index = AttachmentIndexRecord(
+                        offset=start_offset,
+                        length=self._file.tell() - start_offset,
+                        log_time=attachment_record.log_time,
+                        create_time=attachment_record.create_time,
+                        data_size=len(attachment_record.data),
+                        name=attachment_record.name,
+                        media_type=attachment_record.media_type,
+                    )
+                    attachment_indexes[attachment_record.name].append(attachment_index)
+                else:
+                    McapRecordParser.skip_record(self._file)
+            self._cached_attachment_indexes = attachment_indexes
+            return attachment_indexes
+
+        # Either we built self._cached_channels
+        # or we hit one of the if statements above
+        raise RuntimeError("Impossible.")
+
+    def get_metadata_indexes(self) -> dict[str, list[MetadataIndexRecord]]:
         """Get all metadata indexes from the MCAP file.
 
         Returns:
             List of MetadataIndexRecord objects.
         """
-        metadata_indexes: list[MetadataIndexRecord] = []
+        if self._cached_metadata_indexes:
+            return self._cached_metadata_indexes
+
+        metadata_indexes: dict[str, list[MetadataIndexRecord]] = defaultdict(list)
 
         # If metadata index is in summary offset, load from summary section
         if self._has_summary and McapRecordType.METADATA_INDEX in self._summary_offset:
             _ = self._file.seek_from_start(self._summary_offset[McapRecordType.METADATA_INDEX])
             while McapRecordParser.peek_record(self._file) == McapRecordType.METADATA_INDEX:
                 metadata_index = McapRecordParser.parse_metadata_index(self._file)
-                metadata_indexes.append(metadata_index)
+                metadata_indexes[metadata_index.name].append(metadata_index)
+            self._cached_metadata_indexes = metadata_indexes
             return metadata_indexes
 
-        # No metadata indexes found
-        return metadata_indexes
+        elif self._has_summary and McapRecordType.METADATA_INDEX not in self._summary_offset:
+            # If reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No metadata index records found in summary and reconstruction is disabled.')
+                self._cached_metadata_indexes = {}
+                return self._cached_metadata_indexes
+
+            # Search for channel records in the summary section
+            logging.warning('No attachment index records found in summary offset. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while McapRecordParser.peek_record(self._file) != McapRecordType.DATA_END:
+                next_record = McapRecordParser.peek_record(self._file)
+                if next_record == McapRecordType.METADATA:
+                    start_offset = self._file.tell()
+                    metadata_record = McapRecordParser.parse_metadata(self._file)
+                    metadata_index = MetadataIndexRecord(
+                        offset=start_offset,
+                        length=self._file.tell() - start_offset,
+                        name=metadata_record.name,
+                    )
+                    metadata_indexes[metadata_record.name].append(metadata_index)
+                else:
+                    McapRecordParser.skip_record(self._file)
+            self._cached_metadata_indexes = metadata_indexes
+            return metadata_indexes
+
+        # Either we built self._cached_channels
+        # or we hit one of the if statements above
+        raise RuntimeError("Impossible.")
 
 
 class McapNonChunkedSummary:
@@ -736,6 +829,8 @@ class McapNonChunkedSummary:
         self._summary_offset: dict[RecordId, Offset] = {}
         self._cached_schemas: dict[SchemaId, SchemaRecord] | None = None
         self._cached_channels: dict[ChannelId, ChannelRecord] | None = None
+        self._cached_metadata_indexes: dict[str, list[MetadataIndexRecord]] = defaultdict(list)
+        self._cached_attachment_indexes: dict[str, list[AttachmentIndexRecord]] = defaultdict(list)
         self._cached_statistics: StatisticsRecord | None = None
 
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
@@ -818,10 +913,28 @@ class McapNonChunkedSummary:
                     message_end_time = log_time
             elif record_type == McapRecordType.ATTACHMENT:
                 attachment_count += 1
-                McapRecordParser.skip_record(self._file)
+                start_offset = self._file.tell()
+                attachment_record = McapRecordParser.parse_attachment(self._file)
+                attachment_index = AttachmentIndexRecord(
+                    offset=start_offset,
+                    length=self._file.tell() - start_offset,
+                    log_time=attachment_record.log_time,
+                    create_time=attachment_record.create_time,
+                    data_size=len(attachment_record.data),
+                    name=attachment_record.name,
+                    media_type=attachment_record.media_type,
+                )
+                self._cached_attachment_indexes[attachment_record.name].append(attachment_index)
             elif record_type == McapRecordType.METADATA:
                 metadata_count += 1
-                McapRecordParser.skip_record(self._file)
+                start_offset = self._file.tell()
+                metadata_record = McapRecordParser.parse_metadata(self._file)
+                metadata_index = MetadataIndexRecord(
+                    offset=start_offset,
+                    length=self._file.tell() - start_offset,
+                    name=metadata_record.name,
+                )
+                self._cached_metadata_indexes[metadata_record.name].append(metadata_index)
             else:
                 McapRecordParser.skip_record(self._file)
 
@@ -1004,42 +1117,107 @@ class McapNonChunkedSummary:
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
-    def get_attachment_indexes(self) -> list[AttachmentIndexRecord]:
+    def get_attachment_indexes(self) -> dict[str, list[AttachmentIndexRecord]]:
         """Get all attachment indexes from the MCAP file.
 
         Returns:
             List of AttachmentIndexRecord objects.
         """
-        attachment_indexes: list[AttachmentIndexRecord] = []
+        if self._cached_attachment_indexes:
+            return self._cached_attachment_indexes
+
+        attachment_indexes: dict[str, list[AttachmentIndexRecord]] = defaultdict(list)
 
         # If attachment index is in summary offset, load from summary section
         if self._has_summary and McapRecordType.ATTACHMENT_INDEX in self._summary_offset:
             _ = self._file.seek_from_start(self._summary_offset[McapRecordType.ATTACHMENT_INDEX])
             while McapRecordParser.peek_record(self._file) == McapRecordType.ATTACHMENT_INDEX:
                 attachment_index = McapRecordParser.parse_attachment_index(self._file)
-                attachment_indexes.append(attachment_index)
+                attachment_indexes[attachment_index.name].append(attachment_index)
+            self._cached_attachment_indexes = attachment_indexes
             return attachment_indexes
 
-        # No attachment indexes found
-        return attachment_indexes
+        # If channel is not in summary section, must search data section
+        elif self._has_summary and McapRecordType.ATTACHMENT_INDEX not in self._summary_offset:
+            # If reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No attachment index records found in summary and reconstruction is disabled.')
+                self._cached_attachment_indexes = {}
+                return self._cached_attachment_indexes
 
-    def get_metadata_indexes(self) -> list[MetadataIndexRecord]:
+            # Search for channel records in the summary section
+            logging.warning('No attachment index records found in summary offset. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while McapRecordParser.peek_record(self._file) != McapRecordType.DATA_END:
+                next_record = McapRecordParser.peek_record(self._file)
+                if next_record == McapRecordType.ATTACHMENT:
+                    start_offset = self._file.tell()
+                    attachment_record = McapRecordParser.parse_attachment(self._file)
+                    attachment_index = AttachmentIndexRecord(
+                        offset=start_offset,
+                        length=self._file.tell() - start_offset,
+                        log_time=attachment_record.log_time,
+                        create_time=attachment_record.create_time,
+                        data_size=len(attachment_record.data),
+                        name=attachment_record.name,
+                        media_type=attachment_record.media_type,
+                    )
+                    attachment_indexes[attachment_record.name].append(attachment_index)
+                else:
+                    McapRecordParser.skip_record(self._file)
+            self._cached_attachment_indexes = attachment_indexes
+            return attachment_indexes
+
+        # Either we built self._cached_channels
+        # or we hit one of the if statements above
+        raise RuntimeError("Impossible.")
+
+    def get_metadata_indexes(self) -> dict[str, list[MetadataIndexRecord]]:
         """Get all metadata indexes from the MCAP file.
 
         Returns:
             List of MetadataIndexRecord objects.
         """
-        metadata_indexes: list[MetadataIndexRecord] = []
+        if self._cached_metadata_indexes:
+            return self._cached_metadata_indexes
+
+        metadata_indexes: dict[str, list[MetadataIndexRecord]] = defaultdict(list)
 
         # If metadata index is in summary offset, load from summary section
         if self._has_summary and McapRecordType.METADATA_INDEX in self._summary_offset:
             _ = self._file.seek_from_start(self._summary_offset[McapRecordType.METADATA_INDEX])
             while McapRecordParser.peek_record(self._file) == McapRecordType.METADATA_INDEX:
                 metadata_index = McapRecordParser.parse_metadata_index(self._file)
-                metadata_indexes.append(metadata_index)
+                metadata_indexes[metadata_index.name].append(metadata_index)
+            self._cached_metadata_indexes = metadata_indexes
             return metadata_indexes
 
-        # No metadata indexes found
-        return metadata_indexes
+        elif self._has_summary and McapRecordType.METADATA_INDEX not in self._summary_offset:
+            # If reconstruction not allowed, return empty
+            if self._enable_reconstruction == 'never':
+                logging.warning('No metadata index records found in summary and reconstruction is disabled.')
+                self._cached_metadata_indexes = {}
+                return self._cached_metadata_indexes
 
-    # TODO: Maybe build message index here?
+            # Search for channel records in the summary section
+            logging.warning('No attachment index records found in summary offset. Searching through file!')
+            _ = self._file.seek_from_start(MAGIC_BYTES_SIZE)
+            while McapRecordParser.peek_record(self._file) != McapRecordType.DATA_END:
+                next_record = McapRecordParser.peek_record(self._file)
+                if next_record == McapRecordType.METADATA:
+                    start_offset = self._file.tell()
+                    metadata_record = McapRecordParser.parse_metadata(self._file)
+                    metadata_index = MetadataIndexRecord(
+                        offset=start_offset,
+                        length=self._file.tell() - start_offset,
+                        name=metadata_record.name,
+                    )
+                    metadata_indexes[metadata_record.name].append(metadata_index)
+                else:
+                    McapRecordParser.skip_record(self._file)
+            self._cached_metadata_indexes = metadata_indexes
+            return metadata_indexes
+
+        # Either we built self._cached_channels
+        # or we hit one of the if statements above
+        raise RuntimeError("Impossible.")

@@ -32,3 +32,7 @@ def compute_crc_batched(reader: BaseReader, num_bytes: int, chunk_size: int = DE
         crc_value = zlib.crc32(chunk, crc_value)
         remaining -= read_size
     return crc_value
+
+
+def compute_crc(data: bytes, start_value: int = 0) -> int:
+    return zlib.crc32(data, start_value)

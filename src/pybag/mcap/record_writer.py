@@ -376,27 +376,24 @@ class BaseMcapRecordWriter(ABC):
 
         # Write attachment index records to summary
         attachment_index_group_start = writer.tell()
-        attachment_index_group_length = 0
         if attachment_indexes:
             for record in attachment_indexes:
                 McapRecordWriter.write_attachment_index(writer, record)
-            attachment_index_group_length = writer.tell() - attachment_index_group_start
+        attachment_index_group_length = writer.tell() - attachment_index_group_start
 
         # Write metadata index records to summary
         metadata_index_group_start = writer.tell()
-        metadata_index_group_length = 0
         if metadata_indexes:
             for record in metadata_indexes:
                 McapRecordWriter.write_metadata_index(writer, record)
-            metadata_index_group_length = writer.tell() - metadata_index_group_start
+        metadata_index_group_length = writer.tell() - metadata_index_group_start
 
         # Write chunk index records to summary (only for chunked writers)
         chunk_index_group_start = writer.tell()
-        chunk_index_group_length = 0
         if chunk_indexes:
             for record in chunk_indexes:
                 McapRecordWriter.write_chunk_index(writer, record)
-            chunk_index_group_length = writer.tell() - chunk_index_group_start
+        chunk_index_group_length = writer.tell() - chunk_index_group_start
 
         # Write statistics record
         statistics_group_start = writer.tell()
@@ -598,8 +595,8 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
                 message_end_time=self._message_end_time or 0,
                 channel_message_counts=self._channel_message_counts,
             ),
-            attachment_indexes=self._attachment_indexes if self._attachment_indexes else None,
-            metadata_indexes=self._metadata_indexes if self._metadata_indexes else None
+            attachment_indexes=self._attachment_indexes,
+            metadata_indexes=self._metadata_indexes
         )
 
         # Write footer record manually for CRC calculation
@@ -865,8 +862,8 @@ class McapChunkedWriter(BaseMcapRecordWriter):
                 channel_message_counts=self._channel_message_counts,
             ),
             chunk_indexes=self._chunk_indexes,
-            attachment_indexes=self._attachment_indexes if self._attachment_indexes else None,
-            metadata_indexes=self._metadata_indexes if self._metadata_indexes else None
+            attachment_indexes=self._attachment_indexes,
+            metadata_indexes=self._metadata_indexes
         )
 
         # Write footer record manually for CRC calculation

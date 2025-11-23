@@ -4,9 +4,16 @@ import logging
 from pathlib import Path
 from typing import Literal
 
+from pybag.crc import compute_crc
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.record_writer import McapRecordWriterFactory
-from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
+from pybag.mcap.records import (
+    AttachmentRecord,
+    ChannelRecord,
+    MessageRecord,
+    MetadataRecord,
+    SchemaRecord
+)
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
 
@@ -187,6 +194,7 @@ class McapFileWriter:
         # Delegate to low-level writer
         self._record_writer.write_message(record)
 
+    # TODO: Smarter API (e.g. auto-encode text, auto media_type)?
     def write_attachment(
         self,
         name: str,
@@ -194,7 +202,8 @@ class McapFileWriter:
         media_type: str = "application/octet-stream",
         log_time: int | None = None,
         create_time: int | None = None,
-        crc: int = 0
+        *,
+        do_compute_crc = True,
     ) -> None:
         """Write an attachment to the MCAP file.
 
@@ -204,22 +213,21 @@ class McapFileWriter:
         Args:
             name: Name of the attachment (e.g., "camera_calibration.yaml").
             data: Binary data of the attachment.
-            media_type: MIME type of the attachment (default: "application/octet-stream").
+            media_type: MIME type of the attachment.
             log_time: Log timestamp (nanoseconds). If None, defaults to 0.
             create_time: Creation timestamp (nanoseconds). If None, defaults to log_time.
-            crc: CRC32 checksum of the data. If 0, no checksum is included.
+            compute_crc: Whether to compute the crc value on the data or not
         """
         actual_log_time = log_time if log_time is not None else 0
         actual_create_time = create_time if create_time is not None else actual_log_time
 
-        from pybag.mcap.records import AttachmentRecord
         record = AttachmentRecord(
             log_time=actual_log_time,
             create_time=actual_create_time,
             name=name,
             media_type=media_type,
             data=data,
-            crc=crc,
+            crc=compute_crc(data) if do_compute_crc else 0,
         )
         self._record_writer.write_attachment(record)
 
@@ -230,14 +238,10 @@ class McapFileWriter:
     ) -> None:
         """Write a metadata record to the MCAP file.
 
-        Metadata records contain key-value pairs describing the recording,
-        such as device information, environment settings, or other contextual data.
-
         Args:
             name: Name/identifier for this metadata record.
             metadata: Dictionary of key-value pairs (both strings).
         """
-        from pybag.mcap.records import MetadataRecord
         record = MetadataRecord(
             name=name,
             metadata=metadata,

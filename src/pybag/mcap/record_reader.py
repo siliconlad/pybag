@@ -806,22 +806,26 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             List of AttachmentRecord objects.
         """
-        attachments: list[AttachmentRecord] = []
         attachment_indexes = self._summary.get_attachment_indexes()
+        if name and name not in attachment_indexes:
+            logging.warning(f'{name} not found in attachments!')
+            return []
 
-        for attachment_index in attachment_indexes:
-            # Skip if name filter doesn't match
-            if name is not None and attachment_index.name != name:
-                continue
+        attachment_indexes_flat: list[AttachmentIndexRecord] = []
+        if name is None:
+            for i in attachment_indexes.values():
+                attachment_indexes_flat.extend(i)
+        else:
+            attachment_indexes_flat = attachment_indexes.get(name, [])
 
-            # Read the attachment record from the file
-            current_pos = self._file.tell()
-            try:
-                _ = self._file.seek_from_start(attachment_index.offset)
-                attachment = McapRecordParser.parse_attachment(self._file)
-                attachments.append(attachment)
-            finally:
-                _ = self._file.seek_from_start(current_pos)
+        current_pos = self._file.tell()
+        attachments: list[AttachmentRecord] = []
+        for attachment_index in attachment_indexes_flat:
+            _ = self._file.seek_from_start(attachment_index.offset)
+            attachment = McapRecordParser.parse_attachment(self._file)
+            attachments.append(attachment)
+        else:
+            _ = self._file.seek_from_start(current_pos)
 
         return attachments
 
@@ -835,22 +839,26 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             List of MetadataRecord objects.
         """
-        metadata_records: list[MetadataRecord] = []
         metadata_indexes = self._summary.get_metadata_indexes()
+        if name and name not in metadata_indexes:
+            logging.warning(f'{name} not found in metadata!')
+            return []
 
-        for metadata_index in metadata_indexes:
-            # Skip if name filter doesn't match
-            if name is not None and metadata_index.name != name:
-                continue
+        metadata_indexes_flat: list[MetadataIndexRecord] = []
+        if name is None:
+            for i in metadata_indexes.values():
+                metadata_indexes_flat.extend(i)
+        else:
+            metadata_indexes_flat = metadata_indexes.get(name, [])
 
-            # Read the metadata record from the file
-            current_pos = self._file.tell()
-            try:
-                _ = self._file.seek_from_start(metadata_index.offset)
-                metadata = McapRecordParser.parse_metadata(self._file)
-                metadata_records.append(metadata)
-            finally:
-                _ = self._file.seek_from_start(current_pos)
+        current_pos = self._file.tell()
+        metadata_records: list[MetadataRecord] = []
+        for metadata_index in metadata_indexes_flat:
+            _ = self._file.seek_from_start(metadata_index.offset)
+            metadata = McapRecordParser.parse_metadata(self._file)
+            metadata_records.append(metadata)
+        else:
+            _ = self._file.seek_from_start(current_pos)
 
         return metadata_records
 
@@ -1260,22 +1268,26 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         Returns:
             List of AttachmentRecord objects.
         """
-        attachments: list[AttachmentRecord] = []
         attachment_indexes = self._summary.get_attachment_indexes()
+        if name and name not in attachment_indexes:
+            logging.warning(f'{name} not found in attachments!')
+            return []
 
-        for attachment_index in attachment_indexes:
-            # Skip if name filter doesn't match
-            if name is not None and attachment_index.name != name:
-                continue
+        attachment_indexes_flat: list[AttachmentIndexRecord] = []
+        if name is None:
+            for i in attachment_indexes.values():
+                attachment_indexes_flat.extend(i)
+        else:
+            attachment_indexes_flat = attachment_indexes.get(name, [])
 
-            # Read the attachment record from the file
-            current_pos = self._file.tell()
-            try:
-                _ = self._file.seek_from_start(attachment_index.offset)
-                attachment = McapRecordParser.parse_attachment(self._file)
-                attachments.append(attachment)
-            finally:
-                _ = self._file.seek_from_start(current_pos)
+        current_pos = self._file.tell()
+        attachments: list[AttachmentRecord] = []
+        for attachment_index in attachment_indexes_flat:
+            _ = self._file.seek_from_start(attachment_index.offset)
+            attachment = McapRecordParser.parse_attachment(self._file)
+            attachments.append(attachment)
+        else:
+            _ = self._file.seek_from_start(current_pos)
 
         return attachments
 
@@ -1289,22 +1301,26 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         Returns:
             List of MetadataRecord objects.
         """
-        metadata_records: list[MetadataRecord] = []
         metadata_indexes = self._summary.get_metadata_indexes()
+        if name and name not in metadata_indexes:
+            logging.warning(f'{name} not found in metadata!')
+            return []
 
-        for metadata_index in metadata_indexes:
-            # Skip if name filter doesn't match
-            if name is not None and metadata_index.name != name:
-                continue
+        metadata_indexes_flat: list[MetadataIndexRecord] = []
+        if name is None:
+            for i in metadata_indexes.values():
+                metadata_indexes_flat.extend(i)
+        else:
+            metadata_indexes_flat = metadata_indexes.get(name, [])
 
-            # Read the metadata record from the file
-            current_pos = self._file.tell()
-            try:
-                _ = self._file.seek_from_start(metadata_index.offset)
-                metadata = McapRecordParser.parse_metadata(self._file)
-                metadata_records.append(metadata)
-            finally:
-                _ = self._file.seek_from_start(current_pos)
+        current_pos = self._file.tell()
+        metadata_records: list[MetadataRecord] = []
+        for metadata_index in metadata_indexes_flat:
+            _ = self._file.seek_from_start(metadata_index.offset)
+            metadata = McapRecordParser.parse_metadata(self._file)
+            metadata_records.append(metadata)
+        else:
+            _ = self._file.seek_from_start(current_pos)
 
         return metadata_records
 

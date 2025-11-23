@@ -13,11 +13,6 @@ from pybag.mcap.record_reader import (
     McapRecordReaderFactory
 )
 
-# GLOBAL TODOs:
-# - TODO: Add tests with mcaps
-# - TODO: Improve performance by batching the reads (maybe)
-# - TODO: Do something with CRC
-# - TODO: Generate summary section of mcap file
 logger = logging.getLogger(__name__)
 
 
@@ -188,7 +183,6 @@ class McapFileReader:
         Returns:
             List of AttachmentRecord objects containing attachment data.
         """
-        from pybag.mcap.records import AttachmentRecord
         return self._reader.get_attachments(name)
 
     def get_metadata(self, name: str | None = None):
@@ -201,7 +195,6 @@ class McapFileReader:
         Returns:
             List of MetadataRecord objects containing metadata key-value pairs.
         """
-        from pybag.mcap.records import MetadataRecord
         return self._reader.get_metadata(name)
 
     def close(self) -> None:
