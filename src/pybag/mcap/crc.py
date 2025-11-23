@@ -96,6 +96,9 @@ def validate_summary_crc(
         reader.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         footer = McapRecordParser.parse_footer(reader)
 
+    if footer.summary_crc == 0:
+        return True
+
     if footer.summary_start == 0:
         return True
 
