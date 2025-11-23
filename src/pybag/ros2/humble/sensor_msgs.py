@@ -35,7 +35,7 @@ class BatteryState:
     POWER_SUPPLY_TECHNOLOGY_NICD: t.Constant[t.uint8] = 5
     POWER_SUPPLY_TECHNOLOGY_LIMN: t.Constant[t.uint8] = 6
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     voltage: t.float32
     temperature: t.float32
     current: t.float32
@@ -68,7 +68,7 @@ class RegionOfInterest:
 class CameraInfo:
     __msg_name__ = 'sensor_msgs/msg/CameraInfo'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     height: t.uint32
     width: t.uint32
     distortion_model: t.string
@@ -78,7 +78,7 @@ class CameraInfo:
     p: t.Array[t.float64, Literal[12]]
     binning_x: t.uint32
     binning_y: t.uint32
-    roi: t.Complex[RegionOfInterest]
+    roi: RegionOfInterest
 
 
 @dataclass(kw_only=True)
@@ -93,7 +93,7 @@ class ChannelFloat32:
 class CompressedImage:
     __msg_name__ = 'sensor_msgs/msg/CompressedImage'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     format: t.string
     data: t.Array[t.uint8]
 
@@ -102,7 +102,7 @@ class CompressedImage:
 class FluidPressure:
     __msg_name__ = 'sensor_msgs/msg/FluidPressure'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     fluid_pressure: t.float64
     variance: t.float64
 
@@ -111,7 +111,7 @@ class FluidPressure:
 class Illuminance:
     __msg_name__ = 'sensor_msgs/msg/Illuminance'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     illuminance: t.float64
     variance: t.float64
 
@@ -120,7 +120,7 @@ class Illuminance:
 class Image:
     __msg_name__ = 'sensor_msgs/msg/Image'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     height: t.uint32
     width: t.uint32
     encoding: t.string
@@ -133,12 +133,12 @@ class Image:
 class Imu:
     __msg_name__ = 'sensor_msgs/msg/Imu'
 
-    header: t.Complex[std_msgs.Header]
-    orientation: t.Complex[geometry_msgs.Quaternion]
+    header: std_msgs.Header
+    orientation: geometry_msgs.Quaternion
     orientation_covariance: t.Array[t.float64, Literal[9]]
-    angular_velocity: t.Complex[geometry_msgs.Vector3]
+    angular_velocity: geometry_msgs.Vector3
     angular_velocity_covariance: t.Array[t.float64, Literal[9]]
-    linear_acceleration: t.Complex[geometry_msgs.Vector3]
+    linear_acceleration: geometry_msgs.Vector3
     linear_acceleration_covariance: t.Array[t.float64, Literal[9]]
 
 
@@ -146,7 +146,7 @@ class Imu:
 class JointState:
     __msg_name__ = 'sensor_msgs/msg/JointState'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     name: t.Array[t.string]
     position: t.Array[t.float64]
     velocity: t.Array[t.float64]
@@ -157,7 +157,7 @@ class JointState:
 class Joy:
     __msg_name__ = 'sensor_msgs/msg/Joy'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     axes: t.Array[t.float32]
     buttons: t.Array[t.int32]
 
@@ -179,7 +179,7 @@ class JoyFeedback:
 class JoyFeedbackArray:
     __msg_name__ = 'sensor_msgs/msg/JoyFeedbackArray'
 
-    array: t.Array[t.Complex[JoyFeedback]]
+    array: t.Array[JoyFeedback]
 
 
 @dataclass(kw_only=True)
@@ -193,7 +193,7 @@ class LaserEcho:
 class LaserScan:
     __msg_name__ = 'sensor_msgs/msg/LaserScan'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     angle_min: t.float32
     angle_max: t.float32
     angle_increment: t.float32
@@ -209,8 +209,8 @@ class LaserScan:
 class MagneticField:
     __msg_name__ = 'sensor_msgs/msg/MagneticField'
 
-    header: t.Complex[std_msgs.Header]
-    magnetic_field: t.Complex[geometry_msgs.Vector3]
+    header: std_msgs.Header
+    magnetic_field: geometry_msgs.Vector3
     magnetic_field_covariance: t.Array[t.float64, Literal[9]]
 
 
@@ -218,18 +218,18 @@ class MagneticField:
 class MultiDOFJointState:
     __msg_name__ = 'sensor_msgs/msg/MultiDOFJointState'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     joint_names: t.Array[t.string]
-    transforms: t.Array[t.Complex[geometry_msgs.Transform]]
-    twist: t.Array[t.Complex[geometry_msgs.Twist]]
-    wrench: t.Array[t.Complex[geometry_msgs.Wrench]]
+    transforms: t.Array[geometry_msgs.Transform]
+    twist: t.Array[geometry_msgs.Twist]
+    wrench: t.Array[geometry_msgs.Wrench]
 
 
 @dataclass(kw_only=True)
 class MultiEchoLaserScan:
     __msg_name__ = 'sensor_msgs/msg/MultiEchoLaserScan'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     angle_min: t.float32
     angle_max: t.float32
     angle_increment: t.float32
@@ -237,8 +237,8 @@ class MultiEchoLaserScan:
     scan_time: t.float32
     range_min: t.float32
     range_max: t.float32
-    ranges: t.Array[t.Complex[LaserEcho]]
-    intensities: t.Array[t.Complex[LaserEcho]]
+    ranges: t.Array[LaserEcho]
+    intensities: t.Array[LaserEcho]
 
 
 @dataclass(kw_only=True)
@@ -268,8 +268,8 @@ class NavSatFix:
     COVARIANCE_TYPE_DIAGONAL_KNOWN: t.Constant[t.uint8] = 2
     COVARIANCE_TYPE_KNOWN: t.Constant[t.uint8] = 3
 
-    header: t.Complex[std_msgs.Header]
-    status: t.Complex[NavSatStatus]
+    header: std_msgs.Header
+    status: NavSatStatus
     latitude: t.float64
     longitude: t.float64
     altitude: t.float64
@@ -300,19 +300,19 @@ class PointField:
 class PointCloud:
     __msg_name__ = 'sensor_msgs/msg/PointCloud'
 
-    header: t.Complex[std_msgs.Header]
-    points: t.Array[t.Complex[geometry_msgs.Point32]]
-    channels: t.Array[t.Complex[ChannelFloat32]]
+    header: std_msgs.Header
+    points: t.Array[geometry_msgs.Point32]
+    channels: t.Array[ChannelFloat32]
 
 
 @dataclass(kw_only=True)
 class PointCloud2:
     __msg_name__ = 'sensor_msgs/msg/PointCloud2'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     height: t.uint32
     width: t.uint32
-    fields: t.Array[t.Complex[PointField]]
+    fields: t.Array[PointField]
     is_bigendian: t.bool
     point_step: t.uint32
     row_step: t.uint32
@@ -327,7 +327,7 @@ class Range:
     ULTRASOUND: t.Constant[t.uint8] = 0
     INFRARED: t.Constant[t.uint8] = 1
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     radiation_type: t.uint8
     field_of_view: t.float32
     min_range: t.float32
@@ -339,7 +339,7 @@ class Range:
 class RelativeHumidity:
     __msg_name__ = 'sensor_msgs/msg/RelativeHumidity'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     relative_humidity: t.float64
     variance: t.float64
 
@@ -348,7 +348,7 @@ class RelativeHumidity:
 class Temperature:
     __msg_name__ = 'sensor_msgs/msg/Temperature'
 
-    header: t.Complex[std_msgs.Header]
+    header: std_msgs.Header
     temperature: t.float64
     variance: t.float64
 
@@ -357,6 +357,6 @@ class Temperature:
 class TimeReference:
     __msg_name__ = 'sensor_msgs/msg/TimeReference'
 
-    header: t.Complex[std_msgs.Header]
-    time_ref: t.Complex[builtin_interfaces.Time]
+    header: std_msgs.Header
+    time_ref: builtin_interfaces.Time
     source: t.string
