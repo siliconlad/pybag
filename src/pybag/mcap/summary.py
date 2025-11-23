@@ -2,9 +2,9 @@ import logging
 from collections import defaultdict
 from typing import Literal, TypeAlias
 
-from pybag.crc import DEFAULT_CRC_CHUNK_SIZE
 from pybag.io.raw_reader import BaseReader, BytesReader
-from pybag.mcap.crc_checker import assert_data_crc, assert_summary_crc
+from pybag.mcap.chunk import decompress_chunk
+from pybag.mcap.crc import assert_data_crc, assert_summary_crc
 from pybag.mcap.error import (
     McapNoChunkIndexError,
     McapNoSummaryIndexError,
@@ -24,8 +24,7 @@ from pybag.mcap.records import (
     MessageIndexRecord,
     MetadataIndexRecord,
     SchemaRecord,
-    StatisticsRecord,
-    decompress_chunk
+    StatisticsRecord
 )
 
 ChannelId: TypeAlias = int
@@ -89,9 +88,8 @@ class McapChunkedSummary:
 
         # Validate CRCs if requested
         if enable_crc_check:
-            assert_data_crc(self._file, chunk_size=DEFAULT_CRC_CHUNK_SIZE)
-            if self._has_summary:
-                assert_summary_crc(self._file, chunk_size=DEFAULT_CRC_CHUNK_SIZE)
+            assert_data_crc(self._file, self._footer)
+            assert_summary_crc(self._file, self._footer)
 
         if enable_reconstruction == 'never':
             if not self._has_summary:
@@ -849,9 +847,8 @@ class McapNonChunkedSummary:
 
         # Validate CRCs if requested
         if enable_crc_check:
-            assert_data_crc(self._file, chunk_size=DEFAULT_CRC_CHUNK_SIZE)
-            if self._has_summary:
-                assert_summary_crc(self._file, chunk_size=DEFAULT_CRC_CHUNK_SIZE)
+            assert_data_crc(self._file, self._footer)
+            assert_summary_crc(self._file, self._footer)
 
         if enable_reconstruction == 'never':
             if not self._has_summary:

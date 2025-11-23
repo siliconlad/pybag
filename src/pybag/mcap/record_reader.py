@@ -5,8 +5,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Generator, Iterator, Literal
 
-from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.mcap.chunk import decompress_chunk
+from pybag.mcap.crc import assert_crc
 from pybag.mcap.error import (
     McapNoChunkError,
     McapNoChunkIndexError,
@@ -35,8 +36,7 @@ from pybag.mcap.records import (
     MetadataIndexRecord,
     MetadataRecord,
     SchemaRecord,
-    StatisticsRecord,
-    decompress_chunk
+    StatisticsRecord
 )
 from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 

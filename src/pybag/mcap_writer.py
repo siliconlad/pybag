@@ -4,8 +4,8 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pybag.crc import compute_crc
 from pybag.io.raw_writer import BaseWriter, FileWriter
+from pybag.mcap.crc import compute_crc
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import (
     AttachmentRecord,
