@@ -40,6 +40,18 @@ class Message(Protocol):
     __msg_name__: str
 
 
+def _is_message_type(type_: Any) -> bool:
+    """Check if a type is a message type (has __msg_name__ attribute)."""
+    return hasattr(type_, '__msg_name__')
+
+
+def _wrap_if_message(type_: Any) -> Any:
+    """Wrap a type with Complex annotation if it's a message type."""
+    if _is_message_type(type_):
+        return Annotated[type_, ("complex", type_.__msg_name__)]
+    return type_
+
+
 # Type-checker compatible version using Generic classes
 class _ConstantType(Generic[T]):
     """Generic type for constants."""
@@ -50,17 +62,21 @@ class _ConstantType(Generic[T]):
 class _ArrayType:
     """Generic type for arrays that accepts both single type and type+length."""
     @classmethod
-    def __class_getitem__(cls, params: Any) -> type[list]:
+    def __class_getitem__(cls, params: Any) -> Any:
         if isinstance(params, tuple):
             # Array[type, length] - fixed size array
             if len(params) == 2:
                 type_, length = params
-                return Annotated[list[type_], ("array", type_, length)]
+                # Auto-wrap message types with Complex
+                wrapped_type = _wrap_if_message(type_)
+                return Annotated[list[wrapped_type], ("array", wrapped_type, length)]
             else:
                 raise TypeError("Array expects either 1 or 2 parameters")
         else:
             # Array[type] - variable size array
-            return Annotated[list[params], ("array", params, None)]
+            # Auto-wrap message types with Complex
+            wrapped_type = _wrap_if_message(params)
+            return Annotated[list[wrapped_type], ("array", wrapped_type, None)]
 
 
 class _ComplexType(Generic[T]):
