@@ -311,7 +311,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         for field in fields(cls):
             # Allow direct message types (with __msg_name__) without Annotated wrapper
             if get_origin(field.type) is not Annotated:
-                if hasattr(field.type, '__msg_name__'):
+                if isinstance(field.type, Message):
                     # This is a direct message type - treat it as Complex
                     field_type = Complex(field.type.__msg_name__)
                     field_default = self._parse_default_value(field)
