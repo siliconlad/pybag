@@ -61,7 +61,10 @@ def validate_data_crc(
         reader.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         footer = McapRecordParser.parse_footer(reader)
 
-    reader.seek_from_start(footer.summary_start - DATA_END_SIZE)
+    if footer.summary_start:
+        reader.seek_from_start(footer.summary_start - DATA_END_SIZE)
+    else:
+        reader.seek_from_end(DATA_END_SIZE + FOOTER_SIZE + MAGIC_BYTES_SIZE)
     bytes_to_read = reader.tell()
     data_end = McapRecordParser.parse_data_end(reader)
 
@@ -96,7 +99,7 @@ def validate_summary_crc(
     if footer.summary_start == 0:
         return True
 
-    reader.seek_from_current(-4)  # Go back 4 bytes to start of summary_crc
+    reader.seek_from_end(MAGIC_BYTES_SIZE + 4)
     bytes_to_read = reader.tell()
 
     reader.seek_from_start(footer.summary_start)
