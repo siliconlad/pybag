@@ -815,6 +815,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         if name is None:
             for i in attachment_indexes.values():
                 attachment_indexes_flat.extend(i)
+            # Preserve order in which they were written to mcap
+            attachment_indexes_flat.sort(key=lambda x: x.offset)
         else:
             attachment_indexes_flat = attachment_indexes.get(name, [])
 
@@ -848,6 +850,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         if name is None:
             for i in metadata_indexes.values():
                 metadata_indexes_flat.extend(i)
+            # Preserve order in which they were written to mcap
+            metadata_indexes_flat.sort(key=lambda x: x.offset)
         else:
             metadata_indexes_flat = metadata_indexes.get(name, [])
 
