@@ -55,6 +55,7 @@ def validate_data_crc(
     chunk_size: int = DEFAULT_CRC_CHUNK_SIZE
 ) -> bool:
     """Check the CRC of the data in the MCAP file using batched reads."""
+    original_position = reader.tell()
     if footer is None:  # Get footer if not given
         reader.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         footer = McapRecordParser.parse_footer(reader)
@@ -71,6 +72,8 @@ def validate_data_crc(
 
     reader.seek_from_start(0)
     computed_crc = compute_crc_batched(reader, bytes_to_read, chunk_size)
+
+    reader.seek_from_start(original_position)
     return computed_crc == data_end.data_section_crc
 
 
@@ -90,6 +93,7 @@ def validate_summary_crc(
     chunk_size: int = DEFAULT_CRC_CHUNK_SIZE
 ) -> bool:
     """Check the CRC of the summary in the MCAP file using batched reads."""
+    original_position = reader.tell()
     if footer is None:  # Get footer if not given
         reader.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         footer = McapRecordParser.parse_footer(reader)
@@ -103,6 +107,7 @@ def validate_summary_crc(
     reader.seek_from_start(footer.summary_start)
     computed_crc = compute_crc_batched(reader, bytes_to_read, chunk_size)
 
+    reader.seek_from_start(original_position)
     return computed_crc == footer.summary_crc
 
 
