@@ -13,11 +13,6 @@ from pybag.mcap.record_reader import (
     McapRecordReaderFactory
 )
 
-# GLOBAL TODOs:
-# - TODO: Add tests with mcaps
-# - TODO: Improve performance by batching the reads (maybe)
-# - TODO: Do something with CRC
-# - TODO: Generate summary section of mcap file
 logger = logging.getLogger(__name__)
 
 
@@ -177,6 +172,30 @@ class McapFileReader:
             )
             if filter is None or filter(decoded):
                 yield decoded
+
+    def get_attachments(self, name: str | None = None):
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects containing attachment data.
+        """
+        return self._reader.get_attachments(name)
+
+    def get_metadata(self, name: str | None = None):
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects containing metadata key-value pairs.
+        """
+        return self._reader.get_metadata(name)
 
     def close(self) -> None:
         """Close the MCAP reader and release all resources."""
