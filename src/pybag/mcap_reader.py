@@ -39,7 +39,8 @@ class McapFileReader:
     @staticmethod
     def from_file(file_path: Path | str | Iterable[Path | str]) -> 'McapFileReader':
         """Create a reader from a file path or iterable of file paths."""
-        if isinstance(file_path, Iterable):
+        # str is also Iterable, so we need to make sure check for this too
+        if isinstance(file_path, Iterable) and not isinstance(file_path, (str, Path)):
             return McapMultipleFileReader.from_files(list(file_path))
         reader = McapRecordReaderFactory.from_file(file_path)
         return McapFileReader(reader)

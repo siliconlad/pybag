@@ -498,7 +498,7 @@ def test_read_multiple_files_as_one() -> None:
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         file1 = temp_path / "one.mcap"
-        file2 = temp_path / "two.mcap"
+        file2 = str(temp_path / "two.mcap")  # str is also Iterable
 
         with McapFileWriter.open(file1, chunk_size=1) as writer:
             writer.write_message("/chatter", 1, std_msgs.String(data="hello"))
