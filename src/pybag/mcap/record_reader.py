@@ -193,7 +193,7 @@ class McapChunkedReader(BaseMcapRecordReader):
 
     Args:
         file: The file to read from.
-        enable_crc_check: Whether to validate the crc values in the mcap
+        enable_crc_check: Whether to validate the crc values in the mcap (slow!)
         enable_summary_reconstruction:
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
