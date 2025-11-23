@@ -102,7 +102,7 @@ def validate_summary_crc(
         return True
 
     reader.seek_from_end(MAGIC_BYTES_SIZE + 4)
-    bytes_to_read = footer.summary_start - reader.tell()
+    bytes_to_read = reader.tell() - footer.summary_start
 
     reader.seek_from_start(footer.summary_start)
     computed_crc = compute_crc_batched(reader, bytes_to_read, chunk_size)
