@@ -59,7 +59,17 @@ class McapFileReader:
         return [c.topic for c in self._reader.get_channels().values()] # TODO: Use a set?
 
     def get_message_count(self, topic: str) -> int:
-        """Get the number of messages in a given topic."""
+        """Get the number of messages in a given topic.
+
+        Args:
+            topic: The topic name.
+
+        Returns:
+            The number of messages in the topic.
+
+        Raises:
+            McapUnknownTopicError: If the topic is not found in the MCAP file.
+        """
         channel_id = self._reader.get_channel_id(topic)
         if channel_id is None:
             raise McapUnknownTopicError(f'Topic {topic} not found in MCAP file')
@@ -174,6 +184,141 @@ class McapFileReader:
                 msg.log_time,
                 msg.publish_time,
                 message_deserializer.deserialize_message(msg, schema),
+            )
+            if filter is None or filter(decoded):
+                yield decoded
+
+    # Index-based Message Access
+
+    def get_message_at_index(self, topic: str, index: int) -> DecodedMessage | None:
+        """
+        Get a message at a specific index within a topic.
+
+        This provides O(1) random access to messages by their positional index.
+        Messages are ordered by (log_time, offset) which matches chronological order.
+
+        Args:
+            topic: The topic name.
+            index: The positional index (0-based) of the message to retrieve.
+
+        Returns:
+            A DecodedMessage object or None if the index is out of bounds or topic not found.
+
+        Raises:
+            McapUnknownTopicError: If the topic is not found in the MCAP file.
+            McapUnknownEncodingError: If the message encoding is unknown.
+
+        Example:
+            # Get the first message from the "/camera" topic
+            msg = reader.get_message_at_index("/camera", 0)
+
+            # Get the 100th message from the "/lidar" topic
+            msg = reader.get_message_at_index("/lidar", 99)
+        """
+        channel_id = self._reader.get_channel_id(topic)
+        if channel_id is None:
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP file')
+
+        # Get the raw message record
+        message = self._reader.get_message_at_index(channel_id, index)
+        if message is None:
+            return None
+
+        # Get schema and deserializer
+        schema = self._reader.get_channel_schema(channel_id)
+        if schema is None:
+            logger.warning(f"Unknown schema for {topic} ({channel_id})")
+            return None
+
+        if (message_deserializer := self._message_deserializer) is None:
+            channel_record = self._reader.get_channel(channel_id)
+            if channel_record is None:
+                logger.warning(f"No channel record for {topic} ({channel_id})")
+                return None
+            message_deserializer = MessageDeserializerFactory.from_channel(
+                channel_record, schema
+            )
+        if message_deserializer is None:
+            raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
+
+        # Deserialize and return
+        return DecodedMessage(
+            message.channel_id,
+            message.sequence,
+            message.log_time,
+            message.publish_time,
+            message_deserializer.deserialize_message(message, schema),
+        )
+
+    def messages_by_index(
+        self,
+        topic: str,
+        start_index: int,
+        end_index: int | None = None,
+        filter: Callable[[DecodedMessage], bool] | None = None,
+    ) -> Generator[DecodedMessage, None, None]:
+        """
+        Iterate over messages within a specific index range for a topic.
+
+        This provides efficient batch access to contiguous ranges of messages.
+        Messages are ordered by (log_time, offset) which matches chronological order.
+
+        Args:
+            topic: The topic name.
+            start_index: The starting index (inclusive, 0-based).
+            end_index: The ending index (exclusive). If None, reads to the end.
+            filter: Optional callable to filter messages.
+
+        Yields:
+            DecodedMessage objects in the specified index range.
+
+        Raises:
+            McapUnknownTopicError: If the topic is not found in the MCAP file.
+            McapUnknownEncodingError: If the message encoding is unknown.
+
+        Example:
+            # Get messages 0-99 (first 100 messages) from "/camera"
+            for msg in reader.messages_by_index("/camera", 0, 100):
+                process(msg)
+
+            # Get all messages starting from index 1000 from "/lidar"
+            for msg in reader.messages_by_index("/lidar", 1000):
+                process(msg)
+
+            # Get messages with filtering
+            for msg in reader.messages_by_index("/sensor", 0, 1000,
+                                                 filter=lambda m: m.data.value > 10):
+                process(msg)
+        """
+        channel_id = self._reader.get_channel_id(topic)
+        if channel_id is None:
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP file')
+
+        # Get schema and deserializer
+        schema = self._reader.get_channel_schema(channel_id)
+        if schema is None:
+            logger.warning(f"Unknown schema for {topic} ({channel_id})")
+            return
+
+        if (message_deserializer := self._message_deserializer) is None:
+            channel_record = self._reader.get_channel(channel_id)
+            if channel_record is None:
+                logger.warning(f"No channel record for {topic} ({channel_id})")
+                return
+            message_deserializer = MessageDeserializerFactory.from_channel(
+                channel_record, schema
+            )
+        if message_deserializer is None:
+            raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
+
+        # Iterate over the range and deserialize messages
+        for message in self._reader.get_messages_by_index_range(channel_id, start_index, end_index):
+            decoded = DecodedMessage(
+                message.channel_id,
+                message.sequence,
+                message.log_time,
+                message.publish_time,
+                message_deserializer.deserialize_message(message, schema),
             )
             if filter is None or filter(decoded):
                 yield decoded

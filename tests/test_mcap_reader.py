@@ -612,3 +612,239 @@ def test_multi_topic_out_of_order_from_official_mcap(
                 messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
                 assert [msg.data.data for msg in messages] == [data for _, data in expected]
+
+###########################################
+# Index-based Random Access Tests         #
+###########################################
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_get_message_at_index(chunk_size):
+    """Test random access to messages by index."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "indexed_messages.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Write 20 messages with timestamps 0, 10, 20, ..., 190
+            for i in range(20):
+                writer.write_message("/test", i * 10, std_msgs.String(data=f"msg_{i}"))
+
+        with McapFileReader.from_file(path) as reader:
+            # Test accessing messages by index
+            msg = reader.get_message_at_index("/test", 0)
+            assert msg is not None
+            assert msg.log_time == 0
+            assert msg.data.data == "msg_0"
+
+            msg = reader.get_message_at_index("/test", 10)
+            assert msg is not None
+            assert msg.log_time == 100
+            assert msg.data.data == "msg_10"
+
+            msg = reader.get_message_at_index("/test", 19)
+            assert msg is not None
+            assert msg.log_time == 190
+            assert msg.data.data == "msg_19"
+
+            # Test out of bounds
+            msg = reader.get_message_at_index("/test", 20)
+            assert msg is None
+
+            msg = reader.get_message_at_index("/test", -1)
+            assert msg is None
+
+            # Test non-existent topic
+            with pytest.raises(Exception):  # Should raise McapUnknownTopicError
+                reader.get_message_at_index("/nonexistent", 0)
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_messages_by_index_range(chunk_size):
+    """Test batch access to messages by index range."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "index_range.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Write 100 messages
+            for i in range(100):
+                writer.write_message("/data", i, std_msgs.String(data=f"msg_{i}"))
+
+        with McapFileReader.from_file(path) as reader:
+            # Test getting first 10 messages
+            messages = list(reader.messages_by_index("/data", 0, 10))
+            assert len(messages) == 10
+            assert [msg.log_time for msg in messages] == list(range(10))
+            assert [msg.data.data for msg in messages] == [f"msg_{i}" for i in range(10)]
+
+            # Test getting middle range
+            messages = list(reader.messages_by_index("/data", 45, 55))
+            assert len(messages) == 10
+            assert [msg.log_time for msg in messages] == list(range(45, 55))
+            assert [msg.data.data for msg in messages] == [f"msg_{i}" for i in range(45, 55)]
+
+            # Test getting to end (no end_index)
+            messages = list(reader.messages_by_index("/data", 90))
+            assert len(messages) == 10
+            assert [msg.log_time for msg in messages] == list(range(90, 100))
+            assert [msg.data.data for msg in messages] == [f"msg_{i}" for i in range(90, 100)]
+
+            # Test empty range
+            messages = list(reader.messages_by_index("/data", 50, 50))
+            assert len(messages) == 0
+
+            # Test out of bounds range (should handle gracefully)
+            messages = list(reader.messages_by_index("/data", 95, 150))
+            assert len(messages) == 5
+            assert [msg.log_time for msg in messages] == list(range(95, 100))
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_index_access_with_filtering(chunk_size):
+    """Test index-based access with filtering."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "filtered_index.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Write 50 messages with values 0-49
+            for i in range(50):
+                writer.write_message("/values", i, std_msgs.Int32(data=i))
+
+        with McapFileReader.from_file(path) as reader:
+            # Get indices 10-30, but filter for even numbers only
+            messages = list(reader.messages_by_index(
+                "/values", 10, 30,
+                filter=lambda msg: msg.data.data % 2 == 0
+            ))
+            assert len(messages) == 10  # 10, 12, 14, ..., 28
+            assert all(msg.data.data % 2 == 0 for msg in messages)
+            assert [msg.data.data for msg in messages] == list(range(10, 30, 2))
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_index_access_multiple_topics(chunk_size):
+    """Test index-based access works independently per topic."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "multi_topic_index.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Write different number of messages to different topics
+            for i in range(30):
+                writer.write_message("/topic1", i, std_msgs.String(data=f"t1_msg_{i}"))
+            for i in range(20):
+                writer.write_message("/topic2", i, std_msgs.String(data=f"t2_msg_{i}"))
+            for i in range(10):
+                writer.write_message("/topic3", i, std_msgs.String(data=f"t3_msg_{i}"))
+
+        with McapFileReader.from_file(path) as reader:
+            # Verify each topic has correct number of messages
+            assert reader.get_message_count("/topic1") == 30
+            assert reader.get_message_count("/topic2") == 20
+            assert reader.get_message_count("/topic3") == 10
+
+            # Access by index for each topic
+            msg1 = reader.get_message_at_index("/topic1", 15)
+            assert msg1.data.data == "t1_msg_15"
+
+            msg2 = reader.get_message_at_index("/topic2", 15)
+            assert msg2.data.data == "t2_msg_15"
+
+            msg3 = reader.get_message_at_index("/topic3", 9)
+            assert msg3.data.data == "t3_msg_9"
+
+            # Verify out of bounds for each topic
+            assert reader.get_message_at_index("/topic1", 30) is None
+            assert reader.get_message_at_index("/topic2", 20) is None
+            assert reader.get_message_at_index("/topic3", 10) is None
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_index_access_with_random_timestamps(chunk_size):
+    """Test that index access works correctly even with non-sequential timestamps."""
+    random.seed(42)
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "random_timestamp_index.mcap"
+
+        # Create random timestamps
+        timestamps = list(range(100))
+        random.shuffle(timestamps)
+
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            for i, ts in enumerate(timestamps):
+                writer.write_message("/random", ts, std_msgs.String(data=f"msg_{i}"))
+
+        with McapFileReader.from_file(path) as reader:
+            # Messages should be accessible by index in chronological order
+            # (sorted by timestamp, not write order)
+            all_messages = list(reader.messages_by_index("/random", 0))
+            assert len(all_messages) == 100
+
+            # Verify messages are in timestamp order
+            assert all_messages[0].log_time == 0
+            assert all_messages[50].log_time == 50
+            assert all_messages[99].log_time == 99
+
+            # Test random access
+            msg_25 = reader.get_message_at_index("/random", 25)
+            assert msg_25.log_time == 25
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+def test_index_access_across_chunks(chunk_size):
+    """Test that index-based access works correctly across chunk boundaries."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "cross_chunk_index.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Write enough messages to create multiple chunks
+            for i in range(200):
+                writer.write_message("/chunked", i, std_msgs.String(data=f"msg_{i}"))
+
+        with McapFileReader.from_file(path) as reader:
+            # Verify we have multiple chunks
+            chunk_indexes = reader._reader.get_chunk_indexes()
+            assert len(chunk_indexes) > 1, "Expected multiple chunks"
+            logging.info(f"Number of chunks: {len(chunk_indexes)}")
+
+            # Access messages that should be in different chunks
+            msg_0 = reader.get_message_at_index("/chunked", 0)
+            assert msg_0.data.data == "msg_0"
+
+            msg_100 = reader.get_message_at_index("/chunked", 100)
+            assert msg_100.data.data == "msg_100"
+
+            msg_199 = reader.get_message_at_index("/chunked", 199)
+            assert msg_199.data.data == "msg_199"
+
+            # Access a range that spans multiple chunks
+            messages = list(reader.messages_by_index("/chunked", 90, 110))
+            assert len(messages) == 20
+            assert [msg.data.data for msg in messages] == [f"msg_{i}" for i in range(90, 110)]

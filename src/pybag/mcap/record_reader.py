@@ -190,6 +190,9 @@ class McapChunkedReader(BaseMcapRecordReader):
         # Caches for message indexes
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
+        # Cache for unified positional indexes (channel_id -> list of (chunk_offset, local_index, message_offset))
+        self._positional_indexes: dict[int, list[tuple[int, int, int]]] = {}
+
         # LRU cache for decompressed chunks (key: chunk_start_offset)
         self._decompress_chunk_cached = lru_cache(maxsize=chunk_cache_size)(self._decompress_chunk_impl)
 
@@ -408,6 +411,38 @@ class McapChunkedReader(BaseMcapRecordReader):
             A MessageIndexRecord object or None if the channel does not exist for the chunk.
         """
         return self.get_message_indexes(chunk_index).get(channel_id)
+
+    def _build_positional_index(self, channel_id: int) -> list[tuple[int, int, int]]:
+        """
+        Build a unified positional index for a channel across all chunks.
+
+        The positional index maps global message indices to their locations:
+        - Each entry is (chunk_offset, local_index_in_chunk, message_offset_in_chunk)
+        - Entries are ordered by (log_time, offset) to match chronological order
+
+        Args:
+            channel_id: The ID of the channel.
+
+        Returns:
+            List of (chunk_offset, local_index, message_offset) tuples.
+        """
+        if channel_id in self._positional_indexes:
+            return self._positional_indexes[channel_id]
+
+        positional_index: list[tuple[int, int, int]] = []
+        chunk_indexes = self.get_chunk_indexes(channel_id)
+
+        for chunk_index in chunk_indexes:
+            message_index = self.get_message_index(chunk_index, channel_id)
+            if message_index is None or not message_index.records:
+                continue
+
+            chunk_offset = chunk_index.chunk_start_offset
+            for local_idx, (_, msg_offset) in enumerate(message_index.records):
+                positional_index.append((chunk_offset, local_idx, msg_offset))
+
+        self._positional_indexes[channel_id] = positional_index
+        return positional_index
 
     # Chunk Management
 
@@ -762,6 +797,108 @@ class McapChunkedReader(BaseMcapRecordReader):
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
+    # Index-based Message Access
+
+    def get_message_count(self, channel_id: int) -> int:
+        """
+        Get the total number of messages for a given channel.
+
+        Args:
+            channel_id: The ID of the channel.
+
+        Returns:
+            The total number of messages in the channel.
+        """
+        positional_index = self._build_positional_index(channel_id)
+        return len(positional_index)
+
+    def get_message_at_index(self, channel_id: int, index: int) -> MessageRecord | None:
+        """
+        Get a message at a specific index within a channel.
+
+        This provides O(1) random access to messages by their positional index.
+        Messages are ordered by (log_time, offset) which matches chronological order.
+
+        Args:
+            channel_id: The ID of the channel.
+            index: The positional index (0-based) of the message to retrieve.
+
+        Returns:
+            A MessageRecord object or None if the index is out of bounds.
+
+        Example:
+            # Get the first message in channel 1
+            msg = reader.get_message_at_index(1, 0)
+
+            # Get the 100th message in channel 1
+            msg = reader.get_message_at_index(1, 99)
+        """
+        positional_index = self._build_positional_index(channel_id)
+
+        if index < 0 or index >= len(positional_index):
+            return None
+
+        chunk_offset, _, msg_offset = positional_index[index]
+
+        # Read message from cached chunk
+        reader = BytesReader(self._decompress_chunk_cached(chunk_offset))
+        reader.seek_from_start(msg_offset)
+        return McapRecordParser.parse_message(reader)
+
+    def get_messages_by_index_range(
+        self,
+        channel_id: int,
+        start_index: int,
+        end_index: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        """
+        Get messages within a specific index range for a channel.
+
+        This provides efficient batch access to contiguous ranges of messages.
+        Messages are ordered by (log_time, offset) which matches chronological order.
+
+        Args:
+            channel_id: The ID of the channel.
+            start_index: The starting index (inclusive, 0-based).
+            end_index: The ending index (exclusive). If None, reads to the end.
+
+        Yields:
+            MessageRecord objects in the specified index range.
+
+        Example:
+            # Get messages 0-99 (first 100 messages)
+            for msg in reader.get_messages_by_index_range(1, 0, 100):
+                process(msg)
+
+            # Get all messages starting from index 1000
+            for msg in reader.get_messages_by_index_range(1, 1000):
+                process(msg)
+        """
+        positional_index = self._build_positional_index(channel_id)
+
+        if start_index < 0:
+            start_index = 0
+        if end_index is None:
+            end_index = len(positional_index)
+        if end_index > len(positional_index):
+            end_index = len(positional_index)
+        if start_index >= end_index:
+            return
+
+        # Group messages by chunk to minimize chunk decompression
+        chunk_messages: dict[int, list[tuple[int, int]]] = {}
+        for idx in range(start_index, end_index):
+            chunk_offset, _, msg_offset = positional_index[idx]
+            if chunk_offset not in chunk_messages:
+                chunk_messages[chunk_offset] = []
+            chunk_messages[chunk_offset].append((idx, msg_offset))
+
+        # Process chunks in the order they appear in the positional index
+        for idx in range(start_index, end_index):
+            chunk_offset, _, msg_offset = positional_index[idx]
+            reader = BytesReader(self._decompress_chunk_cached(chunk_offset))
+            reader.seek_from_start(msg_offset)
+            yield McapRecordParser.parse_message(reader)
 
     # TODO: Low Priority
     # - Metadata Index
@@ -808,6 +945,9 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         )
         self._message_indexes = self._build_message_index()
 
+        # Cache for unified positional indexes (channel_id -> list of (timestamp, file_offset))
+        self._positional_indexes: dict[int, list[tuple[int, int]]] = {}
+
         # Check if this is indeed a non-chunked file
         self._statistics = self._summary.get_statistics()
         if self._statistics and self._statistics.chunk_count > 0:
@@ -842,6 +982,37 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                     break
             logger.debug(f'Built message index with {message_count} messages across {len(message_index)} channels')
             return message_index
+
+    def _build_positional_index(self, channel_id: int) -> list[tuple[int, int]]:
+        """
+        Build a unified positional index for a channel.
+
+        The positional index is a sorted list of (timestamp, file_offset) tuples
+        that allows for efficient index-based random access.
+
+        Args:
+            channel_id: The ID of the channel.
+
+        Returns:
+            List of (timestamp, file_offset) tuples sorted by timestamp then offset.
+        """
+        if channel_id in self._positional_indexes:
+            return self._positional_indexes[channel_id]
+
+        if channel_id not in self._message_indexes:
+            self._positional_indexes[channel_id] = []
+            return []
+
+        positional_index: list[tuple[int, int]] = []
+        for timestamp, offsets in self._message_indexes[channel_id].items():
+            for offset in offsets:
+                positional_index.append((timestamp, offset))
+
+        # Sort by timestamp, then by offset for consistent ordering
+        positional_index.sort(key=lambda x: (x[0], x[1]))
+
+        self._positional_indexes[channel_id] = positional_index
+        return positional_index
 
     # Helpful Constructors
 
@@ -1161,6 +1332,98 @@ class McapNonChunkedReader(BaseMcapRecordReader):
 
         for _, offset in entries:
             _ = self._file.seek_from_start(offset)
+            yield McapRecordParser.parse_message(self._file)
+
+    # Index-based Message Access
+
+    def get_message_count(self, channel_id: int) -> int:
+        """
+        Get the total number of messages for a given channel.
+
+        Args:
+            channel_id: The ID of the channel.
+
+        Returns:
+            The total number of messages in the channel.
+        """
+        positional_index = self._build_positional_index(channel_id)
+        return len(positional_index)
+
+    def get_message_at_index(self, channel_id: int, index: int) -> MessageRecord | None:
+        """
+        Get a message at a specific index within a channel.
+
+        This provides O(1) random access to messages by their positional index.
+        Messages are ordered by (log_time, offset) which matches chronological order.
+
+        Args:
+            channel_id: The ID of the channel.
+            index: The positional index (0-based) of the message to retrieve.
+
+        Returns:
+            A MessageRecord object or None if the index is out of bounds.
+
+        Example:
+            # Get the first message in channel 1
+            msg = reader.get_message_at_index(1, 0)
+
+            # Get the 100th message in channel 1
+            msg = reader.get_message_at_index(1, 99)
+        """
+        positional_index = self._build_positional_index(channel_id)
+
+        if index < 0 or index >= len(positional_index):
+            return None
+
+        _, offset = positional_index[index]
+
+        # Read message from file
+        self._file.seek_from_start(offset)
+        return McapRecordParser.parse_message(self._file)
+
+    def get_messages_by_index_range(
+        self,
+        channel_id: int,
+        start_index: int,
+        end_index: int | None = None,
+    ) -> Generator[MessageRecord, None, None]:
+        """
+        Get messages within a specific index range for a channel.
+
+        This provides efficient batch access to contiguous ranges of messages.
+        Messages are ordered by (log_time, offset) which matches chronological order.
+
+        Args:
+            channel_id: The ID of the channel.
+            start_index: The starting index (inclusive, 0-based).
+            end_index: The ending index (exclusive). If None, reads to the end.
+
+        Yields:
+            MessageRecord objects in the specified index range.
+
+        Example:
+            # Get messages 0-99 (first 100 messages)
+            for msg in reader.get_messages_by_index_range(1, 0, 100):
+                process(msg)
+
+            # Get all messages starting from index 1000
+            for msg in reader.get_messages_by_index_range(1, 1000):
+                process(msg)
+        """
+        positional_index = self._build_positional_index(channel_id)
+
+        if start_index < 0:
+            start_index = 0
+        if end_index is None:
+            end_index = len(positional_index)
+        if end_index > len(positional_index):
+            end_index = len(positional_index)
+        if start_index >= end_index:
+            return
+
+        for idx in range(start_index, end_index):
+            _, offset = positional_index[idx]
+            self._file.seek_from_start(offset)
             yield McapRecordParser.parse_message(self._file)
 
     # TODO: Low Priority

@@ -29,8 +29,22 @@ pybag merge input1.mcap input2.mcap -o output.mcap
 ```python
 from pybag.mcap_reader import McapFileReader
 
+# Sequential reading
 with McapFileReader.from_file("data.mcap") as reader:
     for msg in reader.messages("/camera"):
+        print(msg.log_time, msg.data)
+
+# Random access by index (O(1) access for ML training workflows)
+with McapFileReader.from_file("data.mcap") as reader:
+    # Get total number of messages in a topic
+    count = reader.get_message_count("/camera")
+
+    # Access specific message by index
+    first_msg = reader.get_message_at_index("/camera", 0)
+    last_msg = reader.get_message_at_index("/camera", count - 1)
+
+    # Get batch of messages by index range
+    for msg in reader.messages_by_index("/camera", start_index=100, end_index=200):
         print(msg.log_time, msg.data)
 ```
 
