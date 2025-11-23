@@ -11,10 +11,11 @@ import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
-from pybag.io.raw_reader import BytesReader, CrcReader, FileReader
+from pybag.io.raw_reader import BytesReader, CrcReader
 from pybag.mcap.record_parser import McapRecordParser
-from pybag.mcap.record_reader import McapRecordRandomAccessReader
+from pybag.mcap.record_reader import McapChunkedReader
 from pybag.mcap.records import RecordType
+from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
 from pybag.serialize import MessageSerializerFactory
 
@@ -32,8 +33,8 @@ class ExampleMessage:
     text: pybag.string
     fixed: pybag.Array[pybag.int32, Literal[3]]
     dynamic: pybag.Array[pybag.int32]
-    sub: pybag.Complex[SubMessage]
-    sub_array: pybag.Array[pybag.Complex[SubMessage], Literal[3]]
+    sub: SubMessage
+    sub_array: pybag.Array[SubMessage, Literal[3]]
 
 
 @pytest.mark.parametrize("little_endian", [True, False])
@@ -91,7 +92,7 @@ def test_add_channel_and_write_message() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
-        with McapFileWriter.open(file_path) as mcap:
+        with McapFileWriter.open(file_path, profile="ros2") as mcap:
             channel_id = mcap.add_channel("/example", Example)
             mcap.write_message("/example", 1, Example(5))
         reader = CrcReader(BytesReader(file_path.read_bytes()))
@@ -204,6 +205,13 @@ def test_add_channel_and_write_message() -> None:
     assert summary_version == version
 
 
+def test_invalid_profile() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "test.mcap"
+        with pytest.raises(ValueError, match="Unknown encoding type"):
+            McapFileWriter.open(file_path, profile="invalid_profile")
+
+
 def test_chunk_roundtrip() -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "data.mcap"
@@ -218,7 +226,184 @@ def test_chunk_roundtrip() -> None:
             assert msgs == ["a", "b"]
 
         # Check we can read the chunk indexes correctly
-        with McapRecordRandomAccessReader.from_file(path) as random_reader:
+        with McapChunkedReader.from_file(path) as random_reader:
             chunk_indexes = random_reader.get_chunk_indexes()
             assert len(chunk_indexes) == 2
             assert all(c.compression == "lz4" for c in chunk_indexes)
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+        pytest.param(1024, "zstd", id="chunked_zstd"),
+    ],
+)
+def test_attachments_roundtrip(chunk_size, chunk_compression):
+    """Test reading attachments from an MCAP file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write MCAP with attachments
+        with McapFileWriter.open(
+            temp_path,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_attachment(
+                name="file1.txt",
+                data=b"content1",
+                media_type="text/plain",
+                log_time=1000,
+                create_time=2000,
+            )
+            writer.write_attachment(
+                name="file2.bin",
+                data=b"\x00\x01\x02",
+                media_type="application/octet-stream",
+                log_time=2000,
+                create_time=3000,
+            )
+            writer.write_attachment(
+                name="file1.txt",  # Duplicate name
+                data=b"content2",
+                media_type="text/plain",
+                log_time=3000,
+                create_time=4000,
+            )
+
+        # Read and verify statistics
+        with McapFileReader.from_file(temp_path) as reader:
+            stats = reader._reader.get_statistics()
+            assert stats.attachment_count == 3
+            assert stats.metadata_count == 0
+
+        # Read all attachments
+        with McapFileReader.from_file(temp_path) as reader:
+            all_attachments = reader.get_attachments()
+            assert len(all_attachments) == 3
+
+            # Group attachments by name since order is not guaranteed
+            attachments_by_name = {}
+            for att in all_attachments:
+                if att.name not in attachments_by_name:
+                    attachments_by_name[att.name] = []
+                attachments_by_name[att.name].append(att)
+
+            # Verify file1.txt attachments (should have 2)
+            # Sort by log_time to ensure consistent ordering
+            file1_atts = sorted(attachments_by_name["file1.txt"], key=lambda x: x.log_time)
+            assert len(file1_atts) == 2
+            assert file1_atts[0].data == b"content1"
+            assert file1_atts[0].media_type == "text/plain"
+            assert file1_atts[0].log_time == 1000
+            assert file1_atts[0].create_time == 2000
+            assert file1_atts[1].data == b"content2"
+            assert file1_atts[1].media_type == "text/plain"
+            assert file1_atts[1].log_time == 3000
+            assert file1_atts[1].create_time == 4000
+
+            # Verify file2.bin attachment
+            assert len(attachments_by_name["file2.bin"]) == 1
+            assert attachments_by_name["file2.bin"][0].data == b"\x00\x01\x02"
+            assert attachments_by_name["file2.bin"][0].media_type == "application/octet-stream"
+            assert attachments_by_name["file2.bin"][0].log_time == 2000
+            assert attachments_by_name["file2.bin"][0].create_time == 3000
+
+        # Read attachments by name
+        with McapFileReader.from_file(temp_path) as reader:
+            file1_attachments = reader.get_attachments(name="file1.txt")
+            assert len(file1_attachments) == 2
+            assert all(a.name == "file1.txt" for a in file1_attachments)
+
+            file2_attachments = reader.get_attachments(name="file2.bin")
+            assert len(file2_attachments) == 1
+            assert file2_attachments[0].name == "file2.bin"
+
+            # Non-existent name should return empty list
+            no_attachments = reader.get_attachments(name="nonexistent.txt")
+            assert len(no_attachments) == 0
+
+    finally:
+        temp_path.unlink()
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+        pytest.param(1024, "zstd", id="chunked_zstd"),
+    ],
+)
+def test_metadata_roundtrip(chunk_size, chunk_compression):
+    """Test reading metadata from an MCAP file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write MCAP with metadata
+        with McapFileWriter.open(
+            temp_path,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_metadata(
+                name="device_info",
+                metadata={"device_id": "123", "firmware": "v1.2.3"}
+            )
+            writer.write_metadata(
+                name="session_info",
+                metadata={"location": "lab", "operator": "alice"}
+            )
+            writer.write_metadata(
+                name="device_info",  # Duplicate name
+                metadata={"device_id": "456", "firmware": "v2.0.0"}
+            )
+
+        # Read and verify statistics
+        with McapFileReader.from_file(temp_path) as reader:
+            stats = reader._reader.get_statistics()
+            assert stats.attachment_count == 0
+            assert stats.metadata_count == 3
+
+        # Read all metadata
+        with McapFileReader.from_file(temp_path) as reader:
+            all_metadata = reader.get_metadata()
+            assert len(all_metadata) == 3
+
+            # Group metadata by name since order is not guaranteed
+            metadata_by_name = {}
+            for meta in all_metadata:
+                if meta.name not in metadata_by_name:
+                    metadata_by_name[meta.name] = []
+                metadata_by_name[meta.name].append(meta)
+
+            # Verify device_info metadata (should have 2)
+            assert len(metadata_by_name["device_info"]) == 2
+            assert metadata_by_name["device_info"][0].metadata == {"device_id": "123", "firmware": "v1.2.3"}
+            assert metadata_by_name["device_info"][1].metadata == {"device_id": "456", "firmware": "v2.0.0"}
+
+            # Verify session_info metadata
+            assert len(metadata_by_name["session_info"]) == 1
+            assert metadata_by_name["session_info"][0].metadata == {"location": "lab", "operator": "alice"}
+
+        # Read metadata by name
+        with McapFileReader.from_file(temp_path) as reader:
+            device_metadata = reader.get_metadata(name="device_info")
+            assert len(device_metadata) == 2
+            assert all(m.name == "device_info" for m in device_metadata)
+
+            session_metadata = reader.get_metadata(name="session_info")
+            assert len(session_metadata) == 1
+            assert session_metadata[0].name == "session_info"
+            assert session_metadata[0].metadata == {"location": "lab", "operator": "alice"}
+
+            # Non-existent name should return empty list
+            no_metadata = reader.get_metadata(name="nonexistent")
+            assert len(no_metadata) == 0
+
+    finally:
+        temp_path.unlink()

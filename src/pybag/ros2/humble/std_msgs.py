@@ -39,8 +39,8 @@ class ColorRGBA:
 class Empty:
     __msg_name__ = 'std_msgs/msg/Empty'
 
-    # TODO: Can this be removed?
-    structure_needs_at_least_one_member: t.uint8
+    # TODO: Really required?
+    structure_needs_at_least_one_member: t.uint8 = 0
 
 
 @dataclass(kw_only=True)
@@ -61,7 +61,7 @@ class Float64:
 class Header:
     __msg_name__ = 'std_msgs/msg/Header'
 
-    stamp: t.Complex[builtin_interfaces.Time]
+    stamp: builtin_interfaces.Time
     frame_id: t.string
 
 
@@ -141,7 +141,7 @@ class UInt8:
 class MultiArrayLayout:
     __msg_name__ = 'std_msgs/msg/MultiArrayLayout'
 
-    dim: t.Array[t.Complex[MultiArrayDimension]]
+    dim: t.Array[MultiArrayDimension]
     data_offset: t.uint32
 
 
@@ -149,7 +149,7 @@ class MultiArrayLayout:
 class ByteMultiArray:
     __msg_name__ = 'std_msgs/msg/ByteMultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.byte]
 
 
@@ -157,7 +157,7 @@ class ByteMultiArray:
 class Float32MultiArray:
     __msg_name__ = 'std_msgs/msg/Float32MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.float32]
 
 
@@ -165,7 +165,7 @@ class Float32MultiArray:
 class Float64MultiArray:
     __msg_name__ = 'std_msgs/msg/Float64MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.float64]
 
 
@@ -173,7 +173,7 @@ class Float64MultiArray:
 class Int16MultiArray:
     __msg_name__ = 'std_msgs/msg/Int16MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.int16]
 
 
@@ -181,7 +181,7 @@ class Int16MultiArray:
 class Int32MultiArray:
     __msg_name__ = 'std_msgs/msg/Int32MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.int32]
 
 
@@ -189,7 +189,7 @@ class Int32MultiArray:
 class Int64MultiArray:
     __msg_name__ = 'std_msgs/msg/Int64MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.int64]
 
 
@@ -197,7 +197,7 @@ class Int64MultiArray:
 class Int8MultiArray:
     __msg_name__ = 'std_msgs/msg/Int8MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.int8]
 
 
@@ -205,7 +205,7 @@ class Int8MultiArray:
 class UInt16MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt16MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.uint16]
 
 
@@ -213,7 +213,7 @@ class UInt16MultiArray:
 class UInt32MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt32MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.uint32]
 
 
@@ -221,7 +221,7 @@ class UInt32MultiArray:
 class UInt64MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt64MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.uint64]
 
 
@@ -229,5 +229,5 @@ class UInt64MultiArray:
 class UInt8MultiArray:
     __msg_name__ = 'std_msgs/msg/UInt8MultiArray'
 
-    layout: t.Complex[MultiArrayLayout]
+    layout: MultiArrayLayout
     data: t.Array[t.uint8]

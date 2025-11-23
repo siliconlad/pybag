@@ -11,11 +11,10 @@ logger = logging.getLogger(__name__)
 
 class CdrDecoder(MessageDecoder):
     def __init__(self, data: bytes):
-        assert len(data) > 4, 'Data must be at least 4 bytes long.'
+        assert len(data) >= 4, 'Data must be at least 4 bytes long (CDR header).'
 
         # Get endianness from second byte
         self._is_little_endian = bool(data[1])
-        logger.debug(f'Little endian: {self._is_little_endian}')
 
         # Skip first 4 bytes
         self._data = BytesReader(data[4:])
@@ -145,6 +144,10 @@ class CdrEncoder(MessageEncoder):
         # endianness flag (1 for little endian, 0 for big endian).
         endian_flag = 1 if self._is_little_endian else 0
         self._header = bytes([0x00, endian_flag, 0x00, 0x00])
+
+    @classmethod
+    def encoding(cls) -> str:
+        return "cdr"
 
     def encode(self, type_str: str, value: Any) -> None:
         """Encode ``value`` based on ``type_str``."""

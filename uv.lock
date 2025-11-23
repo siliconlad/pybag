@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.11'",
@@ -307,14 +307,10 @@ wheels = [
 
 [[package]]
 name = "pybag-sdk"
-version = "0.1.0"
+version = "0.5.0"
 source = { editable = "." }
-
-[package.optional-dependencies]
-lz4 = [
+dependencies = [
     { name = "lz4" },
-]
-zstd = [
     { name = "zstandard" },
 ]
 
@@ -331,10 +327,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "lz4", marker = "extra == 'lz4'", specifier = ">=4.4.3" },
-    { name = "zstandard", marker = "extra == 'zstd'", specifier = ">=0.23.0" },
+    { name = "lz4", specifier = ">=4.4.3" },
+    { name = "zstandard", specifier = ">=0.23.0" },
 ]
-provides-extras = ["zstd", "lz4"]
 
 [package.metadata.requires-dev]
 test = [
