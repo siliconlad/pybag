@@ -123,6 +123,26 @@ def test_serialize_python_types_str() -> None:
         Ros2MsgSchemaEncoder().parse_schema(Unsupported)
 
 
+def test_serialize_python_types_float() -> None:
+    @dataclass
+    class Unsupported:
+        __msg_name__ = 'tests/msgs/Unsupported'
+        value: float
+
+    with pytest.raises(Ros2MsgError):
+        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
+
+
+def test_serialize_python_types_bool() -> None:
+    @dataclass
+    class Unsupported:
+        __msg_name__ = 'tests/msgs/Unsupported'
+        value: bool
+
+    with pytest.raises(Ros2MsgError):
+        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
+
+
 def test_serialize_constants() -> None:
     @dataclass(kw_only=True)
     class Example:
@@ -142,6 +162,78 @@ def test_serialize_constants() -> None:
     assert encoded == b'int32 FOO=1\nint32 bar\n'
 
 
+def test_serialize_message_type() -> None:
+    """Test that message types can be used directly without Complex wrapper."""
+    @dataclass
+    class Point:
+        __msg_name__ = 'geometry_msgs/msg/Point'
+        x: pybag.float64
+        y: pybag.float64
+        z: pybag.float64
+
+    @dataclass
+    class Pose:
+        __msg_name__ = 'geometry_msgs/msg/Pose'
+        position: Point  # Direct usage without Complex wrapper
+
+    obj = Pose(position=Point(x=1.0, y=2.0, z=3.0))
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
+
+    assert schema.name == 'geometry_msgs/msg/Pose'
+    assert schema.fields['position'] == SchemaField(Complex('geometry_msgs/msg/Point'), default=None)
+    assert len(sub_schemas) == 1
+    assert 'geometry_msgs/msg/Point' in sub_schemas
+
+
+def test_serialize_array_with_message_type() -> None:
+    """Test that Array can use message types directly without Complex wrapper."""
+    @dataclass
+    class Point32:
+        __msg_name__ = 'geometry_msgs/msg/Point32'
+        x: pybag.float32
+        y: pybag.float32
+        z: pybag.float32
+
+    @dataclass
+    class Polygon:
+        __msg_name__ = 'geometry_msgs/msg/Polygon'
+        points: pybag.Array[Point32]  # Direct usage without Complex wrapper
+
+    obj = Polygon(points=[Point32(x=1.0, y=2.0, z=3.0)])
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
+
+    assert schema.name == 'geometry_msgs/msg/Polygon'
+    assert schema.fields['points'] == SchemaField(Sequence(Complex('geometry_msgs/msg/Point32')), default=None)
+    assert len(sub_schemas) == 1
+    assert 'geometry_msgs/msg/Point32' in sub_schemas
+
+
+def test_serialize_fixed_array_with_message_type() -> None:
+    """Test that Array with size can use message types directly without Complex wrapper."""
+    @dataclass
+    class Header:
+        __msg_name__ = 'std_msgs/msg/Header'
+        stamp: pybag.int64
+        frame_id: pybag.string
+
+    @dataclass
+    class MultiHeader:
+        __msg_name__ = 'tests/msgs/MultiHeader'
+        headers: pybag.Array[Header, Literal[3]]  # Direct usage without Complex wrapper
+
+    obj = MultiHeader(headers=[
+        Header(stamp=1, frame_id='a'),
+        Header(stamp=2, frame_id='b'),
+        Header(stamp=3, frame_id='c')
+    ])
+    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
+
+    assert schema.name == 'tests/msgs/MultiHeader'
+    assert schema.fields['headers'] == SchemaField(Array(Complex('std_msgs/msg/Header'), length=3, is_bounded=False), default=None)
+    assert len(sub_schemas) == 1
+    assert 'std_msgs/msg/Header' in sub_schemas
+
+
 def test_serialize_nested_complex_array() -> None:
     @dataclass()
     class MultiArrayDimension:
@@ -155,14 +247,14 @@ def test_serialize_nested_complex_array() -> None:
     class MultiArrayLayout:
         __msg_name__ = 'std_msgs/msg/MultiArrayLayout'
 
-        dim: pybag.Array[pybag.Complex[MultiArrayDimension]]
+        dim: pybag.Array[MultiArrayDimension]
         data_offset: pybag.uint32
 
     @dataclass()
     class Float32MultiArray:
         __msg_name__ = 'std_msgs/msg/Float32MultiArray'
 
-        layout: pybag.Complex[MultiArrayLayout]
+        layout: MultiArrayLayout
         data: pybag.Array[pybag.float32]
 
     obj = Float32MultiArray(
@@ -209,95 +301,3 @@ def test_serialize_nested_complex_array() -> None:
         uint32 size
         uint32 stride
         """).encode()
-
-
-def test_serialize_python_types_float() -> None:
-    @dataclass
-    class Unsupported:
-        __msg_name__ = 'tests/msgs/Unsupported'
-        value: float
-
-    with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
-
-
-def test_serialize_python_types_bool() -> None:
-    @dataclass
-    class Unsupported:
-        __msg_name__ = 'tests/msgs/Unsupported'
-        value: bool
-
-    with pytest.raises(Ros2MsgError):
-        Ros2MsgSchemaEncoder().parse_schema(Unsupported)
-
-
-def test_serialize_direct_message_type() -> None:
-    """Test that message types can be used directly without Complex wrapper."""
-    @dataclass
-    class Point:
-        __msg_name__ = 'geometry_msgs/msg/Point'
-        x: pybag.float64
-        y: pybag.float64
-        z: pybag.float64
-
-    @dataclass
-    class Pose:
-        __msg_name__ = 'geometry_msgs/msg/Pose'
-        position: Point  # Direct usage without Complex wrapper
-
-    obj = Pose(position=Point(x=1.0, y=2.0, z=3.0))
-    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
-
-    assert schema.name == 'geometry_msgs/msg/Pose'
-    assert schema.fields['position'] == SchemaField(Complex('geometry_msgs/msg/Point'), default=None)
-    assert len(sub_schemas) == 1
-    assert 'geometry_msgs/msg/Point' in sub_schemas
-
-
-def test_serialize_array_with_direct_message_type() -> None:
-    """Test that Array can use message types directly without Complex wrapper."""
-    @dataclass
-    class Point32:
-        __msg_name__ = 'geometry_msgs/msg/Point32'
-        x: pybag.float32
-        y: pybag.float32
-        z: pybag.float32
-
-    @dataclass
-    class Polygon:
-        __msg_name__ = 'geometry_msgs/msg/Polygon'
-        points: pybag.Array[Point32]  # Direct usage without Complex wrapper
-
-    obj = Polygon(points=[Point32(x=1.0, y=2.0, z=3.0)])
-    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
-
-    assert schema.name == 'geometry_msgs/msg/Polygon'
-    assert schema.fields['points'] == SchemaField(Sequence(Complex('geometry_msgs/msg/Point32')), default=None)
-    assert len(sub_schemas) == 1
-    assert 'geometry_msgs/msg/Point32' in sub_schemas
-
-
-def test_serialize_fixed_array_with_direct_message_type() -> None:
-    """Test that Array with size can use message types directly without Complex wrapper."""
-    @dataclass
-    class Header:
-        __msg_name__ = 'std_msgs/msg/Header'
-        stamp: pybag.int64
-        frame_id: pybag.string
-
-    @dataclass
-    class MultiHeader:
-        __msg_name__ = 'tests/msgs/MultiHeader'
-        headers: pybag.Array[Header, Literal[3]]  # Direct usage without Complex wrapper
-
-    obj = MultiHeader(headers=[
-        Header(stamp=1, frame_id='a'),
-        Header(stamp=2, frame_id='b'),
-        Header(stamp=3, frame_id='c')
-    ])
-    schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
-
-    assert schema.name == 'tests/msgs/MultiHeader'
-    assert schema.fields['headers'] == SchemaField(Array(Complex('std_msgs/msg/Header'), length=3, is_bounded=False), default=None)
-    assert len(sub_schemas) == 1
-    assert 'std_msgs/msg/Header' in sub_schemas
