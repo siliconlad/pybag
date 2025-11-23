@@ -5,11 +5,9 @@ from pybag.mcap.record_parser import (
     DATA_END_SIZE,
     FOOTER_SIZE,
     MAGIC_BYTES_SIZE,
-    McapRecordParser,
+    McapRecordParser
 )
-from pybag.mcap.records import ChunkRecord
-from pybag.mcap.records import FooterRecord
-
+from pybag.mcap.records import ChunkRecord, FooterRecord
 
 DEFAULT_CRC_CHUNK_SIZE = 8 * 1024 * 1024  # 8 MiB
 
