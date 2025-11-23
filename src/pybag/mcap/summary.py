@@ -3,6 +3,8 @@ from collections import defaultdict
 from typing import Literal, TypeAlias
 
 from pybag.io.raw_reader import BaseReader, BytesReader
+from pybag.mcap.chunk import decompress_chunk
+from pybag.mcap.crc import assert_data_crc, assert_summary_crc
 from pybag.mcap.error import (
     McapNoChunkIndexError,
     McapNoSummaryIndexError,
@@ -22,8 +24,7 @@ from pybag.mcap.records import (
     MessageIndexRecord,
     MetadataIndexRecord,
     SchemaRecord,
-    StatisticsRecord,
-    decompress_chunk
+    StatisticsRecord
 )
 
 ChannelId: TypeAlias = int
@@ -84,6 +85,11 @@ class McapChunkedSummary:
 
         self._has_summary = self._footer.summary_start != 0
         self._has_summary_offset = self._footer.summary_offset_start != 0
+
+        # Validate CRCs if requested
+        if enable_crc_check:
+            assert_data_crc(self._file, self._footer)
+            assert_summary_crc(self._file, self._footer)
 
         if enable_reconstruction == 'never':
             if not self._has_summary:
@@ -838,6 +844,11 @@ class McapNonChunkedSummary:
 
         self._has_summary: bool = self._footer.summary_start != 0
         self._has_summary_offset: bool = self._footer.summary_offset_start != 0
+
+        # Validate CRCs if requested
+        if enable_crc_check:
+            assert_data_crc(self._file, self._footer)
+            assert_summary_crc(self._file, self._footer)
 
         if enable_reconstruction == 'never':
             if not self._has_summary:

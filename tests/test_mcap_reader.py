@@ -30,7 +30,8 @@ def typestore(request):
 #################
 
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_messages_filter(typestore: Typestore, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_messages_filter(typestore: Typestore, in_log_time_order: bool, enable_crc_check: bool):
     # Write a temporary mcap file
     Int32 = typestore.types["std_msgs/msg/Int32"]
     with TemporaryDirectory() as temp_dir:
@@ -44,7 +45,7 @@ def test_messages_filter(typestore: Typestore, in_log_time_order: bool):
             writer.write(conn, 1, typestore.serialize_cdr(Int32(data=-1), Int32.__msgtype__))
 
         mcap_file = _find_mcap_file(temp_dir)
-        with McapFileReader.from_file(mcap_file) as reader:
+        with McapFileReader.from_file(mcap_file, enable_crc_check=enable_crc_check) as reader:
             all_messages = list(reader.messages("/rosbags", in_log_time_order=in_log_time_order))
             assert len(all_messages) == 2
             assert all_messages[0].data.data == 1
@@ -75,7 +76,8 @@ def test_messages_filter(typestore: Typestore, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_multiple_existing_topics(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_multiple_existing_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test reading messages from multiple existing topics."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "multiple_topics.mcap"
@@ -96,7 +98,7 @@ def test_multiple_existing_topics(chunk_size, in_log_time_order: bool):
             writer.write_message("/topic3", 50, std_msgs.String(data="topic3_2"))
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -129,7 +131,8 @@ def test_multiple_existing_topics(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test reading messages from multiple topics where some don't exist."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "partial_topics.mcap"
@@ -139,7 +142,7 @@ def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool):
                 writer.write_message("/existing", i * 10, std_msgs.String(data=f"msg_{i}"))
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -170,7 +173,8 @@ def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test reading messages from multiple topics that don't exist."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "no_topics.mcap"
@@ -180,7 +184,7 @@ def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool):
                 writer.write_message("/real_topic", i * 10, std_msgs.String(data=f"msg_{i}"))
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -203,7 +207,8 @@ def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_glob_pattern_matching(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_glob_pattern_matching(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test reading messages using glob patterns to match multiple topics.
 
     This test verifies that glob patterns like '/sensor/*' can be used to match
@@ -232,7 +237,7 @@ def test_glob_pattern_matching(chunk_size, in_log_time_order: bool):
             writer.write_message("/control/speed", 18, std_msgs.String(data="speed_1"))
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -288,7 +293,8 @@ def test_glob_pattern_matching(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_ordered_messages(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
@@ -308,7 +314,7 @@ def test_ordered_messages(chunk_size, in_log_time_order: bool):
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -331,7 +337,8 @@ def test_ordered_messages(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
@@ -351,7 +358,7 @@ def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool):
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -374,7 +381,8 @@ def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_random_ordered_messages(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_random_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     random.seed(42)  # Make tests reproducible
 
     with TemporaryDirectory() as temp_dir:
@@ -396,7 +404,7 @@ def test_random_ordered_messages(chunk_size, in_log_time_order: bool):
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -419,7 +427,8 @@ def test_random_ordered_messages(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_duplicate_timestamps(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_duplicate_timestamps(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test that multiple messages with the same log time are all returned."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "duplicate_timestamps.mcap"
@@ -437,7 +446,7 @@ def test_duplicate_timestamps(chunk_size, in_log_time_order: bool):
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -460,7 +469,8 @@ def test_duplicate_timestamps(chunk_size, in_log_time_order: bool):
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
-def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool):
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
     behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
     expected_per_topic = {"/ahead": ahead_messages, "/behind": behind_messages}
@@ -484,7 +494,7 @@ def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool):
                 logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
 
         # Read each topic from the bag file
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             for topic, expected in expected_per_topic.items():
                 messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
@@ -494,7 +504,8 @@ def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool):
 # Multi MCAP Reader  #
 ######################
 
-def test_read_multiple_files_as_one() -> None:
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_read_multiple_files_as_one(enable_crc_check: bool) -> None:
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         file1 = temp_path / "one.mcap"
@@ -507,7 +518,7 @@ def test_read_multiple_files_as_one() -> None:
             writer.write_message("/chatter", 2, std_msgs.String(data="world"))
             writer.write_message("/chatter", 4, std_msgs.String(data="!!"))
 
-        reader = McapMultipleFileReader.from_files([file1, file2])
+        reader = McapMultipleFileReader.from_files([file1, file2], enable_crc_check=enable_crc_check)
         assert reader.start_time == 1 and reader.end_time == 4
         assert reader.get_message_count("/chatter") == 4
 
@@ -526,9 +537,11 @@ def test_read_multiple_files_as_one() -> None:
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
+@pytest.mark.parametrize("enable_crc_check", [True, False])
 def test_random_ordered_messages_from_official_mcap(
     chunk_size,
     in_log_time_order: bool,
+    enable_crc_check: bool,
 ):
     random.seed(42)  # Make tests reproducible
 
@@ -564,7 +577,7 @@ def test_random_ordered_messages_from_official_mcap(
             logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
 
         # Read messages with pybag
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Check that we have multiple chunks if configured to do so
             chunk_indexes = reader._reader.get_chunk_indexes()
             logging.info(f'Number of chunks: {len(chunk_indexes)}')
@@ -587,9 +600,11 @@ def test_random_ordered_messages_from_official_mcap(
     ],
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
+@pytest.mark.parametrize("enable_crc_check", [True, False])
 def test_multi_topic_out_of_order_from_official_mcap(
     chunk_size,
     in_log_time_order: bool,
+    enable_crc_check: bool,
 ):
     ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
     behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
@@ -631,7 +646,7 @@ def test_multi_topic_out_of_order_from_official_mcap(
                 logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
 
         # Read each topic from the bag file
-        with McapFileReader.from_file(path) as reader:
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             for topic, expected in expected_per_topic.items():
                 messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]

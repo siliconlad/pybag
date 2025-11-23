@@ -74,6 +74,12 @@ class FileReader(BaseReader):
     def close(self) -> None:
         self._file.close()
 
+    def __enter__(self) -> 'FileReader':
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.close()
+
 
 class BytesReader(BaseReader):
     def __init__(self, data: bytes):

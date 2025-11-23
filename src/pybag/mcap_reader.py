@@ -38,14 +38,13 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapFileReader':
-        """Create a reader from a file path or iterable of file paths."""
-        reader = McapRecordReaderFactory.from_file(file_path)
+    def from_file(file_path: Path | str, *, enable_crc_check: bool = False) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_file(file_path, enable_crc_check=enable_crc_check)
         return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_bytes(data)
+    def from_bytes(data: bytes, *, enable_crc_check: bool = False) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_bytes(data, enable_crc_check=enable_crc_check)
         return McapFileReader(reader)
 
     @property
@@ -229,8 +228,8 @@ class McapMultipleFileReader:
         }
 
     @staticmethod
-    def from_files(file_paths: list[Path | str]) -> 'McapMultipleFileReader':
-        readers = [McapFileReader.from_file(p) for p in file_paths]
+    def from_files(file_paths: list[Path | str], *, enable_crc_check: bool = False) -> 'McapMultipleFileReader':
+        readers = [McapFileReader.from_file(p, enable_crc_check=enable_crc_check) for p in file_paths]
         return McapMultipleFileReader(readers)
 
     @property
