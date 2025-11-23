@@ -18,10 +18,14 @@ from pybag.mcap.crc import (
     compute_crc_batched,
     validate_crc,
     validate_data_crc,
-    validate_summary_crc,
+    validate_summary_crc
+)
+from pybag.mcap.record_parser import (
+    FOOTER_SIZE,
+    MAGIC_BYTES_SIZE,
+    McapRecordParser
 )
 from pybag.mcap_writer import McapFileWriter
-from pybag.mcap.record_parser import FOOTER_SIZE, MAGIC_BYTES_SIZE, McapRecordParser
 
 
 class TestBasicCrcFunctions:
