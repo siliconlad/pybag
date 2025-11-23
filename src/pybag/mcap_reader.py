@@ -284,8 +284,6 @@ class McapMultipleFileReader:
                 heapq.heappush(heap, (msg.log_time, len(heap), msg, it))
             except StopIteration:
                 continue
-        if not heap:
-            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
 
         # Yield messages from each file in log time order
         # Ties are split by the index the files were provided to in the constructor
