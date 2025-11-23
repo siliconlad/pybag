@@ -32,8 +32,8 @@ class ExampleMessage:
     text: pybag.string
     fixed: pybag.Array[pybag.int32, Literal[3]]
     dynamic: pybag.Array[pybag.int32]
-    sub: pybag.Complex[SubMessage]
-    sub_array: pybag.Array[pybag.Complex[SubMessage], Literal[3]]
+    sub: SubMessage
+    sub_array: pybag.Array[SubMessage, Literal[3]]
 
 
 @pytest.mark.parametrize("little_endian", [True, False])
