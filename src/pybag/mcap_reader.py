@@ -5,7 +5,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
@@ -13,6 +13,7 @@ from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
 )
+from pybag.mcap.records import AttachmentRecord, MetadataRecord
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +38,8 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str | Iterable[Path | str]) -> 'McapFileReader':
+    def from_file(file_path: Path | str) -> 'McapFileReader':
         """Create a reader from a file path or iterable of file paths."""
-        # str is also Iterable, so we need to make sure check for this too
-        if isinstance(file_path, Iterable) and not isinstance(file_path, (str, Path)):
-            return McapMultipleFileReader.from_files(list(file_path))
         reader = McapRecordReaderFactory.from_file(file_path)
         return McapFileReader(reader)
 
@@ -178,7 +176,7 @@ class McapFileReader:
             if filter is None or filter(decoded):
                 yield decoded
 
-    def get_attachments(self, name: str | None = None):
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
         """Get attachments from the MCAP file.
 
         Args:
@@ -190,7 +188,7 @@ class McapFileReader:
         """
         return self._reader.get_attachments(name)
 
-    def get_metadata(self, name: str | None = None):
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
         """Get metadata records from the MCAP file.
 
         Args:
@@ -218,16 +216,26 @@ class McapFileReader:
         self.close()
 
 
-class McapMultipleFileReader(McapFileReader):
+class McapMultipleFileReader:
     """Reader that seamlessly reads from multiple MCAP files."""
 
     def __init__(self, readers: list[McapFileReader]):
         self._readers = readers
 
+        self._profiles = set(r.profile for r in self._readers)
+        self._message_deserializer = {
+            profile: MessageDeserializerFactory.from_profile(profile)
+            for profile in self._profiles
+        }
+
     @staticmethod
-    def from_files(file_paths: Iterable[Path | str]) -> 'McapMultipleFileReader':
+    def from_files(file_paths: list[Path | str]) -> 'McapMultipleFileReader':
         readers = [McapFileReader.from_file(p) for p in file_paths]
         return McapMultipleFileReader(readers)
+
+    @property
+    def profiles(self) -> set[str]:
+        return self._profiles
 
     def get_topics(self) -> list[str]:
         topics: set[str] = set()
@@ -262,19 +270,20 @@ class McapMultipleFileReader(McapFileReader):
         in_log_time_order: bool = True,
     ) -> Generator[DecodedMessage, None, None]:
         # in_log_time_order being false makes less sense when multiple files are involved
+        # possible strategies could be to iterate through all messages in one file before
+        # iterating through the next file, but seems a bit weird so will leave it for now
         if not in_log_time_order:
             raise ValueError('in_log_time_order must be True')
 
         # Initialize the heap with the first message of each file
         heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
         for reader in self._readers:
-            if topic in reader.get_topics():
-                it = iter(reader.messages(topic, start_time, end_time, in_log_time_order=in_log_time_order))
-                try:
-                    msg = next(it)
-                    heapq.heappush(heap, (msg.log_time, len(heap), msg, it))
-                except StopIteration:
-                    continue
+            it = iter(reader.messages(topic, start_time, end_time,in_log_time_order=in_log_time_order))
+            try:
+                msg = next(it)
+                heapq.heappush(heap, (msg.log_time, len(heap), msg, it))
+            except StopIteration:
+                continue
         if not heap:
             raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
 
@@ -290,6 +299,47 @@ class McapMultipleFileReader(McapFileReader):
             except StopIteration:
                 pass
 
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects containing attachment data.
+        """
+        attachments = []
+        for reader in self._readers:
+            attachments.extend(reader.get_attachments(name))
+        return attachments
+
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects containing metadata key-value pairs.
+        """
+        metadata = []
+        for reader in self._readers:
+            metadata.extend(reader.get_metadata(name))
+        return metadata
+
     def close(self) -> None:
         for reader in self._readers:
             reader.close()
+
+    def __enter__(self) -> "McapMultipleFileReader":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None
+    ) -> None:
+        self.close()

@@ -13,7 +13,7 @@ from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.store import Typestore
 
 import pybag.ros2.humble.std_msgs as std_msgs
-from pybag.mcap_reader import McapFileReader
+from pybag.mcap_reader import McapFileReader, McapMultipleFileReader
 from pybag.mcap_writer import McapFileWriter
 
 
@@ -507,7 +507,7 @@ def test_read_multiple_files_as_one() -> None:
             writer.write_message("/chatter", 2, std_msgs.String(data="world"))
             writer.write_message("/chatter", 4, std_msgs.String(data="!!"))
 
-        reader = McapFileReader.from_file([file1, file2])
+        reader = McapMultipleFileReader.from_files([file1, file2])
         assert reader.start_time == 1 and reader.end_time == 4
         assert reader.get_message_count("/chatter") == 4
 
