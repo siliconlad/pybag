@@ -1,6 +1,6 @@
 import fnmatch
-import logging
 import heapq
+import logging
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +11,7 @@ from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
-    McapRecordReaderFactory,
+    McapRecordReaderFactory
 )
 
 logger = logging.getLogger(__name__)
