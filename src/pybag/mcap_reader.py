@@ -39,7 +39,7 @@ class McapFileReader:
     @staticmethod
     def from_file(file_path: Path | str | Iterable[Path | str]) -> 'McapFileReader':
         """Create a reader from a file path or iterable of file paths."""
-        if isinstance(file_path, Iterable) and not isinstance(file_path, (str, Path)):
+        if isinstance(file_path, Iterable):
             return McapMultipleFileReader.from_files(list(file_path))
         reader = McapRecordReaderFactory.from_file(file_path)
         return McapFileReader(reader)
@@ -224,17 +224,17 @@ class McapMultipleFileReader(McapFileReader):
         self._readers = readers
 
     @staticmethod
-    def from_files(file_paths: list[Path | str]) -> 'McapMultipleFileReader':
+    def from_files(file_paths: Iterable[Path | str]) -> 'McapMultipleFileReader':
         readers = [McapFileReader.from_file(p) for p in file_paths]
         return McapMultipleFileReader(readers)
 
-    def get_topics(self) -> list[str]:  # type: ignore[override]
+    def get_topics(self) -> list[str]:
         topics: set[str] = set()
         for reader in self._readers:
             topics.update(reader.get_topics())
         return list(topics)
 
-    def get_message_count(self, topic: str) -> int:  # type: ignore[override]
+    def get_message_count(self, topic: str) -> int:
         count = 0
         for reader in self._readers:
             if topic in reader.get_topics():
@@ -243,36 +243,42 @@ class McapMultipleFileReader(McapFileReader):
             raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
         return count
 
-    @property  # type: ignore[override]
+    @property
     def start_time(self) -> int:
         return min(reader.start_time for reader in self._readers)
 
-    @property  # type: ignore[override]
+    @property
     def end_time(self) -> int:
         return max(reader.end_time for reader in self._readers)
 
-    def messages(  # type: ignore[override]
+    def messages(
         self,
-        topic: str,
-        start_time: float | None = None,
-        end_time: float | None = None,
+        topic: str | list[str],
+        start_time: int | None = None,
+        end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
+        *,
+        in_log_time_order: bool = True,
     ) -> Generator[DecodedMessage, None, None]:
-        iterators = []
+        # in_log_time_order being false makes less sense when multiple files are involved
+        if not in_log_time_order:
+            raise ValueError('in_log_time_order must be True')
+
+        # Initialize the heap with the first message of each file
+        heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
         for reader in self._readers:
             if topic in reader.get_topics():
-                iterators.append(iter(reader.messages(topic, start_time, end_time)))
-        if not iterators:
+                it = iter(reader.messages(topic, start_time, end_time, in_log_time_order=in_log_time_order))
+                try:
+                    msg = next(it)
+                    heapq.heappush(heap, (msg.log_time, len(heap), msg, it))
+                except StopIteration:
+                    continue
+        if not heap:
             raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
 
-        heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
-        for idx, it in enumerate(iterators):
-            try:
-                msg = next(it)
-                heapq.heappush(heap, (msg.log_time, idx, msg, it))
-            except StopIteration:
-                continue
-
+        # Yield messages from each file in log time order
+        # Ties are split by the index the files were provided to in the constructor
         while heap:
             _, idx, msg, it = heapq.heappop(heap)
             if filter is None or filter(msg):
@@ -283,6 +289,6 @@ class McapMultipleFileReader(McapFileReader):
             except StopIteration:
                 pass
 
-    def close(self) -> None:  # type: ignore[override]
+    def close(self) -> None:
         for reader in self._readers:
             reader.close()
