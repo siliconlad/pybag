@@ -228,8 +228,8 @@ class McapMultipleFileReader:
         }
 
     @staticmethod
-    def from_files(file_paths: list[Path | str]) -> 'McapMultipleFileReader':
-        readers = [McapFileReader.from_file(p) for p in file_paths]
+    def from_files(file_paths: list[Path | str], *, enable_crc_check: bool = False) -> 'McapMultipleFileReader':
+        readers = [McapFileReader.from_file(p, enable_crc_check=enable_crc_check) for p in file_paths]
         return McapMultipleFileReader(readers)
 
     @property

@@ -5,7 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Generator, Iterator, Literal
 
-from pybag.crc import assert_attachment_crc
+from pybag.crc import assert_crc
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.mcap.error import (
     McapNoChunkError,
@@ -826,9 +826,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         for attachment_index in attachment_indexes_flat:
             _ = self._file.seek_from_start(attachment_index.offset)
             attachment = McapRecordParser.parse_attachment(self._file)
-            # Validate attachment CRC if requested
-            if self._check_crc:
-                assert_attachment_crc(attachment.data, attachment.crc)
+            if self._check_crc and attachment.crc:  # If crc is 0, do not check
+                assert_crc(attachment.data, attachment.crc)
             attachments.append(attachment)
         else:
             _ = self._file.seek_from_start(current_pos)
@@ -1293,9 +1292,8 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         for attachment_index in attachment_indexes_flat:
             _ = self._file.seek_from_start(attachment_index.offset)
             attachment = McapRecordParser.parse_attachment(self._file)
-            # Validate attachment CRC if requested
-            if self._check_crc:
-                assert_attachment_crc(attachment.data, attachment.crc)
+            if self._check_crc and attachment.crc:  # If crc is 0, do not check
+                assert_crc(attachment.data, attachment.crc)
             attachments.append(attachment)
         else:
             _ = self._file.seek_from_start(current_pos)
