@@ -77,6 +77,11 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
 
     def _parse_value(self, field_type: SchemaFieldType, raw_value: str) -> Any:
         if isinstance(field_type, Primitive):
+            # Special case: 'byte' type defaults are specified as integers in ROS 2 schemas
+            # (e.g., "byte OK=0"), but PRIMITIVE_TYPE_MAP maps 'byte' to bytes which
+            # would fail with "TypeError: string argument without an encoding"
+            if field_type.type == 'byte':
+                return int(raw_value)
             return PRIMITIVE_TYPE_MAP[field_type.type](raw_value)
 
         if isinstance(field_type, String):
@@ -90,6 +95,9 @@ class Ros2MsgSchemaDecoder(SchemaDecoder):
                 raise Ros2MsgError('Array default must be a list')
             element_type = field_type.type
             if isinstance(element_type, Primitive):
+                # Special case: 'byte' type values should be parsed as int
+                if element_type.type == 'byte':
+                    return [int(v) for v in values]
                 return [PRIMITIVE_TYPE_MAP[element_type.type](v) for v in values]
             else:
                 raise Ros2MsgError('Default values not supported for this field type')
