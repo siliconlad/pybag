@@ -1,8 +1,10 @@
 """Utilities for writing MCAP files."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
@@ -16,6 +18,9 @@ from pybag.mcap.records import (
 )
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
+
+if TYPE_CHECKING:
+    from pybag.mcap.encryption import EncryptionProvider
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +40,7 @@ class McapFileWriter:
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_encryption: EncryptionProvider | None = None,
     ) -> None:
         """Initialize a high-level MCAP file writer.
 
@@ -43,12 +49,16 @@ class McapFileWriter:
             profile: The MCAP profile to use (default: "ros2").
             chunk_size: If provided, creates chunks of approximately this size in bytes. If None, writes without chunking.
             chunk_compression: Compression algorithm for chunks ("lz4" or "zstd" or None for no compression).
+            chunk_encryption: Optional encryption provider for encrypting chunks.
+                             When provided, chunk data is compressed first (if compression is enabled),
+                             then encrypted before writing.
         """
         # Create the low-level record writer via factory
         self._record_writer = McapRecordWriterFactory.create_writer(
             writer,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
+            chunk_encryption=chunk_encryption,
             profile=profile,
         )
 
@@ -82,6 +92,7 @@ class McapFileWriter:
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
+        chunk_encryption: EncryptionProvider | None = None,
     ) -> "McapFileWriter":
         """Create a writer backed by a file on disk.
 
@@ -91,6 +102,7 @@ class McapFileWriter:
             chunk_size: The size of the chunk to write to in bytes.
                        If None, writes without chunking.
             chunk_compression: The compression to use for the chunk.
+            chunk_encryption: Optional encryption provider for encrypting chunks.
 
         Returns:
             A writer backed by a file on disk.
@@ -100,6 +112,7 @@ class McapFileWriter:
             profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
+            chunk_encryption=chunk_encryption,
         )
 
     def add_channel(self, topic: str, channel_type: type[Message]) -> int:

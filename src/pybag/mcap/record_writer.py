@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import logging
 import struct
 import zlib
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import lz4.frame
 import zstandard as zstd
@@ -27,6 +29,9 @@ from pybag.mcap.records import (
     StatisticsRecord,
     SummaryOffsetRecord
 )
+
+if TYPE_CHECKING:
+    from pybag.mcap.encryption import EncryptionProvider
 
 # Footer payload size: 8 bytes summary_start + 8 bytes summary_offset_start + 4 bytes summary_crc
 FOOTER_PAYLOAD_SIZE = 20
@@ -627,6 +632,7 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         *,
         chunk_size: int,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_encryption: EncryptionProvider | None = None,
         profile: str = "ros2",
     ) -> None:
         """Initialize a chunked MCAP writer.
@@ -635,12 +641,14 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             writer: The underlying writer to write binary data to.
             chunk_size: The size threshold for flushing chunks (in bytes).
             chunk_compression: Compression algorithm ("lz4" or "zstd").
+            chunk_encryption: Optional encryption provider for encrypting chunks.
             profile: The MCAP profile to use (default: "ros2").
         """
         self._writer = CrcWriter(writer)
         self._profile = profile
         self._chunk_size = chunk_size
         self._chunk_compression = chunk_compression or ""
+        self._chunk_encryption = chunk_encryption
         self._compress_chunk = self._create_chunk_compressor()
 
         # Tracking for summary section
@@ -785,8 +793,24 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._metadata_count += 1
 
     def _flush_chunk(self) -> None:
-        """Compress and write the current chunk buffer to the file."""
+        """Compress, encrypt, and write the current chunk buffer to the file."""
         records = self._current_chunk_buffer.as_bytes()
+
+        # Step 1: Compress the data
+        compressed_records = self._compress_chunk(records)
+
+        # Step 2: Encrypt if encryption provider is configured
+        if self._chunk_encryption is not None:
+            final_records = self._chunk_encryption.encrypt(compressed_records)
+            # Combine encryption and compression algorithms
+            # Format: "encryption+compression" or just "encryption" if no compression
+            if self._chunk_compression:
+                chunk_compression_field = f"{self._chunk_encryption.algorithm}+{self._chunk_compression}"
+            else:
+                chunk_compression_field = self._chunk_encryption.algorithm
+        else:
+            final_records = compressed_records
+            chunk_compression_field = self._chunk_compression
 
         # Create and write chunk record
         chunk = ChunkRecord(
@@ -794,8 +818,8 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             message_end_time=self._current_chunk_end_time or 0,
             uncompressed_size=len(records),
             uncompressed_crc=zlib.crc32(records),
-            compression=self._chunk_compression,
-            records=self._compress_chunk(records),
+            compression=chunk_compression_field,
+            records=final_records,
         )
         chunk_start_offset = self._writer.tell()
         McapRecordWriter.write_chunk(self._writer, chunk)
@@ -889,6 +913,7 @@ class McapRecordWriterFactory:
         *,
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_encryption: EncryptionProvider | None = None,
         profile: str = "ros2",
     ) -> BaseMcapRecordWriter:
         """Create an appropriate MCAP record writer based on configuration.
@@ -898,6 +923,7 @@ class McapRecordWriterFactory:
             chunk_size: If provided, creates a chunked writer with this size threshold.
                        If None, creates a non-chunked writer.
             chunk_compression: Compression algorithm for chunks ("lz4" or "zstd").
+            chunk_encryption: Optional encryption provider for encrypting chunks.
             profile: The MCAP profile to use (default: "ros2").
 
         Returns:
@@ -910,5 +936,6 @@ class McapRecordWriterFactory:
                 writer,
                 chunk_size=chunk_size,
                 chunk_compression=chunk_compression,
+                chunk_encryption=chunk_encryption,
                 profile=profile,
             )

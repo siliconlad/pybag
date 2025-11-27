@@ -72,3 +72,21 @@ class McapUnknownTopicError(McapError):
     """Exception raised when a topic is not found in a MCAP file."""
     def __init__(self, message: str):
         super().__init__(message)
+
+
+class McapEncryptionError(McapError):
+    """Exception raised when encryption fails."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class McapDecryptionError(McapError):
+    """Exception raised when decryption fails."""
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class McapUnknownEncryptionError(McapError):
+    """Exception raised when a MCAP file uses an unknown encryption algorithm."""
+    def __init__(self, message: str):
+        super().__init__(message)

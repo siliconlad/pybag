@@ -10,6 +10,11 @@ dependencies = [
     "zstandard>=0.23.0",
 ]
 
+[project.optional-dependencies]
+encryption = [
+    "cryptography>=42.0.0",
+]
+
 [project.scripts]
 pybag = "pybag.cli.main:main"
 
@@ -26,6 +31,7 @@ test = [
     "mcap-ros2-support>=0.5.5",
     "rosbags>=0.10.10",
     "numpy>=2.2.3",
+    "cryptography>=42.0.0",
 ]
 
 [tool.isort]

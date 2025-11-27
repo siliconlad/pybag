@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import fnmatch
 import heapq
 import logging
@@ -5,7 +7,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
@@ -14,6 +16,9 @@ from pybag.mcap.record_reader import (
     McapRecordReaderFactory
 )
 from pybag.mcap.records import AttachmentRecord, MetadataRecord
+
+if TYPE_CHECKING:
+    from pybag.mcap.encryption import EncryptionProvider
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +43,53 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str, *, enable_crc_check: bool = False) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_file(file_path, enable_crc_check=enable_crc_check)
+    def from_file(
+        file_path: Path | str,
+        *,
+        enable_crc_check: bool = False,
+        encryption_provider: EncryptionProvider | None = None,
+    ) -> 'McapFileReader':
+        """Create an MCAP reader from a file.
+
+        Args:
+            file_path: Path to the MCAP file.
+            enable_crc_check: Whether to validate CRC values.
+            encryption_provider: Optional encryption provider for decrypting
+                               encrypted chunks.
+
+        Returns:
+            An McapFileReader instance.
+        """
+        reader = McapRecordReaderFactory.from_file(
+            file_path,
+            enable_crc_check=enable_crc_check,
+            encryption_provider=encryption_provider,
+        )
         return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(data: bytes, *, enable_crc_check: bool = False) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_bytes(data, enable_crc_check=enable_crc_check)
+    def from_bytes(
+        data: bytes,
+        *,
+        enable_crc_check: bool = False,
+        encryption_provider: EncryptionProvider | None = None,
+    ) -> 'McapFileReader':
+        """Create an MCAP reader from bytes.
+
+        Args:
+            data: Bytes containing the MCAP file data.
+            enable_crc_check: Whether to validate CRC values.
+            encryption_provider: Optional encryption provider for decrypting
+                               encrypted chunks.
+
+        Returns:
+            An McapFileReader instance.
+        """
+        reader = McapRecordReaderFactory.from_bytes(
+            data,
+            enable_crc_check=enable_crc_check,
+            encryption_provider=encryption_provider,
+        )
         return McapFileReader(reader)
 
     @property
