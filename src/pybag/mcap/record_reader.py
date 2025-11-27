@@ -154,6 +154,7 @@ class BaseMcapRecordReader(ABC):
         end_timestamp: int | None = None,
         *,
         in_log_time_order: bool = True,
+        reverse: bool = False,
     ) -> Generator[MessageRecord, None, None]:
         ...  # pragma: no cover
 
@@ -555,6 +556,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         end_timestamp: int | None = None,
         *,
         in_log_time_order: bool = True,
+        reverse: bool = False,
     ) -> Generator[MessageRecord, None, None]:
         """
         Get messages from the MCAP file.
@@ -570,6 +572,8 @@ class McapChunkedReader(BaseMcapRecordReader):
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
             in_log_time_order: Return messages in log time order if True, otherwise in write order.
+            reverse: Return messages in reverse time order (latest first) if True.
+                     Only valid when in_log_time_order is True.
 
         Returns:
             A generator of MessageRecord objects.
@@ -608,11 +612,11 @@ class McapChunkedReader(BaseMcapRecordReader):
         if self._has_overlapping_chunks(relevant_chunks):
             logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
             yield from self._get_messages_with_overlaps(
-                relevant_chunks, channel_id_set, start_timestamp, end_timestamp
+                relevant_chunks, channel_id_set, start_timestamp, end_timestamp, reverse=reverse
             )
         else:
             yield from self._get_messages_sequential(
-                relevant_chunks, channel_id_set, start_timestamp, end_timestamp
+                relevant_chunks, channel_id_set, start_timestamp, end_timestamp, reverse=reverse
             )
 
     def _has_overlapping_chunks(self, chunks: list[ChunkIndexRecord]) -> bool:
@@ -635,6 +639,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         channel_id_set: set[int] | None,
         start_timestamp: int | None,
         end_timestamp: int | None,
+        *,
+        reverse: bool = False,
     ) -> Generator[MessageRecord, None, None]:
         """Fast sequential reading for non-overlapping chunks.
 
@@ -643,11 +649,15 @@ class McapChunkedReader(BaseMcapRecordReader):
             channel_id_set: Set of channel IDs to filter by, or None for all channels
             start_timestamp: Start timestamp filter
             end_timestamp: End timestamp filter
+            reverse: If True, yield messages in reverse time order (latest first)
 
         Yields:
             MessageRecord objects matching the filters
         """
-        for chunk_index in chunks:
+        # For reverse iteration, process chunks in reverse order (by end time descending)
+        chunks_to_process = reversed(chunks) if reverse else chunks
+
+        for chunk_index in chunks_to_process:
             if channel_id_set is None:
                 # All channels in this chunk
                 message_indexes = self.get_message_indexes(chunk_index).values()
@@ -661,19 +671,23 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not message_indexes:
                 continue
 
-            offsets: list[int] = []
+            # Collect (timestamp, offset) tuples for sorting
+            entries: list[tuple[int, int]] = []
             for message_index in message_indexes:
                 for timestamp, offset in message_index.records:
                     if start_timestamp is not None and timestamp < start_timestamp:
                         continue
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
-                    offsets.append(offset)
-            if not offsets:
+                    entries.append((timestamp, offset))
+            if not entries:
                 continue
 
+            # Sort by timestamp (and offset for determinism), reverse if needed
+            entries.sort(key=lambda x: (x[0], x[1]), reverse=reverse)
+
             reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
-            for offset in offsets:
+            for _, offset in entries:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
@@ -683,6 +697,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         channel_id_set: set[int] | None,
         start_timestamp: int | None,
         end_timestamp: int | None,
+        *,
+        reverse: bool = False,
     ) -> Generator[MessageRecord, None, None]:
         """Streaming overlap-safe reading using heap-based merge of per-chunk iterators.
 
@@ -691,9 +707,10 @@ class McapChunkedReader(BaseMcapRecordReader):
             channel_id_set: Set of channel IDs to filter by, or None for all channels
             start_timestamp: Start timestamp filter
             end_timestamp: End timestamp filter
+            reverse: If True, yield messages in reverse time order (latest first)
 
         Yields:
-            MessageRecord objects in log time order
+            MessageRecord objects in log time order (or reverse if specified)
         """
 
         def chunk_message_iterator(
@@ -724,7 +741,8 @@ class McapChunkedReader(BaseMcapRecordReader):
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
                     message_refs.append((timestamp, offset))
-            message_refs.sort()  # Sort to make sure timestamps are in correct order
+            # Sort by timestamp (ascending or descending based on reverse flag)
+            message_refs.sort(reverse=reverse)
 
             if not message_refs:
                 return
@@ -742,8 +760,13 @@ class McapChunkedReader(BaseMcapRecordReader):
             if (iterator := chunk_message_iterator(i, chunk_index)) is not None
         ]
         # Sort by the timestamp and break ties with the order of the chunk
-        for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
-            yield message
+        # For reverse, negate timestamp to get descending order from heapq.merge
+        if reverse:
+            for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (-x[0], x[1])):
+                yield message
+        else:
+            for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
+                yield message
 
     def _get_messages_write_order(
         self,
@@ -1209,6 +1232,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         end_timestamp: int | None = None,
         *,
         in_log_time_order: bool = True,
+        reverse: bool = False,
     ) -> Generator[MessageRecord, None, None]:
         """
         Get messages from the MCAP file.
@@ -1224,6 +1248,8 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
             in_log_time_order: Return records in log time order if true, else in the order they appear in the file
+            reverse: Return messages in reverse time order (latest first) if True.
+                     Only valid when in_log_time_order is True.
 
         Returns:
             A generator of MessageRecord objects.
@@ -1255,7 +1281,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                     entries.append((timestamp, offset))
 
         if in_log_time_order:
-            entries.sort(key=lambda x: (x[0], x[1]))
+            entries.sort(key=lambda x: (x[0], x[1]), reverse=reverse)
         else:
             entries.sort(key=lambda x: x[1])
 
