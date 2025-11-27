@@ -19,5 +19,13 @@ from .types import (
     uint64,
     wstring
 )
+from .typestore import (
+    TypeStore,
+    Stores,
+    TypeStoreError,
+    MsgParseError,
+    get_typestore,
+    get_types_from_msg,
+)
 
 __version__ = version("pybag-sdk")
