@@ -408,6 +408,9 @@ def compile_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> Callab
                 return [f"{pad}encoder.{primitive}({value_expr})"]
 
             if isinstance(field_type, String):
+                if field_type.type == 'wstring':
+                    return [f"{pad}encoder.wstring({value_expr})"]
+                # Regular string: inline UTF-8 encoding
                 value_var = new_var("value")
                 encoded_var = new_var("encoded")
                 return [
