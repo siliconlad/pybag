@@ -13,7 +13,7 @@ from pybag.mcap.records import SchemaRecord
 # https://docs.ros.org/en/foxy/Concepts/About-ROS-Interfaces.html#field-types
 PRIMITIVE_TYPE_MAP = {
     'bool': bool,
-    'byte': bytes,
+    'byte': int,
     'char': str,
     'float32': float,
     'float64': float,
