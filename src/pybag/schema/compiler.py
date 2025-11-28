@@ -408,6 +408,9 @@ def compile_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> Callab
                 return [f"{pad}encoder.{primitive}({value_expr})"]
 
             if isinstance(field_type, String):
+                if field_type.type == 'wstring':
+                    return [f"{pad}encoder.wstring({value_expr})"]
+                # Regular string: inline UTF-8 encoding
                 value_var = new_var("value")
                 encoded_var = new_var("encoded")
                 return [
@@ -422,6 +425,15 @@ def compile_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> Callab
                 elem = field_type.type
                 values_var = new_var("values")
                 result: list[str] = [f"{pad}{values_var} = {value_expr}"]
+                # Add validation for fixed-size arrays (non-bounded)
+                if not field_type.is_bounded:
+                    expected_length = field_type.length
+                    result.append(
+                        f"{pad}if len({values_var}) != {expected_length}:"
+                    )
+                    result.append(
+                        f"{pad}    raise ValueError(f'Fixed array size mismatch: expected {expected_length} elements, got {{len({values_var})}}')"
+                    )
                 if isinstance(elem, Primitive) and elem.type in _WRITE_FORMAT:
                     base_var = values_var
                     if elem.type in {"byte", "char"}:
