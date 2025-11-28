@@ -125,6 +125,57 @@ class BytesReader(BaseReader):
         pass
 
 
+class StreamReader(BaseReader):
+    """Reader that wraps a nonseekable stream and buffers data in memory.
+
+    This reader reads all data from a stream into memory upon construction,
+    allowing subsequent seek operations on the buffered data. This is useful
+    for reading MCAP files from nonseekable sources like stdin or network streams.
+
+    Args:
+        stream: A file-like object with a read() method. The stream does not need
+                to support seeking.
+    """
+
+    def __init__(self, stream):
+        # Read all data from stream into memory
+        self._data = stream.read()
+        self._position = 0
+
+    def peek(self, size: int) -> bytes:
+        return self._data[self._position:self._position + size]
+
+    def read(self, size: int | None = None) -> bytes:
+        if size is None:
+            result = self._data[self._position:]
+            self._position = len(self._data)
+            return result
+        result = self._data[self._position:self._position + size]
+        self._position += size
+        return result
+
+    def seek_from_start(self, offset: int) -> int:
+        self._position = offset
+        return self._position
+
+    def seek_from_end(self, offset: int) -> int:
+        self._position = len(self._data) - offset
+        return self._position
+
+    def seek_from_current(self, offset: int) -> int:
+        self._position += offset
+        return self._position
+
+    def tell(self) -> int:
+        return self._position
+
+    def size(self) -> int:
+        return len(self._data)
+
+    def close(self) -> None:
+        pass
+
+
 class CrcReader(BaseReader):
     def __init__(self, reader: BaseReader):
         self._reader = reader

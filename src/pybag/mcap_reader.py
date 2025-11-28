@@ -8,6 +8,8 @@ from types import TracebackType
 from typing import Any, Callable
 
 from pybag.deserialize import MessageDeserializerFactory
+from typing import BinaryIO
+
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
 from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
@@ -45,6 +47,33 @@ class McapFileReader:
     @staticmethod
     def from_bytes(data: bytes, *, enable_crc_check: bool = False) -> 'McapFileReader':
         reader = McapRecordReaderFactory.from_bytes(data, enable_crc_check=enable_crc_check)
+        return McapFileReader(reader)
+
+    @staticmethod
+    def from_stream(stream: BinaryIO, *, enable_crc_check: bool = False) -> 'McapFileReader':
+        """Create an MCAP reader from a stream (e.g., stdin, network socket).
+
+        This method reads the entire stream into memory, enabling seeking operations
+        required for MCAP reading. Use this for nonseekable sources like stdin or
+        network streams.
+
+        Example:
+            # Read from stdin
+            import sys
+            reader = McapFileReader.from_stream(sys.stdin.buffer)
+
+            # Read from a pipe
+            with subprocess.Popen(['cat', 'file.mcap'], stdout=subprocess.PIPE) as proc:
+                reader = McapFileReader.from_stream(proc.stdout)
+
+        Args:
+            stream: A file-like object with a read() method. Does not need to be seekable.
+            enable_crc_check: Whether to validate CRC values
+
+        Returns:
+            A McapFileReader instance
+        """
+        reader = McapRecordReaderFactory.from_stream(stream, enable_crc_check=enable_crc_check)
         return McapFileReader(reader)
 
     @property

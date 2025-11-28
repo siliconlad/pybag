@@ -5,7 +5,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Generator, Iterator, Literal
 
-from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from typing import BinaryIO
+
+from pybag.io.raw_reader import BaseReader, BytesReader, FileReader, StreamReader
 from pybag.mcap.chunk import decompress_chunk
 from pybag.mcap.crc import assert_crc
 from pybag.mcap.error import (
@@ -283,6 +285,39 @@ class McapChunkedReader(BaseMcapRecordReader):
         """
         return McapChunkedReader(
             BytesReader(data),
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+            chunk_cache_size=chunk_cache_size,
+        )
+
+    @staticmethod
+    def from_stream(
+        stream: BinaryIO,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
+    ) -> 'McapChunkedReader':
+        """Create a new MCAP reader from a stream (e.g., stdin, network socket).
+
+        This method reads the entire stream into memory, enabling seeking operations
+        required for MCAP reading. Use this for nonseekable sources like stdin or
+        network streams.
+
+        Args:
+            stream: A file-like object with a read() method. Does not need to be seekable.
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
+
+        Returns:
+            A McapChunkedReader instance
+        """
+        return McapChunkedReader(
+            StreamReader(stream),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
             chunk_cache_size=chunk_cache_size,
@@ -999,6 +1034,36 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             enable_summary_reconstruction=enable_summary_reconstruction,
         )
 
+    @staticmethod
+    def from_stream(
+        stream: BinaryIO,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+    ) -> 'McapNonChunkedReader':
+        """Create a new MCAP reader from a stream (e.g., stdin, network socket).
+
+        This method reads the entire stream into memory, enabling seeking operations
+        required for MCAP reading. Use this for nonseekable sources like stdin or
+        network streams.
+
+        Args:
+            stream: A file-like object with a read() method. Does not need to be seekable.
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+
+        Returns:
+            A McapNonChunkedReader instance
+        """
+        return McapNonChunkedReader(
+            StreamReader(stream),
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+        )
+
     # Destructors
 
     def close(self) -> None:
@@ -1445,3 +1510,42 @@ class McapRecordReaderFactory:
             # But if it does, provide helpful error message
             logger.error(f'Unexpected error with reconstruction mode "{enable_summary_reconstruction}": {e}')
             raise
+
+    @staticmethod
+    def from_stream(
+        stream: BinaryIO,
+        *,
+        enable_crc_check: bool = False,
+        enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
+    ) -> BaseMcapRecordReader:
+        """Create a new MCAP reader from a stream (e.g., stdin, network socket).
+
+        This method reads the entire stream into memory, enabling seeking operations
+        required for MCAP reading. Use this for nonseekable sources like stdin or
+        network streams.
+
+        Args:
+            stream: A file-like object with a read() method. Does not need to be seekable.
+            enable_crc_check: Whether to validate CRC values
+            enable_summary_reconstruction: Controls summary reconstruction behavior:
+                - 'missing': Reconstruct if summary is missing (default)
+                - 'never': Raise error if summary is missing
+                - 'always': Always reconstruct even if summary exists
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
+
+        Returns:
+            Appropriate reader instance (chunked or non-chunked)
+
+        Raises:
+            NotImplementedError: If summary is missing and reconstruction is disabled
+        """
+        # Read entire stream into bytes first, then use from_bytes
+        # This avoids issues with stream consumption on fallback
+        data = stream.read()
+        return McapRecordReaderFactory.from_bytes(
+            data,
+            enable_crc_check=enable_crc_check,
+            enable_summary_reconstruction=enable_summary_reconstruction,
+            chunk_cache_size=chunk_cache_size,
+        )

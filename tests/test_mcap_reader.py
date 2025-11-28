@@ -500,6 +500,148 @@ def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool, enable_cr
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
                 assert [msg.data.data for msg in messages] == [data for _, data in expected]
 
+
+###############################
+# Nonseekable Stream Reading  #
+###############################
+
+class NonSeekableStream:
+    """A wrapper that makes a file-like object nonseekable for testing."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+        self._position = 0
+
+    def read(self, size: int | None = None) -> bytes:
+        if size is None:
+            result = self._data[self._position:]
+            self._position = len(self._data)
+        else:
+            result = self._data[self._position:self._position + size]
+            self._position += size
+        return result
+
+    def seek(self, *args, **kwargs):
+        raise IOError("Stream is not seekable")
+
+    def tell(self):
+        return self._position
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_from_stream_basic(chunk_size, enable_crc_check: bool):
+    """Test reading MCAP from a nonseekable stream."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "stream_test.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            writer.write_message("/stream_topic", 10, std_msgs.String(data="msg_0"))
+            writer.write_message("/stream_topic", 20, std_msgs.String(data="msg_1"))
+            writer.write_message("/stream_topic", 30, std_msgs.String(data="msg_2"))
+
+        # Read the file into bytes
+        with open(path, 'rb') as f:
+            file_bytes = f.read()
+
+        # Create a nonseekable stream from the bytes
+        stream = NonSeekableStream(file_bytes)
+
+        # Read using from_stream
+        with McapFileReader.from_stream(stream, enable_crc_check=enable_crc_check) as reader:
+            messages = list(reader.messages("/stream_topic"))
+
+            assert len(messages) == 3
+            assert [msg.log_time for msg in messages] == [10, 20, 30]
+            assert [msg.data.data for msg in messages] == ["msg_0", "msg_1", "msg_2"]
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_from_stream_multiple_topics(chunk_size, enable_crc_check: bool):
+    """Test reading multiple topics from a nonseekable stream."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "stream_multi_topic.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            writer.write_message("/topic1", 10, std_msgs.String(data="topic1_0"))
+            writer.write_message("/topic2", 15, std_msgs.String(data="topic2_0"))
+            writer.write_message("/topic1", 20, std_msgs.String(data="topic1_1"))
+            writer.write_message("/topic2", 25, std_msgs.String(data="topic2_1"))
+
+        # Read the file into bytes
+        with open(path, 'rb') as f:
+            file_bytes = f.read()
+
+        # Create a nonseekable stream from the bytes
+        stream = NonSeekableStream(file_bytes)
+
+        # Read using from_stream
+        with McapFileReader.from_stream(stream, enable_crc_check=enable_crc_check) as reader:
+            # Test getting all messages from both topics
+            messages = list(reader.messages(["/topic1", "/topic2"]))
+            assert len(messages) == 4
+            assert [msg.log_time for msg in messages] == [10, 15, 20, 25]
+            assert [msg.data.data for msg in messages] == ["topic1_0", "topic2_0", "topic1_1", "topic2_1"]
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_from_stream_matches_from_file(chunk_size, enable_crc_check: bool):
+    """Ensure from_stream produces identical results to from_file."""
+    random.seed(42)
+
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "stream_compare.mcap"
+
+        # Create a test file with random timestamps
+        timestamps = random.sample(range(1000), 10)
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            for i, ts in enumerate(timestamps):
+                writer.write_message("/compare", ts, std_msgs.String(data=f"msg_{i}"))
+
+        # Read using from_file
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
+            file_messages = list(reader.messages("/compare"))
+            file_topics = reader.get_topics()
+            file_start = reader.start_time
+            file_end = reader.end_time
+
+        # Read using from_stream
+        with open(path, 'rb') as f:
+            file_bytes = f.read()
+        stream = NonSeekableStream(file_bytes)
+        with McapFileReader.from_stream(stream, enable_crc_check=enable_crc_check) as reader:
+            stream_messages = list(reader.messages("/compare"))
+            stream_topics = reader.get_topics()
+            stream_start = reader.start_time
+            stream_end = reader.end_time
+
+        # Compare results
+        assert file_topics == stream_topics
+        assert file_start == stream_start
+        assert file_end == stream_end
+        assert len(file_messages) == len(stream_messages)
+        for fm, sm in zip(file_messages, stream_messages):
+            assert fm.log_time == sm.log_time
+            assert fm.data.data == sm.data.data
+
 ######################
 # Multi MCAP Reader  #
 ######################
