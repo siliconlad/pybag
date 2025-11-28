@@ -1,18 +1,18 @@
 """Tests for bug fixes in pybag."""
-import tempfile
 import os
+import tempfile
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
 import pytest
 
+import pybag.types as t
 from pybag.encoding.cdr import CdrDecoder, CdrEncoder
 from pybag.mcap.records import SchemaRecord
-from pybag.mcap_writer import McapFileWriter
 from pybag.mcap_reader import McapFileReader
+from pybag.mcap_writer import McapFileWriter
 from pybag.schema.ros2msg import Ros2MsgSchemaDecoder
 from pybag.types import Message
-import pybag.types as t
 
 
 class TestBug1WstringDecoding:
