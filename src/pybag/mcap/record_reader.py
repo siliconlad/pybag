@@ -195,7 +195,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        use_mmap: bool = False,
+        use_mmap: bool | None = None,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -206,11 +206,17 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            use_mmap: Whether to use memory-mapped file I/O for better performance
+            use_mmap: Whether to use memory-mapped file I/O. If None (default), automatically
+                chooses mmap for files larger than 512MB. Set to True/False to override.
 
         Returns:
             A McapChunkedReader instance
         """
+        # Auto-select mmap for large files (>512MB) if not explicitly specified
+        if use_mmap is None:
+            file_size = Path(file_path).stat().st_size
+            use_mmap = file_size > 512 * 1024 * 1024  # 512MB threshold
+
         reader = MmapReader(file_path) if use_mmap else FileReader(file_path)
         return McapChunkedReader(
             reader,
@@ -833,7 +839,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        use_mmap: bool = False,
+        use_mmap: bool | None = None,
     ) -> 'McapNonChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -844,11 +850,17 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            use_mmap: Whether to use memory-mapped file I/O for better performance
+            use_mmap: Whether to use memory-mapped file I/O. If None (default), automatically
+                chooses mmap for files larger than 512MB. Set to True/False to override.
 
         Returns:
             A McapNonChunkedReader instance
         """
+        # Auto-select mmap for large files (>512MB) if not explicitly specified
+        if use_mmap is None:
+            file_size = Path(file_path).stat().st_size
+            use_mmap = file_size > 512 * 1024 * 1024  # 512MB threshold
+
         reader = MmapReader(file_path) if use_mmap else FileReader(file_path)
         return McapNonChunkedReader(
             reader,
@@ -1162,7 +1174,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        use_mmap: bool = False,
+        use_mmap: bool | None = None,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file.
 
@@ -1173,7 +1185,8 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
-            use_mmap: Whether to use memory-mapped file I/O for better performance
+            use_mmap: Whether to use memory-mapped file I/O. If None (default), automatically
+                chooses mmap for files larger than 512MB. Set to True/False to override.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
