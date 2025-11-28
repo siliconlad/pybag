@@ -651,3 +651,193 @@ def test_multi_topic_out_of_order_from_official_mcap(
                 messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
                 assert [msg.data.data for msg in messages] == [data for _, data in expected]
+
+
+################################
+# Message Order (publish_time) #
+################################
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_message_order_publish_time(chunk_size, enable_crc_check: bool):
+    """Test that messages can be sorted by publish_time."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "publish_time.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            # Write messages where log_time and publish_time differ
+            # log_time: 1, 2, 3, 4, 5
+            # publish_time: 5, 4, 3, 2, 1 (reversed)
+            writer.write_message("/test", 1, std_msgs.String(data="msg_1"), publish_time=5)
+            writer.write_message("/test", 2, std_msgs.String(data="msg_2"), publish_time=4)
+            writer.write_message("/test", 3, std_msgs.String(data="msg_3"), publish_time=3)
+            writer.write_message("/test", 4, std_msgs.String(data="msg_4"), publish_time=2)
+            writer.write_message("/test", 5, std_msgs.String(data="msg_5"), publish_time=1)
+
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
+            # Test log order (ascending by log_time)
+            messages = list(reader.messages("/test", order="log"))
+            assert [msg.log_time for msg in messages] == [1, 2, 3, 4, 5]
+            assert [msg.data.data for msg in messages] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5"]
+
+            # Test publish order (ascending by publish_time)
+            messages = list(reader.messages("/test", order="publish"))
+            assert [msg.publish_time for msg in messages] == [1, 2, 3, 4, 5]
+            assert [msg.data.data for msg in messages] == ["msg_5", "msg_4", "msg_3", "msg_2", "msg_1"]
+
+            # Test log order reversed (descending by log_time)
+            messages = list(reader.messages("/test", order="log", reverse=True))
+            assert [msg.log_time for msg in messages] == [5, 4, 3, 2, 1]
+            assert [msg.data.data for msg in messages] == ["msg_5", "msg_4", "msg_3", "msg_2", "msg_1"]
+
+            # Test publish order reversed (descending by publish_time)
+            messages = list(reader.messages("/test", order="publish", reverse=True))
+            assert [msg.publish_time for msg in messages] == [5, 4, 3, 2, 1]
+            assert [msg.data.data for msg in messages] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5"]
+
+            # Test file order
+            messages = list(reader.messages("/test", order="file"))
+            assert [msg.data.data for msg in messages] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5"]
+
+            # Test file order reversed
+            messages = list(reader.messages("/test", order="file", reverse=True))
+            assert [msg.data.data for msg in messages] == ["msg_5", "msg_4", "msg_3", "msg_2", "msg_1"]
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_message_order_publish_time_random(chunk_size, enable_crc_check: bool):
+    """Test publish_time ordering with randomly shuffled timestamps."""
+    random.seed(123)  # Different seed for variety
+
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "publish_time_random.mcap"
+
+        # Create messages with different log_time and publish_time
+        log_times = list(range(10))
+        publish_times = list(range(10))
+        random.shuffle(log_times)
+        random.shuffle(publish_times)
+
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            for i, (log_t, pub_t) in enumerate(zip(log_times, publish_times)):
+                writer.write_message(
+                    "/test", log_t, std_msgs.String(data=f"msg_{i}"), publish_time=pub_t
+                )
+
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
+            # Verify publish ordering
+            messages = list(reader.messages("/test", order="publish"))
+            publish_times_result = [msg.publish_time for msg in messages]
+            assert publish_times_result == sorted(publish_times_result), \
+                f"Messages not in publish_time order: {publish_times_result}"
+
+            # Verify publish ordering reversed
+            messages = list(reader.messages("/test", order="publish", reverse=True))
+            publish_times_result = [msg.publish_time for msg in messages]
+            assert publish_times_result == sorted(publish_times_result, reverse=True), \
+                f"Messages not in reverse publish_time order: {publish_times_result}"
+
+
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_message_order_multiple_files_publish_time(enable_crc_check: bool):
+    """Test publish_time ordering across multiple files."""
+    with TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        file1 = temp_path / "one.mcap"
+        file2 = temp_path / "two.mcap"
+
+        # File 1: log_times 1, 3 with publish_times 4, 2
+        with McapFileWriter.open(file1, chunk_size=1) as writer:
+            writer.write_message("/chatter", 1, std_msgs.String(data="f1_a"), publish_time=4)
+            writer.write_message("/chatter", 3, std_msgs.String(data="f1_b"), publish_time=2)
+
+        # File 2: log_times 2, 4 with publish_times 1, 3
+        with McapFileWriter.open(file2, chunk_size=1) as writer:
+            writer.write_message("/chatter", 2, std_msgs.String(data="f2_a"), publish_time=1)
+            writer.write_message("/chatter", 4, std_msgs.String(data="f2_b"), publish_time=3)
+
+        reader = McapMultipleFileReader.from_files([file1, file2], enable_crc_check=enable_crc_check)
+
+        # Test log order (1, 2, 3, 4)
+        messages = list(reader.messages("/chatter", order="log"))
+        assert [m.log_time for m in messages] == [1, 2, 3, 4]
+        assert [m.data.data for m in messages] == ["f1_a", "f2_a", "f1_b", "f2_b"]
+
+        # Test publish order (1, 2, 3, 4 in publish_time)
+        messages = list(reader.messages("/chatter", order="publish"))
+        assert [m.publish_time for m in messages] == [1, 2, 3, 4]
+        assert [m.data.data for m in messages] == ["f2_a", "f1_b", "f2_b", "f1_a"]
+
+        # Test log order reversed (4, 3, 2, 1)
+        messages = list(reader.messages("/chatter", order="log", reverse=True))
+        assert [m.log_time for m in messages] == [4, 3, 2, 1]
+        assert [m.data.data for m in messages] == ["f2_b", "f1_b", "f2_a", "f1_a"]
+
+        # Test publish order reversed (4, 3, 2, 1 in publish_time)
+        messages = list(reader.messages("/chatter", order="publish", reverse=True))
+        assert [m.publish_time for m in messages] == [4, 3, 2, 1]
+        assert [m.data.data for m in messages] == ["f1_a", "f2_b", "f1_b", "f2_a"]
+
+        reader.close()
+
+
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_message_order_multiple_files_file_order_raises(enable_crc_check: bool):
+    """Test that order='file' raises an error for multiple files."""
+    with TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        file1 = temp_path / "one.mcap"
+        file2 = temp_path / "two.mcap"
+
+        with McapFileWriter.open(file1, chunk_size=1) as writer:
+            writer.write_message("/chatter", 1, std_msgs.String(data="hello"))
+
+        with McapFileWriter.open(file2, chunk_size=1) as writer:
+            writer.write_message("/chatter", 2, std_msgs.String(data="world"))
+
+        reader = McapMultipleFileReader.from_files([file1, file2], enable_crc_check=enable_crc_check)
+
+        with pytest.raises(ValueError, match='order="file" is not supported'):
+            list(reader.messages("/chatter", order="file"))
+
+        reader.close()
+
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_backward_compatibility_in_log_time_order(chunk_size, enable_crc_check: bool):
+    """Test that in_log_time_order parameter still works for backward compatibility."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "backward_compat.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            writer.write_message("/test", 1, std_msgs.String(data="msg_1"))
+            writer.write_message("/test", 2, std_msgs.String(data="msg_2"))
+            writer.write_message("/test", 3, std_msgs.String(data="msg_3"))
+
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
+            # Test in_log_time_order=True (should behave like order="log")
+            messages = list(reader.messages("/test", in_log_time_order=True))
+            assert [msg.log_time for msg in messages] == [1, 2, 3]
+
+            # Test in_log_time_order=False (should behave like order="file")
+            messages = list(reader.messages("/test", in_log_time_order=False))
+            assert [msg.data.data for msg in messages] == ["msg_1", "msg_2", "msg_3"]

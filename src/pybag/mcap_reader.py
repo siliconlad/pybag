@@ -5,7 +5,7 @@ from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from pybag.deserialize import MessageDeserializerFactory
 from pybag.mcap.error import McapUnknownEncodingError, McapUnknownTopicError
@@ -16,6 +16,9 @@ from pybag.mcap.record_reader import (
 from pybag.mcap.records import AttachmentRecord, MetadataRecord
 
 logger = logging.getLogger(__name__)
+
+# Type alias for message ordering options
+MessageOrder = Literal["log", "publish", "file"]
 
 
 @dataclass(slots=True)
@@ -102,7 +105,9 @@ class McapFileReader:
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
-        in_log_time_order: bool = True
+        in_log_time_order: bool | None = None,
+        order: MessageOrder = "log",
+        reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -116,11 +121,24 @@ class McapFileReader:
             start_time: Start time to filter by. If None, start from the beginning.
             end_time: End time to filter by. If None, read to the end.
             filter: Callable to filter messages. If None, all messages are returned.
-            in_log_time_order: Return messages in log time order if True, otherwise in write order.
+            in_log_time_order: Deprecated. Use order instead.
+                If True, equivalent to order="log".
+                If False, equivalent to order="file".
+            order: The field to order messages by. Defaults to "log".
+                - "log": Order by log_time.
+                - "publish": Order by publish_time.
+                - "file": Order by position in file (write order).
+            reverse: If True, return messages in descending order. Defaults to False.
 
         Returns:
             Generator yielding DecodedMessage objects from matching topics.
         """
+        # Handle backward compatibility with in_log_time_order
+        if in_log_time_order is not None:
+            if in_log_time_order:
+                order = "log"
+            else:
+                order = "file"
         # If empty list we return no messages
         if (concrete_topics := self._expand_topics(topic)) == []:
             return
@@ -158,22 +176,55 @@ class McapFileReader:
         if message_deserializer is None:
             raise McapUnknownEncodingError(f'Unknown encoding type: {self._profile}')
 
-        for msg in self._reader.get_messages(
-            list(channel_infos.keys()),
-            start_time,
-            end_time,
-            in_log_time_order=in_log_time_order
-        ):
+        # Determine how to read messages from low-level reader
+        # log order can stream directly (unless reversed)
+        # file order can stream directly (reverse has no effect)
+        # publish order requires collecting all messages and sorting
+        use_log_time_order = order == "log"
+
+        def decode_message(msg):
             _, schema = channel_infos[msg.channel_id]
-            decoded = DecodedMessage(
+            return DecodedMessage(
                 msg.channel_id,
                 msg.sequence,
                 msg.log_time,
                 msg.publish_time,
                 message_deserializer.deserialize_message(msg, schema),
             )
-            if filter is None or filter(decoded):
-                yield decoded
+
+        raw_messages = self._reader.get_messages(
+            list(channel_infos.keys()),
+            start_time,
+            end_time,
+            in_log_time_order=use_log_time_order
+        )
+
+        # For log order without reverse, yield directly (streaming)
+        if order == "log" and not reverse:
+            for msg in raw_messages:
+                decoded = decode_message(msg)
+                if filter is None or filter(decoded):
+                    yield decoded
+        # For file order without reverse, yield directly (streaming)
+        elif order == "file" and not reverse:
+            for msg in raw_messages:
+                decoded = decode_message(msg)
+                if filter is None or filter(decoded):
+                    yield decoded
+        else:
+            # For other orders, we need to collect and sort/reverse
+            decoded_messages = [decode_message(msg) for msg in raw_messages]
+
+            if order == "log":
+                decoded_messages.sort(key=lambda m: (m.log_time, m.sequence), reverse=reverse)
+            elif order == "publish":
+                decoded_messages.sort(key=lambda m: (m.publish_time, m.log_time, m.sequence), reverse=reverse)
+            elif order == "file" and reverse:
+                decoded_messages.reverse()
+
+            for decoded in decoded_messages:
+                if filter is None or filter(decoded):
+                    yield decoded
 
     def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
         """Get attachments from the MCAP file.
@@ -266,25 +317,60 @@ class McapMultipleFileReader:
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
-        in_log_time_order: bool = True,
+        in_log_time_order: bool | None = None,
+        order: MessageOrder = "log",
+        reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
-        # in_log_time_order being false makes less sense when multiple files are involved
-        # possible strategies could be to iterate through all messages in one file before
-        # iterating through the next file, but seems a bit weird so will leave it for now
-        if not in_log_time_order:
-            raise ValueError('in_log_time_order must be True')
+        """
+        Iterate over messages from all MCAP files in the specified order.
+
+        Args:
+            topic: Topic(s) to filter by.
+            start_time: Start time to filter by. If None, start from the beginning.
+            end_time: End time to filter by. If None, read to the end.
+            filter: Callable to filter messages. If None, all messages are returned.
+            in_log_time_order: Deprecated. Use order instead.
+            order: The field to order messages by. Defaults to "log".
+                - "log": Order by log_time.
+                - "publish": Order by publish_time.
+                - "file": Not supported for multiple files (raises ValueError).
+            reverse: If True, return messages in descending order. Defaults to False.
+
+        Returns:
+            Generator yielding DecodedMessage objects from matching topics.
+
+        Raises:
+            ValueError: If order="file" is specified (not supported for multiple files).
+        """
+        # Handle backward compatibility with in_log_time_order
+        if in_log_time_order is not None:
+            if in_log_time_order:
+                order = "log"
+            else:
+                raise ValueError('in_log_time_order=False is not supported for multiple files')
+
+        if order == "file":
+            raise ValueError('order="file" is not supported for multiple files')
+
+        # Determine the time key to use for heap ordering
+        def get_time_key(msg: DecodedMessage) -> int:
+            if order == "log":
+                return msg.log_time
+            else:  # publish
+                return msg.publish_time
 
         # Initialize the heap with the first message of each file
         heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
         for reader in self._readers:
-            it = iter(reader.messages(topic, start_time, end_time,in_log_time_order=in_log_time_order))
+            it = iter(reader.messages(topic, start_time, end_time, order=order, reverse=reverse))
             try:
                 msg = next(it)
-                heapq.heappush(heap, (msg.log_time, len(heap), msg, it))
+                time_key = -get_time_key(msg) if reverse else get_time_key(msg)
+                heapq.heappush(heap, (time_key, len(heap), msg, it))
             except StopIteration:
                 continue
 
-        # Yield messages from each file in log time order
+        # Yield messages from each file in the requested order
         # Ties are split by the index the files were provided to in the constructor
         while heap:
             _, idx, msg, it = heapq.heappop(heap)
@@ -292,7 +378,8 @@ class McapMultipleFileReader:
                 yield msg
             try:
                 next_msg = next(it)
-                heapq.heappush(heap, (next_msg.log_time, idx, next_msg, it))
+                time_key = -get_time_key(next_msg) if reverse else get_time_key(next_msg)
+                heapq.heappush(heap, (time_key, idx, next_msg, it))
             except StopIteration:
                 pass
 
