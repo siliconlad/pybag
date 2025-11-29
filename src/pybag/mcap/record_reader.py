@@ -605,6 +605,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 channel_id_set,
                 start_timestamp,
                 end_timestamp,
+                in_reverse=in_reverse,
             )
             return
 
@@ -778,6 +779,8 @@ class McapChunkedReader(BaseMcapRecordReader):
         channel_id_set: set[int] | None,
         start_timestamp: int | None,
         end_timestamp: int | None,
+        *,
+        in_reverse: bool = False,
     ) -> Generator[MessageRecord, None, None]:
         """Read messages preserving the order they were written to the file.
 
@@ -786,12 +789,13 @@ class McapChunkedReader(BaseMcapRecordReader):
             channel_id_set: Set of channel IDs to filter by, or None for all channels
             start_timestamp: Start timestamp filter
             end_timestamp: End timestamp filter
+            in_reverse: If True, yield messages in reverse write order (last written first)
 
         Yields:
-            MessageRecord objects in write order
+            MessageRecord objects in write order (or reverse write order if in_reverse)
         """
 
-        for chunk_index in sorted(chunks, key=lambda ci: ci.chunk_start_offset):
+        for chunk_index in sorted(chunks, key=lambda ci: ci.chunk_start_offset, reverse=in_reverse):
             if channel_id_set is None:
                 # All channels in this chunk
                 message_indexes = self.get_message_indexes(chunk_index).values()
@@ -817,7 +821,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not entries:
                 continue
 
-            entries.sort(key=lambda x: x[1])
+            entries.sort(key=lambda x: x[1], reverse=in_reverse)
 
             reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for _, offset in entries:
@@ -1286,7 +1290,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         if in_log_time_order:
             entries.sort(key=lambda x: (x[0], x[1]), reverse=in_reverse)
         else:
-            entries.sort(key=lambda x: x[1])
+            entries.sort(key=lambda x: x[1], reverse=in_reverse)
 
         logger.debug(f'Found {len(entries)} messages')
 
