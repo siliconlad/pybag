@@ -15,10 +15,9 @@ from mcap.reader import make_reader
 from mcap_ros2.decoder import DecoderFactory
 from pytest_benchmark.fixture import BenchmarkFixture
 
+from benchmarks.benchmark_utils import create_test_mcap
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap_reader import McapFileReader
-
-from benchmarks.benchmark_utils import create_test_mcap
 
 # =============================================================================
 # Raw message iteration (without deserialization)
@@ -27,7 +26,7 @@ from benchmarks.benchmark_utils import create_test_mcap
 def read_raw_reverse_with_pybag(mcap: Path) -> Iterator[bytes]:
     """Read raw messages in reverse order using pybag's native support."""
     with McapRecordReaderFactory.from_file(mcap) as reader:
-        for message in reader.get_messages(reverse=True):
+        for message in reader.get_messages(in_reverse=True):
             yield message.data
 
 
@@ -127,7 +126,7 @@ def test_pybag_raw_forward(benchmark: BenchmarkFixture) -> None:
 
         def read_forward():
             with McapRecordReaderFactory.from_file(mcap) as reader:
-                for message in reader.get_messages(reverse=False):
+                for message in reader.get_messages(in_reverse=False):
                     pass
 
         benchmark(read_forward)
@@ -140,7 +139,7 @@ def test_pybag_raw_reverse_only(benchmark: BenchmarkFixture) -> None:
 
         def read_reverse():
             with McapRecordReaderFactory.from_file(mcap) as reader:
-                for message in reader.get_messages(reverse=True):
+                for message in reader.get_messages(in_reverse=True):
                     pass
 
         benchmark(read_reverse)
@@ -161,7 +160,7 @@ def test_pybag_raw_reverse_first_100(benchmark: BenchmarkFixture) -> None:
         def read_first_100_reverse():
             with McapRecordReaderFactory.from_file(mcap) as reader:
                 count = 0
-                for message in reader.get_messages(reverse=True):
+                for message in reader.get_messages(in_reverse=True):
                     count += 1
                     if count >= 100:
                         break

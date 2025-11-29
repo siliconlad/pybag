@@ -9,9 +9,8 @@ from pytest_benchmark.fixture import BenchmarkFixture
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 
-from pybag.mcap_reader import McapFileReader
-
 from benchmarks.benchmark_utils import create_test_mcap
+from pybag.mcap_reader import McapFileReader
 
 
 def read_with_pybag(mcap: Path) -> Iterator[Any]:
