@@ -1,8 +1,6 @@
 """MCAP sorting CLI command."""
 
-import argparse
 import logging
-from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal
@@ -10,7 +8,6 @@ from typing import Literal
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
-from pybag.mcap.records import MessageRecord
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +19,8 @@ def sort_mcap(
     chunk_compression: Literal["lz4", "zstd"] | None = None,
     *,
     overwrite: bool = False,
-    by_topic: bool = False,
-    log_time: bool = False,
+    sort_by_topic: bool = False,
+    sort_by_log_time: bool = False,
 ) -> Path:
     """Sort an MCAP file by topic and/or log time.
 
@@ -39,8 +36,8 @@ def sort_mcap(
         chunk_size: The size of chunks to write in bytes. If None, uses default chunking.
         chunk_compression: The compression to use for chunks ("lz4" or "zstd").
         overwrite: Whether to overwrite the output file if it exists.
-        by_topic: If True, group messages by topic in chunks.
-        log_time: If True, sort messages by log time.
+        sort_by_topic: If True, group messages by topic in chunks.
+        sort_by_log_time: If True, sort messages by log time.
 
     Returns:
         The path to the output MCAP file, or input path if no sorting requested.
@@ -49,7 +46,7 @@ def sort_mcap(
     input_path = Path(input_path).resolve()
 
     # Early return if no sorting is requested
-    if not by_topic and not log_time:
+    if not sort_by_topic and not sort_by_log_time:
         logger.info("No sorting flags specified, returning input path unchanged.")
         return input_path
 
@@ -66,19 +63,8 @@ def sort_mcap(
 
     with McapRecordReaderFactory.from_file(input_path) as reader:
         # Get all channels and schemas
+        all_schemas = reader.get_schemas()
         all_channels = reader.get_channels()
-        all_schemas = {}
-        for channel_id, channel in all_channels.items():
-            schema_id = channel.schema_id
-            if schema_id != 0 and schema_id not in all_schemas:
-                if (schema := reader.get_schema(schema_id)) is not None:
-                    all_schemas[schema_id] = schema
-
-        # Read all messages
-        logger.info("Reading messages...")
-        all_messages: list[MessageRecord] = list(
-            reader.get_messages(in_log_time_order=False)
-        )
 
         # Read all attachments and metadata to preserve them
         all_attachments = reader.get_attachments()
@@ -95,99 +81,19 @@ def sort_mcap(
             for schema in all_schemas.values():
                 writer.write_schema(schema)
 
-            written_channel_ids: set[int] = set()
+            # Write all channels
+            for channel in all_channels.values():
+                writer.write_channel(channel)
 
-            if by_topic and not log_time:
-                # by_topic only: group messages by topic, preserve original sequences
-                messages_by_topic: dict[str, list[MessageRecord]] = defaultdict(list)
-                for msg_record in all_messages:
-                    topic = all_channels[msg_record.channel_id].topic
-                    messages_by_topic[topic].append(msg_record)
-
-                logger.info(
-                    f"Writing sorted MCAP with {len(messages_by_topic)} topics..."
-                )
-
-                # Write messages grouped by topic, preserving original sequence numbers
-                for topic, messages in messages_by_topic.items():
-                    logger.info(f"Writing {len(messages)} messages for topic {topic}")
-
-                    for msg_record in messages:
-                        # Write the channel record the first time
-                        if msg_record.channel_id not in written_channel_ids:
-                            writer.write_channel(all_channels[msg_record.channel_id])
-                            written_channel_ids.add(msg_record.channel_id)
-
-                        # Preserve original sequence number since order is unchanged
+            if sort_by_topic:  # by_topic: group messages by topic
+                for channel_id in reader.get_channels().keys():
+                    for msg_record in reader.get_messages(channel_id, in_log_time_order=sort_by_log_time):
                         writer.write_message(msg_record)
-
                     # Flush the chunk to ensure topic separation
                     writer.flush_chunk()
-
-            elif by_topic and log_time:
-                # by_topic + log_time: group by topic, sort by log time within each topic
-                # Sequences must be renumbered since order changes within each channel
-                sequence_counters: dict[int, int] = defaultdict(int)
-
-                messages_by_topic: dict[str, list[MessageRecord]] = defaultdict(list)
-                for msg_record in all_messages:
-                    topic = all_channels[msg_record.channel_id].topic
-                    messages_by_topic[topic].append(msg_record)
-
-                logger.info(
-                    f"Writing sorted MCAP with {len(messages_by_topic)} topics..."
-                )
-
-                for topic, messages in messages_by_topic.items():
-                    messages = sorted(messages, key=lambda m: m.log_time)
-                    logger.info(f"Writing {len(messages)} messages for topic {topic}")
-
-                    for msg_record in messages:
-                        # Write the channel record the first time
-                        if msg_record.channel_id not in written_channel_ids:
-                            writer.write_channel(all_channels[msg_record.channel_id])
-                            written_channel_ids.add(msg_record.channel_id)
-
-                        # Renumber sequence since log time sorting changes order
-                        new_record = MessageRecord(
-                            channel_id=msg_record.channel_id,
-                            sequence=sequence_counters[msg_record.channel_id],
-                            log_time=msg_record.log_time,
-                            publish_time=msg_record.publish_time,
-                            data=msg_record.data,
-                        )
-                        sequence_counters[msg_record.channel_id] += 1
-                        writer.write_message(new_record)
-
-                    # Flush the chunk to ensure topic separation
-                    writer.flush_chunk()
-
-            else:
-                # log_time only: sort all messages by log time without grouping
-                # Sequences must be renumbered since order changes
-                sequence_counters: dict[int, int] = defaultdict(int)
-
-                logger.info(
-                    f"Writing sorted MCAP with {len(all_messages)} messages in log time order..."
-                )
-                sorted_messages = sorted(all_messages, key=lambda m: m.log_time)
-
-                for msg_record in sorted_messages:
-                    # Write the channel record the first time
-                    if msg_record.channel_id not in written_channel_ids:
-                        writer.write_channel(all_channels[msg_record.channel_id])
-                        written_channel_ids.add(msg_record.channel_id)
-
-                    # Write message with updated sequence number
-                    new_record = MessageRecord(
-                        channel_id=msg_record.channel_id,
-                        sequence=sequence_counters[msg_record.channel_id],
-                        log_time=msg_record.log_time,
-                        publish_time=msg_record.publish_time,
-                        data=msg_record.data,
-                    )
-                    sequence_counters[msg_record.channel_id] += 1
-                    writer.write_message(new_record)
+            else:  # log_time only: sort all messages by log time without grouping
+                for msg_record in reader.get_messages(in_log_time_order=True):
+                    writer.write_message(msg_record)
 
             # Write all attachments to preserve them
             for attachment in all_attachments:
@@ -216,8 +122,7 @@ def add_parser(subparsers) -> None:
             - --by-topic --log-time: Group by topic and sort by log time within
               each topic group.
 
-            If no sorting flags are specified, no output file is created and the
-            input path is returned unchanged.
+            If no sorting flags are specified, no output file is created.
         """),
     )
     parser.add_argument("input", help="Path to input MCAP file (*.mcap)")
@@ -258,7 +163,7 @@ def add_parser(subparsers) -> None:
             chunk_size=args.chunk_size,
             chunk_compression=args.chunk_compression,
             overwrite=args.overwrite,
-            by_topic=args.by_topic,
-            log_time=args.log_time,
+            sort_by_topic=args.by_topic,
+            sort_by_log_time=args.log_time,
         )
     )
