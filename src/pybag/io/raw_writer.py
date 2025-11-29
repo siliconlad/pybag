@@ -41,6 +41,36 @@ class FileWriter(BaseWriter):
         self._file.close()
 
 
+class AppendFileWriter(BaseWriter):
+    """Write binary data to a file, supporting seek and truncate for append mode.
+
+    Unlike FileWriter which only supports forward writing, this class opens
+    the file in read+write mode to allow seeking and truncating for MCAP append operations.
+    """
+
+    def __init__(self, file_path: Path | str):
+        self._file_path = Path(file_path).absolute()
+        # Open in read+write binary mode (file must exist)
+        self._file = open(self._file_path, "r+b")
+
+    def write(self, data: bytes) -> int:
+        return self._file.write(data)
+
+    def tell(self) -> int:
+        return self._file.tell()
+
+    def seek(self, offset: int) -> int:
+        """Seek to a specific position in the file."""
+        return self._file.seek(offset)
+
+    def truncate(self) -> None:
+        """Truncate the file at the current position."""
+        self._file.truncate()
+
+    def close(self) -> None:
+        self._file.close()
+
+
 class BytesWriter(BaseWriter):
     """Write binary data to an in-memory bytes buffer."""
 

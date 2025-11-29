@@ -407,3 +407,372 @@ def test_metadata_roundtrip(chunk_size, chunk_compression):
 
     finally:
         temp_path.unlink()
+
+
+# =============================================================================
+# Append Mode Tests
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+        pytest.param(1024, "zstd", id="chunked_zstd"),
+    ],
+)
+def test_append_mode_basic(chunk_size, chunk_compression):
+    """Test basic append mode - append messages to existing file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial MCAP file
+        with McapFileWriter.open(
+            temp_path,
+            mode="w",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
+            writer.write_message("/topic1", 2000, std_msgs.String(data="msg2"))
+
+        # Verify initial file
+        with McapFileReader.from_file(temp_path) as reader:
+            msgs = list(reader.messages("*"))
+            assert len(msgs) == 2
+            stats = reader._reader.get_statistics()
+            assert stats.message_count == 2
+
+        # Append to the file
+        with McapFileWriter.open(
+            temp_path,
+            mode="a",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/topic1", 3000, std_msgs.String(data="msg3"))
+            writer.write_message("/topic1", 4000, std_msgs.String(data="msg4"))
+
+        # Verify appended file
+        with McapFileReader.from_file(temp_path) as reader:
+            msgs = list(reader.messages("*"))
+            assert len(msgs) == 4
+
+            stats = reader._reader.get_statistics()
+            assert stats.message_count == 4
+            assert stats.message_start_time == 1000
+            assert stats.message_end_time == 4000
+
+    finally:
+        temp_path.unlink()
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+    ],
+)
+def test_append_mode_new_topic(chunk_size, chunk_compression):
+    """Test append mode with a new topic not in the original file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial MCAP file with one topic
+        with McapFileWriter.open(
+            temp_path,
+            mode="w",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
+
+        # Append with a different topic
+        with McapFileWriter.open(
+            temp_path,
+            mode="a",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/topic2", 2000, std_msgs.Int32(data=42))
+
+        # Verify both topics exist
+        with McapFileReader.from_file(temp_path) as reader:
+            topics = reader.get_topics()
+            assert len(topics) == 2
+            assert "/topic1" in topics
+            assert "/topic2" in topics
+
+            msgs = list(reader.messages("*"))
+            assert len(msgs) == 2
+
+            stats = reader._reader.get_statistics()
+            assert stats.message_count == 2
+            assert stats.channel_count == 2
+            # Two schemas: std_msgs/String and std_msgs/Int32
+            assert stats.schema_count == 2
+
+    finally:
+        temp_path.unlink()
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+    ],
+)
+def test_append_mode_preserves_data(chunk_size, chunk_compression):
+    """Test that append mode preserves all original messages."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial messages
+        with McapFileWriter.open(
+            temp_path,
+            mode="w",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/test", 1000, std_msgs.String(data="original1"))
+            writer.write_message("/test", 2000, std_msgs.String(data="original2"))
+
+        # Append more messages
+        with McapFileWriter.open(
+            temp_path,
+            mode="a",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/test", 3000, std_msgs.String(data="appended1"))
+
+        # Verify all messages are present
+        with McapFileReader.from_file(temp_path) as reader:
+            msgs = list(reader.messages("*"))
+            assert len(msgs) == 3
+
+            # Check message contents
+            msg_data = [m.data.data for m in msgs]
+            assert "original1" in msg_data
+            assert "original2" in msg_data
+            assert "appended1" in msg_data
+
+    finally:
+        temp_path.unlink()
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+    ],
+)
+def test_append_mode_attachments(chunk_size, chunk_compression):
+    """Test append mode preserves and adds attachments."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial file with attachment
+        with McapFileWriter.open(
+            temp_path,
+            mode="w",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+            writer.write_attachment(
+                name="file1.txt",
+                data=b"original content",
+                media_type="text/plain",
+                log_time=1000,
+            )
+
+        # Append with another attachment
+        with McapFileWriter.open(
+            temp_path,
+            mode="a",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+            writer.write_attachment(
+                name="file2.txt",
+                data=b"appended content",
+                media_type="text/plain",
+                log_time=2000,
+            )
+
+        # Verify all attachments are present
+        with McapFileReader.from_file(temp_path) as reader:
+            attachments = reader.get_attachments()
+            assert len(attachments) == 2
+
+            names = [a.name for a in attachments]
+            assert "file1.txt" in names
+            assert "file2.txt" in names
+
+            stats = reader._reader.get_statistics()
+            assert stats.attachment_count == 2
+
+    finally:
+        temp_path.unlink()
+
+
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(None, None, id="non_chunked"),
+        pytest.param(1024, "lz4", id="chunked_lz4"),
+    ],
+)
+def test_append_mode_metadata(chunk_size, chunk_compression):
+    """Test append mode preserves and adds metadata."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial file with metadata
+        with McapFileWriter.open(
+            temp_path,
+            mode="w",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+            writer.write_metadata(name="info1", metadata={"key": "value1"})
+
+        # Append with more metadata
+        with McapFileWriter.open(
+            temp_path,
+            mode="a",
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression
+        ) as writer:
+            writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+            writer.write_metadata(name="info2", metadata={"key": "value2"})
+
+        # Verify all metadata is present
+        with McapFileReader.from_file(temp_path) as reader:
+            metadata = reader.get_metadata()
+            assert len(metadata) == 2
+
+            names = [m.name for m in metadata]
+            assert "info1" in names
+            assert "info2" in names
+
+            stats = reader._reader.get_statistics()
+            assert stats.metadata_count == 2
+
+    finally:
+        temp_path.unlink()
+
+
+def test_append_mode_multiple_appends():
+    """Test multiple append operations on the same file."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial file
+        with McapFileWriter.open(temp_path, mode="w", chunk_size=1024) as writer:
+            writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+
+        # First append
+        with McapFileWriter.open(temp_path, mode="a", chunk_size=1024) as writer:
+            writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+
+        # Second append
+        with McapFileWriter.open(temp_path, mode="a", chunk_size=1024) as writer:
+            writer.write_message("/test", 3000, std_msgs.String(data="msg3"))
+
+        # Third append
+        with McapFileWriter.open(temp_path, mode="a", chunk_size=1024) as writer:
+            writer.write_message("/test", 4000, std_msgs.String(data="msg4"))
+
+        # Verify all messages are present
+        with McapFileReader.from_file(temp_path) as reader:
+            msgs = list(reader.messages("*"))
+            assert len(msgs) == 4
+
+            stats = reader._reader.get_statistics()
+            assert stats.message_count == 4
+            assert stats.message_start_time == 1000
+            assert stats.message_end_time == 4000
+
+    finally:
+        temp_path.unlink()
+
+
+def test_append_mode_sequence_numbers():
+    """Test that sequence numbers continue correctly in append mode."""
+    @dataclass
+    class TestMsg:
+        __msg_name__ = "tests/msgs/TestMsg"
+        value: pybag.int32
+
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        # Write initial file with 2 messages
+        with McapFileWriter.open(temp_path, mode="w", chunk_size=None) as writer:
+            writer.write_message("/test", 1000, TestMsg(value=1))
+            writer.write_message("/test", 2000, TestMsg(value=2))
+
+        # Append 2 more messages
+        with McapFileWriter.open(temp_path, mode="a", chunk_size=None) as writer:
+            writer.write_message("/test", 3000, TestMsg(value=3))
+            writer.write_message("/test", 4000, TestMsg(value=4))
+
+        # Verify sequence numbers
+        data = temp_path.read_bytes()
+        from pybag.io.raw_reader import BytesReader
+        from pybag.mcap.record_parser import McapRecordParser, McapRecordType
+
+        reader = BytesReader(data)
+        # Skip magic bytes and header
+        McapRecordParser.parse_magic_bytes(reader)
+        McapRecordParser.parse_header(reader)
+        # Skip schema and channel
+        McapRecordParser.skip_record(reader)
+        McapRecordParser.skip_record(reader)
+
+        # Read messages and collect sequence numbers
+        sequences = []
+        while McapRecordParser.peek_record(reader) == McapRecordType.MESSAGE:
+            msg = McapRecordParser.parse_message(reader)
+            sequences.append(msg.sequence)
+
+        # Sequences should be 0, 1, 2, 3
+        assert sequences == [0, 1, 2, 3]
+
+    finally:
+        temp_path.unlink()
+
+
+def test_append_mode_invalid_mode():
+    """Test that invalid mode raises an error."""
+    with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
+        temp_path = Path(f.name)
+
+    try:
+        with pytest.raises(ValueError, match="Invalid mode"):
+            McapFileWriter.open(temp_path, mode="x")  # type: ignore
+    finally:
+        temp_path.unlink()
+
+
+def test_append_mode_file_not_exists():
+    """Test that append mode fails on non-existent file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        file_path = Path(tmpdir) / "nonexistent.mcap"
+        with pytest.raises(FileNotFoundError):
+            McapFileWriter.open(file_path, mode="a")

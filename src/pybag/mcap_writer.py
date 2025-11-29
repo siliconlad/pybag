@@ -4,16 +4,23 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pybag.io.raw_writer import BaseWriter, FileWriter
+from pybag.io.raw_reader import FileReader
+from pybag.io.raw_writer import AppendFileWriter, BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
+from pybag.mcap.record_parser import DATA_END_SIZE, FOOTER_SIZE, MAGIC_BYTES_SIZE
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import (
+    AttachmentIndexRecord,
     AttachmentRecord,
     ChannelRecord,
+    ChunkIndexRecord,
     MessageRecord,
+    MetadataIndexRecord,
     MetadataRecord,
-    SchemaRecord
+    SchemaRecord,
+    StatisticsRecord,
 )
+from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
 
@@ -64,6 +71,7 @@ class McapFileWriter:
         self._next_channel_id = 1
         self._topics: dict[str, int] = {}  # topic -> channel_id
         self._schemas: dict[type[Message], int] = {}  # type -> schema_id
+        self._schema_names: dict[str, int] = {}  # schema name -> schema_id
         self._sequences: dict[int, int] = {}  # channel_id -> sequence number
 
     def __enter__(self) -> "McapFileWriter":
@@ -79,6 +87,7 @@ class McapFileWriter:
         cls,
         file_path: str | Path,
         *,
+        mode: Literal["w", "a"] = "w",
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
@@ -87,6 +96,8 @@ class McapFileWriter:
 
         Args:
             file_path: The path to the file to write to.
+            mode: The mode to open the file in. 'w' for write (default), 'a' for append.
+                  In append mode, the file must already exist and be a valid MCAP file.
             profile: The profile to use for the MCAP file.
             chunk_size: The size of the chunk to write to in bytes.
                        If None, writes without chunking.
@@ -95,12 +106,160 @@ class McapFileWriter:
         Returns:
             A writer backed by a file on disk.
         """
-        return cls(
-            FileWriter(file_path),
-            profile=profile,
+        if mode == "w":
+            return cls(
+                FileWriter(file_path),
+                profile=profile,
+                chunk_size=chunk_size,
+                chunk_compression=chunk_compression,
+            )
+        elif mode == "a":
+            return cls._open_append(
+                file_path,
+                profile=profile,
+                chunk_size=chunk_size,
+                chunk_compression=chunk_compression,
+            )
+        else:
+            raise ValueError(f"Invalid mode: {mode}. Use 'w' for write or 'a' for append.")
+
+    @classmethod
+    def _open_append(
+        cls,
+        file_path: str | Path,
+        *,
+        profile: str = "ros2",
+        chunk_size: int | None = None,
+        chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
+    ) -> "McapFileWriter":
+        """Open an existing MCAP file for appending.
+
+        Args:
+            file_path: The path to the existing MCAP file.
+            profile: The profile to use (should match existing file).
+            chunk_size: The size of the chunk to write to in bytes.
+            chunk_compression: The compression to use for the chunk.
+
+        Returns:
+            A writer configured to append to the existing file.
+        """
+        file_path = Path(file_path)
+
+        # Read the existing file to load summary information
+        with FileReader(file_path) as reader:
+            # Try chunked summary first, fall back to non-chunked
+            try:
+                summary: McapChunkedSummary | McapNonChunkedSummary = McapChunkedSummary(
+                    reader,
+                    enable_crc_check=False,
+                    enable_reconstruction='missing',
+                )
+                is_chunked = True
+            except Exception:
+                # Fall back to non-chunked summary
+                summary = McapNonChunkedSummary(
+                    reader,
+                    enable_crc_check=False,
+                    enable_reconstruction='missing',
+                )
+                is_chunked = False
+
+            # Load existing data
+            schemas = summary.get_schemas()
+            channels = summary.get_channels()
+            statistics = summary.get_statistics()
+            if statistics is None:
+                statistics = StatisticsRecord(
+                    message_count=0,
+                    schema_count=len(schemas),
+                    channel_count=len(channels),
+                    attachment_count=0,
+                    metadata_count=0,
+                    chunk_count=0,
+                    message_start_time=0,
+                    message_end_time=0,
+                    channel_message_counts={},
+                )
+
+            # Get chunk indexes for chunked files
+            chunk_indexes: list[ChunkIndexRecord] = []
+            if is_chunked and isinstance(summary, McapChunkedSummary):
+                chunk_indexes = summary.get_chunk_indexes()
+
+            # Get attachment and metadata indexes
+            attachment_indexes_dict = summary.get_attachment_indexes()
+            metadata_indexes_dict = summary.get_metadata_indexes()
+
+            # Flatten the dictionaries to lists
+            attachment_indexes: list[AttachmentIndexRecord] = []
+            for indexes in attachment_indexes_dict.values():
+                attachment_indexes.extend(indexes)
+
+            metadata_indexes: list[MetadataIndexRecord] = []
+            for indexes in metadata_indexes_dict.values():
+                metadata_indexes.extend(indexes)
+
+            # Calculate the data end position
+            # The data section ends at footer.summary_start - DATA_END_SIZE
+            # or if there's no summary, it ends at file_size - FOOTER_SIZE - MAGIC_BYTES_SIZE - DATA_END_SIZE
+            footer = summary._footer
+            if footer.summary_start != 0:
+                data_end_position = footer.summary_start - DATA_END_SIZE
+            else:
+                reader.seek_from_end(0)
+                file_size = reader.tell()
+                data_end_position = file_size - FOOTER_SIZE - MAGIC_BYTES_SIZE - DATA_END_SIZE
+
+        # Create append writer
+        append_writer = AppendFileWriter(file_path)
+        record_writer = McapRecordWriterFactory.create_append_writer(
+            append_writer,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
+            schemas=schemas,
+            channels=channels,
+            statistics=statistics,
+            chunk_indexes=chunk_indexes,
+            attachment_indexes=attachment_indexes,
+            metadata_indexes=metadata_indexes,
+            data_end_position=data_end_position,
         )
+
+        # Create the high-level writer instance
+        instance = cls.__new__(cls)
+
+        # Initialize the record writer directly (bypass __init__)
+        instance._record_writer = record_writer
+        instance._profile = profile
+
+        # Get message serializer
+        message_serializer = MessageSerializerFactory.from_profile(profile)
+        if message_serializer is None:
+            raise ValueError(f"Unknown encoding type: {profile}")
+        instance._message_serializer = message_serializer
+
+        # Initialize tracking from existing data
+        # Find the next schema and channel IDs
+        instance._next_schema_id = max(schemas.keys(), default=0) + 1
+        instance._next_channel_id = max(channels.keys(), default=0) + 1
+
+        # Build topic -> channel_id mapping
+        instance._topics = {ch.topic: ch.id for ch in channels.values()}
+
+        # Build schema name -> schema_id mapping (for matching existing schemas)
+        instance._schema_names = {sch.name: sch.id for sch in schemas.values()}
+
+        # We cannot directly map type[Message] -> schema_id without the original types
+        # So we start with an empty mapping; new types will get new IDs
+        instance._schemas = {}
+
+        # Initialize sequence numbers from existing message counts
+        instance._sequences = {
+            channel_id: count
+            for channel_id, count in statistics.channel_message_counts.items()
+        }
+
+        return instance
 
     def add_channel(self, topic: str, channel_type: type[Message]) -> int:
         """Add a channel to the MCAP output.
@@ -119,23 +278,31 @@ class McapFileWriter:
         if (channel_id := self._topics.get(topic)) is not None:
             return channel_id
 
+        # Check that the channel type has a __msg_name__ attribute
+        if not hasattr(channel_type, '__msg_name__'):
+            raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
+
         # Register the schema if it's not already registered
+        # First check by type (for newly created schemas in this session)
         if (schema_id := self._schemas.get(channel_type)) is None:
-            schema_id = self._next_schema_id
-            self._next_schema_id += 1
+            # Then check by name (for schemas loaded from existing file in append mode)
+            schema_name = channel_type.__msg_name__
+            if (schema_id := self._schema_names.get(schema_name)) is None:
+                # Schema doesn't exist, create a new one
+                schema_id = self._next_schema_id
+                self._next_schema_id += 1
 
-            # Check that the channel type has a __msg_name__ attribute
-            if not hasattr(channel_type, '__msg_name__'):
-                raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
+                schema_record = SchemaRecord(
+                    id=schema_id,
+                    name=schema_name,
+                    encoding=self._message_serializer.schema_encoding,
+                    data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
+                )
 
-            schema_record = SchemaRecord(
-                id=schema_id,
-                name=channel_type.__msg_name__,
-                encoding=self._message_serializer.schema_encoding,
-                data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
-            )
+                self._record_writer.write_schema(schema_record)
+                self._schema_names[schema_name] = schema_id
 
-            self._record_writer.write_schema(schema_record)
+            # Track by type as well for future lookups in this session
             self._schemas[channel_type] = schema_id  # type: ignore[assignment]
 
         # Register the channel
