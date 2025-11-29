@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from pybag.cli.main import main as cli_main
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
@@ -86,7 +87,7 @@ def test_cli_recover_overwrite(tmp_path: Path) -> None:
         writer.write_message("/old", int(1e9), Int32(data=999))
 
     # Try to recover without overwrite flag - should raise error
-    try:
+    with pytest.raises(ValueError):
         cli_main(
             [
                 "recover",
@@ -95,9 +96,6 @@ def test_cli_recover_overwrite(tmp_path: Path) -> None:
                 str(output_path),
             ]
         )
-        assert False, "Expected ValueError for existing output without --overwrite"
-    except ValueError as e:
-        assert "exists" in str(e).lower()
 
     # Now recover with overwrite flag - should succeed
     cli_main(
