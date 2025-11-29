@@ -18,7 +18,7 @@ from pytest_benchmark.fixture import BenchmarkFixture
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap_reader import McapFileReader
 
-from .benchmark_utils import create_test_mcap
+from benchmarks.benchmark_utils import create_test_mcap
 
 # =============================================================================
 # Raw message iteration (without deserialization)

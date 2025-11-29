@@ -12,7 +12,7 @@ from rosbags.typesys import Stores, get_typestore
 
 from pybag.mcap_reader import McapFileReader
 
-from .benchmark_utils import create_test_mcap_by_size
+from benchmarks.benchmark_utils import create_test_mcap_by_size
 
 
 @pytest.fixture(scope="module")

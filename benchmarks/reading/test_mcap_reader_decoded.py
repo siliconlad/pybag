@@ -11,7 +11,7 @@ from rosbags.typesys import Stores, get_typestore
 
 from pybag.mcap_reader import McapFileReader
 
-from .benchmark_utils import create_test_mcap
+from benchmarks.benchmark_utils import create_test_mcap
 
 
 def read_with_pybag(mcap: Path) -> Iterator[Any]:

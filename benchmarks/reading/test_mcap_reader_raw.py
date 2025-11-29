@@ -9,7 +9,7 @@ from rosbags.highlevel import AnyReader
 
 from pybag.mcap.record_reader import McapRecordReaderFactory
 
-from .benchmark_utils import create_test_mcap
+from benchmarks.benchmark_utils import create_test_mcap
 
 # TODO: Also test for log_time_order=False
 
