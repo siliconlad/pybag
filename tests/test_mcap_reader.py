@@ -675,12 +675,12 @@ def test_reverse_iteration_single_topic(chunk_size, enable_crc_check: bool):
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Forward iteration
-            forward_messages = list(reader.messages("/test", reverse=False))
+            forward_messages = list(reader.messages("/test", in_reverse=False))
             assert [msg.log_time for msg in forward_messages] == list(range(8))
             assert [msg.data.data for msg in forward_messages] == [f"msg_{i}" for i in range(8)]
 
             # Reverse iteration
-            reverse_messages = list(reader.messages("/test", reverse=True))
+            reverse_messages = list(reader.messages("/test", in_reverse=True))
             expected_times = list(reversed(range(8)))
             assert [msg.log_time for msg in reverse_messages] == expected_times
             assert [msg.data.data for msg in reverse_messages] == [f"msg_{i}" for i in expected_times]
@@ -708,11 +708,11 @@ def test_reverse_iteration_multiple_topics(chunk_size, enable_crc_check: bool):
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Forward iteration
-            forward_messages = list(reader.messages(["/topic1", "/topic2"], reverse=False))
+            forward_messages = list(reader.messages(["/topic1", "/topic2"], in_reverse=False))
             assert [msg.log_time for msg in forward_messages] == [10, 15, 20, 25, 30]
 
             # Reverse iteration
-            reverse_messages = list(reader.messages(["/topic1", "/topic2"], reverse=True))
+            reverse_messages = list(reader.messages(["/topic1", "/topic2"], in_reverse=True))
             assert [msg.log_time for msg in reverse_messages] == [30, 25, 20, 15, 10]
             assert [msg.data.data for msg in reverse_messages] == [
                 "topic1_30", "topic2_25", "topic1_20", "topic2_15", "topic1_10"
@@ -737,7 +737,7 @@ def test_reverse_iteration_with_time_filter(chunk_size, enable_crc_check: bool):
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Reverse iteration with time range [20, 60]
-            messages = list(reader.messages("/test", start_time=20, end_time=60, reverse=True))
+            messages = list(reader.messages("/test", start_time=20, end_time=60, in_reverse=True))
             expected_times = [60, 50, 40, 30, 20]
             assert [msg.log_time for msg in messages] == expected_times
 
@@ -765,11 +765,11 @@ def test_reverse_iteration_random_write_order(chunk_size, enable_crc_check: bool
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Forward iteration should give ascending order
-            forward_messages = list(reader.messages("/test", reverse=False))
+            forward_messages = list(reader.messages("/test", in_reverse=False))
             assert [msg.log_time for msg in forward_messages] == sorted(timestamps)
 
             # Reverse iteration should give descending order
-            reverse_messages = list(reader.messages("/test", reverse=True))
+            reverse_messages = list(reader.messages("/test", in_reverse=True))
             assert [msg.log_time for msg in reverse_messages] == sorted(timestamps, reverse=True)
 
 
@@ -791,12 +791,12 @@ def test_reverse_iteration_multiple_files(enable_crc_check: bool):
         reader = McapMultipleFileReader.from_files([file1, file2], enable_crc_check=enable_crc_check)
 
         # Forward iteration
-        forward_messages = list(reader.messages("/chatter", reverse=False))
+        forward_messages = list(reader.messages("/chatter", in_reverse=False))
         assert [m.data.data for m in forward_messages] == ["hello", "world", "again", "!!"]
         assert [m.log_time for m in forward_messages] == [1, 2, 3, 4]
 
         # Reverse iteration
-        reverse_messages = list(reader.messages("/chatter", reverse=True))
+        reverse_messages = list(reader.messages("/chatter", in_reverse=True))
         assert [m.data.data for m in reverse_messages] == ["!!", "again", "world", "hello"]
         assert [m.log_time for m in reverse_messages] == [4, 3, 2, 1]
 
@@ -821,7 +821,7 @@ def test_reverse_iteration_duplicate_timestamps(chunk_size, enable_crc_check: bo
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Reverse iteration should return all messages at same timestamp
-            messages = list(reader.messages("/test", reverse=True))
+            messages = list(reader.messages("/test", in_reverse=True))
             assert len(messages) == 3
             assert all(msg.log_time == timestamp for msg in messages)
 
@@ -847,7 +847,7 @@ def test_reverse_iteration_with_filter(chunk_size, enable_crc_check: bool):
             messages = list(reader.messages(
                 "/test",
                 filter=lambda msg: msg.log_time % 2 == 0,
-                reverse=True
+                in_reverse=True
             ))
             expected_times = [8, 6, 4, 2, 0]
             assert [msg.log_time for msg in messages] == expected_times

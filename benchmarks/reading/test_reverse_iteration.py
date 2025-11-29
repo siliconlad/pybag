@@ -84,7 +84,7 @@ def read_decoded_reverse_with_pybag(mcap: Path) -> Iterator[Any]:
     """Read decoded messages in reverse order using pybag's native support."""
     with McapFileReader.from_file(mcap) as reader:
         for topic in reader.get_topics():
-            for message in reader.messages(topic, reverse=True):
+            for message in reader.messages(topic, in_reverse=True):
                 yield message.data
 
 

@@ -103,7 +103,7 @@ class McapFileReader:
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
         in_log_time_order: bool = True,
-        reverse: bool = False,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -118,8 +118,7 @@ class McapFileReader:
             end_time: End time to filter by. If None, read to the end.
             filter: Callable to filter messages. If None, all messages are returned.
             in_log_time_order: Return messages in log time order if True, otherwise in write order.
-            reverse: Return messages in reverse time order (latest first) if True.
-                     Only valid when in_log_time_order is True.
+            in_reverse: Return messages in reverse time order (latest first) if True.
 
         Returns:
             Generator yielding DecodedMessage objects from matching topics.
@@ -129,6 +128,7 @@ class McapFileReader:
             return
         logging.debug(f"Expanded topics: {concrete_topics}")
 
+        # Get the channels corresponding to the topics given
         channel_infos = {}  # dict[channel_id, tuple[channel_record, schema]]
         for topic_name in concrete_topics:
             channel_id = self._reader.get_channel_id(topic_name)
@@ -166,7 +166,7 @@ class McapFileReader:
             start_time,
             end_time,
             in_log_time_order=in_log_time_order,
-            reverse=reverse,
+            in_reverse=in_reverse,
         ):
             _, schema = channel_infos[msg.channel_id]
             decoded = DecodedMessage(
@@ -271,7 +271,7 @@ class McapMultipleFileReader:
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
         in_log_time_order: bool = True,
-        reverse: bool = False,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         # in_log_time_order being false makes less sense when multiple files are involved
         # possible strategies could be to iterate through all messages in one file before
@@ -282,11 +282,11 @@ class McapMultipleFileReader:
         # Initialize the heap with the first message of each file
         heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
         for reader in self._readers:
-            it = iter(reader.messages(topic, start_time, end_time, in_log_time_order=in_log_time_order, reverse=reverse))
+            it = iter(reader.messages(topic, start_time, end_time, in_log_time_order=in_log_time_order, in_reverse=in_reverse))
             try:
                 msg = next(it)
                 # For reverse iteration, negate log_time so heap gives us largest times first
-                heap_key = -msg.log_time if reverse else msg.log_time
+                heap_key = -msg.log_time if in_reverse else msg.log_time
                 heapq.heappush(heap, (heap_key, len(heap), msg, it))
             except StopIteration:
                 continue
@@ -299,7 +299,7 @@ class McapMultipleFileReader:
                 yield msg
             try:
                 next_msg = next(it)
-                heap_key = -next_msg.log_time if reverse else next_msg.log_time
+                heap_key = -next_msg.log_time if in_reverse else next_msg.log_time
                 heapq.heappush(heap, (heap_key, idx, next_msg, it))
             except StopIteration:
                 pass
