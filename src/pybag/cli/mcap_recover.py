@@ -1,18 +1,80 @@
 """MCAP recovery CLI command."""
 
-import argparse
 import logging
-from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal
 
+from pybag.io.raw_reader import BytesReader, FileReader
 from pybag.io.raw_writer import FileWriter
-from pybag.mcap.record_reader import McapRecordReaderFactory
-from pybag.mcap.record_writer import McapRecordWriterFactory
-from pybag.mcap.records import MessageRecord
+from pybag.mcap.chunk import decompress_chunk
+from pybag.mcap.record_parser import McapRecordParser, McapRecordType
+from pybag.mcap.record_writer import (
+    BaseMcapRecordWriter,
+    McapRecordWriterFactory
+)
+from pybag.mcap.records import ChannelRecord, SchemaRecord
 
 logger = logging.getLogger(__name__)
+
+
+def _process_chunk_records(
+    chunk_data: bytes,
+    schemas: dict[int, SchemaRecord],
+    channels: dict[int, ChannelRecord],
+    writer: BaseMcapRecordWriter,
+    *,
+    verbose: bool = False
+) -> tuple[int, dict[int, SchemaRecord], dict[int, ChannelRecord]]:
+    """Process records inside a decompressed chunk.
+
+    Args:
+        chunk_data: The decompressed chunk data.
+        schemas: Dictionary to store schema records (id -> record).
+        channels: Dictionary to store channel records (id -> record).
+        writer: The MCAP writer to write records to.
+        verbose: Whether to log verbose progress.
+
+    Returns:
+        Number of messages recovered, and updated schemas and channels dicts
+    """
+    messages_recovered = 0
+    chunk_reader = BytesReader(chunk_data)
+
+    try:
+        while record_type := McapRecordParser.peek_record(chunk_reader):
+            if record_type == McapRecordType.SCHEMA:
+                schema = McapRecordParser.parse_schema(chunk_reader)
+                if schema is not None and schema.id not in schemas:
+                    schemas[schema.id] = schema
+                    writer.write_schema(schema)
+
+            elif record_type == McapRecordType.CHANNEL:
+                channel = McapRecordParser.parse_channel(chunk_reader)
+                if channel.id not in channels:
+                    channels[channel.id] = channel
+                    writer.write_channel(channel)
+
+            elif record_type == McapRecordType.MESSAGE:
+                message = McapRecordParser.parse_message(chunk_reader)
+                # Ensure channel exists and is written before message
+                if message.channel_id in channels:
+                    writer.write_message(message)
+                    messages_recovered += 1
+                elif verbose:
+                    logger.warning(f"Skipping message with unknown channel_id {message.channel_id}")
+
+            else:  # No other record types should be in chunks
+                if verbose:
+                    logger.warning(f"Skipping record: {record_type}")
+                McapRecordParser.skip_record(chunk_reader)
+
+    except Exception as e:
+        if verbose:
+            logger.warning(f"Error reading chunk records: {e}")
+        # Stop parsing this chunk but return what we recovered
+
+    return messages_recovered, schemas, channels
 
 
 def recover_mcap(
@@ -53,101 +115,120 @@ def recover_mcap(
     if not overwrite and output_path.exists():
         raise ValueError('Output mcap exists. Please set `overwrite` to True.')
 
+    attachments_recovered = 0
+    metadata_recovered = 0
     messages_recovered = 0
-    channels_recovered = set()
-    schemas_recovered = set()
-    error_message = None
 
-    try:
-        with McapRecordReaderFactory.from_file(
-            input_path,
-            enable_summary_reconstruction='always'
-        ) as reader:
-            # Get all metadata from the file
-            all_channels = reader.get_channels()
-            all_schemas = reader.get_schemas()
-            header = reader.get_header()
+    schemas: dict[int, SchemaRecord] = {}
+    channels: dict[int, ChannelRecord] = {}
 
-            if verbose:
-                logger.info(f"Input file has {len(all_channels)} channels and {len(all_schemas)} schemas")
+    with FileReader(input_path) as reader:
+        # Parse magic bytes
+        McapRecordParser.parse_magic_bytes(reader)
 
-            # Create output writer
-            with McapRecordWriterFactory.create_writer(
-                FileWriter(output_path),
-                chunk_size=chunk_size,
-                chunk_compression=chunk_compression,
-                profile=header.profile
-            ) as writer:
-                # Track what we've written
-                written_schema_ids = set()
-                written_channel_ids = set()
-                sequence_counters = defaultdict(int)
+        # Parse header record
+        record_type = McapRecordParser.peek_record(reader)
+        if record_type != McapRecordType.HEADER:
+            raise ValueError(f"Expected HEADER record, got {record_type}")
+        header = McapRecordParser.parse_header(reader)
 
-                try:
-                    # Iterate through all messages in the file
-                    for msg_record in reader.get_messages(
-                        channel_id=None,  # Get all channels
-                        start_timestamp=None,
-                        end_timestamp=None,
-                        in_log_time_order=False  # Read in write order for recovery
+        if verbose:
+            logger.info(f"MCAP profile: {header.profile}, library: {header.library}")
+
+        # Create output writer
+        with McapRecordWriterFactory.create_writer(
+            FileWriter(output_path),
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
+            profile=header.profile
+        ) as writer:
+            try:
+                # Iterate through all records in the file
+                while record_type := McapRecordParser.peek_record(reader):
+                    if record_type == McapRecordType.DATA_END:
+                        break
+
+                    elif record_type == McapRecordType.SCHEMA:
+                        schema = McapRecordParser.parse_schema(reader)
+                        if schema is not None and schema.id not in schemas:
+                            schemas[schema.id] = schema
+                            writer.write_schema(schema)
+
+                    elif record_type == McapRecordType.CHANNEL:
+                        channel = McapRecordParser.parse_channel(reader)
+                        if channel.id not in channels:
+                            channels[channel.id] = channel
+                            writer.write_channel(channel)
+
+                    elif record_type == McapRecordType.MESSAGE:
+                        message = McapRecordParser.parse_message(reader)
+                        if message.channel_id in channels:
+                            writer.write_message(message)
+                            messages_recovered += 1
+                        elif verbose:
+                            logger.warning(f"Skipping message with unknown channel_id {message.channel_id}")
+
+                    elif record_type == McapRecordType.CHUNK:
+                        chunk = McapRecordParser.parse_chunk(reader)
+                        try:
+                            chunk_messages, schemas, channels = _process_chunk_records(
+                                decompress_chunk(chunk),
+                                schemas,
+                                channels,
+                                writer,
+                                verbose=verbose
+                            )
+                            messages_recovered += chunk_messages
+                        except Exception as e:
+                            if verbose:
+                                logger.warning(f"Error processing chunk: {e}")
+
+                    elif record_type == McapRecordType.ATTACHMENT:
+                        attachment = McapRecordParser.parse_attachment(reader)
+                        attachments_recovered += 1
+                        writer.write_attachment(attachment)
+
+                    elif record_type == McapRecordType.METADATA:
+                        metadata = McapRecordParser.parse_metadata(reader)
+                        metadata_recovered += 1
+                        writer.write_metadata(metadata)
+
+                    elif record_type == McapRecordType.MESSAGE_INDEX:
+                        McapRecordParser.skip_record(reader)
+
+                    elif record_type in (
+                        McapRecordType.CHUNK_INDEX,
+                        McapRecordType.FOOTER,
+                        McapRecordType.STATISTICS,
+                        McapRecordType.SUMMARY_OFFSET,
+                        McapRecordType.ATTACHMENT_INDEX,
+                        McapRecordType.METADATA_INDEX,
                     ):
-                        # Write the schema if we haven't yet
-                        schema_id = all_channels[msg_record.channel_id].schema_id
-                        if schema_id != 0 and schema_id not in written_schema_ids:
-                            if (schema := all_schemas.get(schema_id)) is not None:
-                                writer.write_schema(schema)
-                                written_schema_ids.add(schema_id)
-                                schemas_recovered.add(schema_id)
-                            else:
-                                logger.warning(f'Schema {schema_id} not found for channel {msg_record.channel_id}')
+                        # Skip summary section records
+                        if verbose:
+                            logger.warning(f"Unexpected summary record {record_type}, skipping")
+                        McapRecordParser.skip_record(reader)
 
-                        # Write the channel if we haven't yet
-                        if msg_record.channel_id not in written_channel_ids:
-                            writer.write_channel(all_channels[msg_record.channel_id])
-                            written_channel_ids.add(msg_record.channel_id)
-                            channels_recovered.add(msg_record.channel_id)
+                    else:
+                        # Unknown record type, skip it
+                        if verbose:
+                            logger.warning(f"Unknown record type {record_type}, skipping")
+                        McapRecordParser.skip_record(reader)
 
-                        # Write the message with updated sequence number
-                        new_record = MessageRecord(
-                            channel_id=msg_record.channel_id,
-                            sequence=sequence_counters[msg_record.channel_id],
-                            log_time=msg_record.log_time,
-                            publish_time=msg_record.publish_time,
-                            data=msg_record.data
-                        )
-                        sequence_counters[msg_record.channel_id] += 1
-                        writer.write_message(new_record)
-                        messages_recovered += 1
-
-                        if verbose and messages_recovered % 1000 == 0:
-                            logger.info(f"Recovered {messages_recovered} messages so far...")
-
-                except Exception as e:
-                    error_message = str(e)
-                    logger.warning(f"Encountered error while reading messages: {e}")
-                    logger.info(f"Recovered {messages_recovered} messages before corruption")
-
-    except Exception as e:
-        error_message = str(e)
-        logger.error(f"Failed to open or process MCAP file: {e}")
-        raise
+            except Exception as e:
+                logger.warning(f"Encountered error while reading records: {e}")
+                logger.info(f"Recovered {messages_recovered} messages before corruption")
+            else:
+                logger.info("\nFull recovery successful - no corruption detected!")
 
     # Print recovery summary
     logger.info(f"\n{'='*60}")
     logger.info("Recovery Summary:")
-    logger.info(f"{'='*60}")
-    logger.info(f"Input file:  {input_path}")
-    logger.info(f"Output file: {output_path}")
-    logger.info(f"Messages recovered: {messages_recovered}")
-    logger.info(f"Channels recovered: {len(channels_recovered)}")
-    logger.info(f"Schemas recovered:  {len(schemas_recovered)}")
-
-    if error_message:
-        logger.info(f"\nRecovery stopped due to: {error_message}")
-    else:
-        logger.info("\nFull recovery successful - no corruption detected!")
-
-    logger.info(f"{'='*60}\n")
+    logger.info(f"  Input file:  {input_path}")
+    logger.info(f"  Output file: {output_path}")
+    logger.info(f"  Messages recovered: {messages_recovered}")
+    logger.info(f"  Channels recovered: {len(channels)}")
+    logger.info(f"  Schemas recovered:  {len(schemas)}")
 
     return output_path
 
