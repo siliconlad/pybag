@@ -181,13 +181,18 @@ def add_parser(subparsers) -> None:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        help=dedent("""Chunk size of the new filtered mcap in bytes.""")
+        help="Chunk size of the new filtered mcap in bytes."
     )
     parser.add_argument(
         "--chunk-compression",
         type=str,
         choices=['lz4', 'zstd'],
-        help=dedent("""Compression used for the chunk records.""")
+        help="Compression used for the chunk records."
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite output file if it exists."
     )
     parser.set_defaults(
         func=lambda args: filter_mcap(
@@ -199,5 +204,6 @@ def add_parser(subparsers) -> None:
             end_time=args.end_time,
             chunk_size=args.chunk_size,
             chunk_compression=args.chunk_compression,
+            overwrite=args.overwrite,
         )
     )
