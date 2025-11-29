@@ -1,0 +1,38 @@
+[package]
+name = "pybag_rs"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance Rust implementation of pybag MCAP library with Python bindings"
+license = "MIT"
+
+[lib]
+name = "pybag_rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Python bindings
+pyo3 = { version = "0.22", features = ["extension-module"] }
+
+# Compression
+lz4 = "1.28"
+zstd = "0.13"
+
+# CRC
+crc32fast = "1.4"
+
+# Error handling
+thiserror = "2"
+
+# Byte ordering
+byteorder = "1.5"
+
+# Memory mapping for fast file I/O
+memmap2 = "0.9"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
