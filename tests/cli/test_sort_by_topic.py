@@ -45,7 +45,7 @@ def test_sort_by_topic_basic():
 
         # Verify output file exists
         assert result.exists()
-        assert result == output_mcap
+        assert result.resolve() == output_mcap.resolve()
 
         # Verify we can read it and it has the same content
         with McapRecordReaderFactory.from_file(input_mcap) as input_reader:
@@ -67,7 +67,7 @@ def test_sort_by_topic_default_output():
 
         # Should create output with _sorted suffix
         expected = input_mcap.with_name(f"{input_mcap.stem}_sorted.mcap")
-        assert result == expected
+        assert result.resolve() == expected.resolve()
         assert result.exists()
 
 
