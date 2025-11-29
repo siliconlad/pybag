@@ -55,6 +55,7 @@ def _process_chunk_records(
                     channels[channel.id] = channel
                     writer.write_channel(channel)
 
+            # TODO: Decode message to make sure it is valid?
             elif record_type == McapRecordType.MESSAGE:
                 message = McapRecordParser.parse_message(chunk_reader)
                 # Ensure channel exists and is written before message
@@ -161,6 +162,7 @@ def recover_mcap(
                             writer.write_channel(channel)
 
                     elif record_type == McapRecordType.MESSAGE:
+                        # TODO: Decode message to make sure it is valid?
                         message = McapRecordParser.parse_message(reader)
                         if message.channel_id in channels:
                             writer.write_message(message)
@@ -169,6 +171,7 @@ def recover_mcap(
                             logger.warning(f"Skipping message with unknown channel_id {message.channel_id}")
 
                     elif record_type == McapRecordType.CHUNK:
+                        # TODO: Use crc to check data integrity?
                         chunk = McapRecordParser.parse_chunk(reader)
                         try:
                             chunk_messages, schemas, channels = _process_chunk_records(
@@ -184,6 +187,7 @@ def recover_mcap(
                                 logger.warning(f"Error processing chunk: {e}")
 
                     elif record_type == McapRecordType.ATTACHMENT:
+                        # TODO: Use crc to check data integrity?
                         attachment = McapRecordParser.parse_attachment(reader)
                         attachments_recovered += 1
                         writer.write_attachment(attachment)
