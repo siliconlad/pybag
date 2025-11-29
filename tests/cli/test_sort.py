@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
+import pybag.ros2.humble.std_msgs as std_msgs
 from pybag.cli.mcap_sort import sort_mcap
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
@@ -11,7 +12,6 @@ from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.mcap_writer import McapFileWriter
 from pybag.serialize import MessageSerializerFactory
-import pybag.ros2.humble.std_msgs as std_msgs
 
 
 def create_test_mcap_with_multiple_topics(path: Path) -> Path:
