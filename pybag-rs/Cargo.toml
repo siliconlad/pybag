@@ -31,6 +31,14 @@ memmap2 = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
+# Official MCAP Rust library for benchmarking
+mcap = "0.9"
+# Benchmarking framework
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "mcap_comparison"
+harness = false
 
 [profile.release]
 lto = true
