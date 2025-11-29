@@ -1,19 +1,31 @@
 """Benchmark comparing read performance of topic-sorted vs unsorted MCAP files."""
+import random
 from collections import deque
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Iterator
-import random
 
+import numpy as np
 from pytest_benchmark.fixture import BenchmarkFixture
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
-import numpy as np
 
-from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.cli.mcap_sort_by_topic import sort_by_topic
+from pybag.mcap.record_reader import McapRecordReaderFactory
 
-from .benchmark_utils import TYPESTORE, Odometry, Header, Time, PoseWithCovariance, Pose, Point, Quaternion, TwistWithCovariance, Twist, Vector3
+from .benchmark_utils import (
+    TYPESTORE,
+    Header,
+    Odometry,
+    Point,
+    Pose,
+    PoseWithCovariance,
+    Quaternion,
+    Time,
+    Twist,
+    TwistWithCovariance,
+    Vector3
+)
 
 
 def create_multi_topic_mcap(path: Path, topics: int = 5, messages_per_topic: int = 200, seed: int = 0) -> Path:
