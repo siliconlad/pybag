@@ -1,4 +1,5 @@
 import fnmatch
+import heapq
 import logging
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -12,12 +13,8 @@ from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
 )
+from pybag.mcap.records import AttachmentRecord, MetadataRecord
 
-# GLOBAL TODOs:
-# - TODO: Add tests with mcaps
-# - TODO: Improve performance by batching the reads (maybe)
-# - TODO: Do something with CRC
-# - TODO: Generate summary section of mcap file
 logger = logging.getLogger(__name__)
 
 
@@ -41,13 +38,13 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_file(file_path)
+    def from_file(file_path: Path | str, *, enable_crc_check: bool = False) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_file(file_path, enable_crc_check=enable_crc_check)
         return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(data: bytes) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_bytes(data)
+    def from_bytes(data: bytes, *, enable_crc_check: bool = False) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_bytes(data, enable_crc_check=enable_crc_check)
         return McapFileReader(reader)
 
     @property
@@ -178,11 +175,162 @@ class McapFileReader:
             if filter is None or filter(decoded):
                 yield decoded
 
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects containing attachment data.
+        """
+        return self._reader.get_attachments(name)
+
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects containing metadata key-value pairs.
+        """
+        return self._reader.get_metadata(name)
+
     def close(self) -> None:
         """Close the MCAP reader and release all resources."""
         self._reader.close()
 
     def __enter__(self) -> "McapFileReader":
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None
+    ) -> None:
+        self.close()
+
+
+class McapMultipleFileReader:
+    """Reader that seamlessly reads from multiple MCAP files."""
+
+    def __init__(self, readers: list[McapFileReader]):
+        self._readers = readers
+
+        self._profiles = set(r.profile for r in self._readers)
+        self._message_deserializer = {
+            profile: MessageDeserializerFactory.from_profile(profile)
+            for profile in self._profiles
+        }
+
+    @staticmethod
+    def from_files(file_paths: list[Path | str], *, enable_crc_check: bool = False) -> 'McapMultipleFileReader':
+        readers = [McapFileReader.from_file(p, enable_crc_check=enable_crc_check) for p in file_paths]
+        return McapMultipleFileReader(readers)
+
+    @property
+    def profiles(self) -> set[str]:
+        return self._profiles
+
+    def get_topics(self) -> list[str]:
+        topics: set[str] = set()
+        for reader in self._readers:
+            topics.update(reader.get_topics())
+        return list(topics)
+
+    def get_message_count(self, topic: str) -> int:
+        count = 0
+        for reader in self._readers:
+            if topic in reader.get_topics():
+                count += reader.get_message_count(topic)
+        if count == 0:
+            raise McapUnknownTopicError(f'Topic {topic} not found in MCAP files')
+        return count
+
+    @property
+    def start_time(self) -> int:
+        return min(reader.start_time for reader in self._readers)
+
+    @property
+    def end_time(self) -> int:
+        return max(reader.end_time for reader in self._readers)
+
+    def messages(
+        self,
+        topic: str | list[str],
+        start_time: int | None = None,
+        end_time: int | None = None,
+        filter: Callable[[DecodedMessage], bool] | None = None,
+        *,
+        in_log_time_order: bool = True,
+    ) -> Generator[DecodedMessage, None, None]:
+        # in_log_time_order being false makes less sense when multiple files are involved
+        # possible strategies could be to iterate through all messages in one file before
+        # iterating through the next file, but seems a bit weird so will leave it for now
+        if not in_log_time_order:
+            raise ValueError('in_log_time_order must be True')
+
+        # Initialize the heap with the first message of each file
+        heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
+        for reader in self._readers:
+            it = iter(reader.messages(topic, start_time, end_time,in_log_time_order=in_log_time_order))
+            try:
+                msg = next(it)
+                heapq.heappush(heap, (msg.log_time, len(heap), msg, it))
+            except StopIteration:
+                continue
+
+        # Yield messages from each file in log time order
+        # Ties are split by the index the files were provided to in the constructor
+        while heap:
+            _, idx, msg, it = heapq.heappop(heap)
+            if filter is None or filter(msg):
+                yield msg
+            try:
+                next_msg = next(it)
+                heapq.heappush(heap, (next_msg.log_time, idx, next_msg, it))
+            except StopIteration:
+                pass
+
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects containing attachment data.
+        """
+        attachments = []
+        for reader in self._readers:
+            attachments.extend(reader.get_attachments(name))
+        return attachments
+
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects containing metadata key-value pairs.
+        """
+        metadata = []
+        for reader in self._readers:
+            metadata.extend(reader.get_metadata(name))
+        return metadata
+
+    def close(self) -> None:
+        for reader in self._readers:
+            reader.close()
+
+    def __enter__(self) -> "McapMultipleFileReader":
         return self
 
     def __exit__(

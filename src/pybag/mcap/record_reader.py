@@ -1,10 +1,13 @@
 import heapq
 import logging
 from abc import ABC, abstractmethod
+from functools import lru_cache
 from pathlib import Path
 from typing import Generator, Iterator, Literal
 
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
+from pybag.mcap.chunk import decompress_chunk
+from pybag.mcap.crc import assert_crc
 from pybag.mcap.error import (
     McapNoChunkError,
     McapNoChunkIndexError,
@@ -21,6 +24,8 @@ from pybag.mcap.record_parser import (
     McapRecordType
 )
 from pybag.mcap.records import (
+    AttachmentIndexRecord,
+    AttachmentRecord,
     ChannelRecord,
     ChunkIndexRecord,
     ChunkRecord,
@@ -28,9 +33,10 @@ from pybag.mcap.records import (
     HeaderRecord,
     MessageIndexRecord,
     MessageRecord,
+    MetadataIndexRecord,
+    MetadataRecord,
     SchemaRecord,
-    StatisticsRecord,
-    decompress_chunk
+    StatisticsRecord
 )
 from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 
@@ -151,17 +157,48 @@ class BaseMcapRecordReader(ABC):
     ) -> Generator[MessageRecord, None, None]:
         ...  # pragma: no cover
 
+    # Attachment Management
+
+    @abstractmethod
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects.
+        """
+        ...  # pragma: no cover
+
+    # Metadata Management
+
+    @abstractmethod
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects.
+        """
+        ...  # pragma: no cover
+
 
 class McapChunkedReader(BaseMcapRecordReader):
     """Class to efficiently get records from a chunked MCAP file.
 
     Args:
         file: The file to read from.
-        enable_crc_check: Whether to validate the crc values in the mcap
+        enable_crc_check: Whether to validate the crc values in the mcap (slow!)
         enable_summary_reconstruction:
             - 'missing' allows reconstruction if the summary section is missing.
             - 'never' throws an exception if the summary (or summary offset) section is missing.
             - 'always' forces reconstruction even if the summary section is present.
+        chunk_cache_size: The number of decompressed chunks to store in memory at a time.
     """
 
     def __init__(
@@ -170,6 +207,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
     ):
         self._file = file
         self._check_crc = enable_crc_check
@@ -187,6 +225,9 @@ class McapChunkedReader(BaseMcapRecordReader):
         # Caches for message indexes
         self._message_indexes: dict[int, dict[int, MessageIndexRecord]] = {}
 
+        # LRU cache for decompressed chunks (key: chunk_start_offset)
+        self._decompress_chunk_cached = lru_cache(maxsize=chunk_cache_size)(self._decompress_chunk_impl)
+
     # Helpful Constructors
 
     @staticmethod
@@ -195,6 +236,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a file.
 
@@ -205,6 +247,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
 
         Returns:
             A McapChunkedReader instance
@@ -213,6 +256,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
+            chunk_cache_size=chunk_cache_size,
         )
 
     @staticmethod
@@ -221,6 +265,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
     ) -> 'McapChunkedReader':
         """Create a new MCAP reader from a bytes object.
 
@@ -231,6 +276,7 @@ class McapChunkedReader(BaseMcapRecordReader):
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
 
         Returns:
             A McapChunkedReader instance
@@ -239,6 +285,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             BytesReader(data),
             enable_crc_check=enable_crc_check,
             enable_summary_reconstruction=enable_summary_reconstruction,
+            chunk_cache_size=chunk_cache_size,
         )
 
     # Destructors
@@ -443,6 +490,20 @@ class McapChunkedReader(BaseMcapRecordReader):
         self._file.seek_from_start(chunk_index.chunk_start_offset)
         return McapRecordParser.parse_chunk(self._file)
 
+    def _decompress_chunk_impl(self, chunk_offset: int) -> bytes:
+        """Internal implementation for chunk decompression (cached).
+
+        Args:
+            chunk_offset: Chunk start offset (used as cache key)
+
+        Returns:
+            Decompressed chunk data
+        """
+        # Seek to the chunk and read it
+        self._file.seek_from_start(chunk_offset)
+        chunk = McapRecordParser.parse_chunk(self._file)
+        return decompress_chunk(chunk, check_crc=self._check_crc)
+
     # Message Management
 
     def get_message(
@@ -481,9 +542,8 @@ class McapChunkedReader(BaseMcapRecordReader):
                 if offset is None:
                     continue
 
-                # Read data from chunk
-                chunk = self.get_chunk(chunk_index)
-                reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+                # Read data from chunk (using cache)
+                reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
                 _ = reader.seek_from_start(offset)
                 return McapRecordParser.parse_message(reader)
         return None
@@ -612,8 +672,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not offsets:
                 continue
 
-            chunk = self.get_chunk(chunk_index)
-            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+            reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for offset in offsets:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
@@ -670,10 +729,8 @@ class McapChunkedReader(BaseMcapRecordReader):
             if not message_refs:
                 return
 
-            # Load the chunk once and parse messages as needed
-            chunk = self.get_chunk(chunk_index)
-            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
-
+            # Load the chunk once and parse messages as needed (using cache)
+            reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for timestamp, offset in message_refs:
                 reader.seek_from_start(offset)
                 message = McapRecordParser.parse_message(reader)
@@ -735,16 +792,82 @@ class McapChunkedReader(BaseMcapRecordReader):
 
             entries.sort(key=lambda x: x[1])
 
-            chunk = self.get_chunk(chunk_index)
-            reader = BytesReader(decompress_chunk(chunk, check_crc=self._check_crc))
+            reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
             for _, offset in entries:
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+        """Get attachments from the MCAP file.
 
-    # TODO: Low Priority
-    # - Metadata Index
-    # - Attachment Index
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects.
+        """
+        attachment_indexes = self._summary.get_attachment_indexes()
+        if name and name not in attachment_indexes:
+            logging.warning(f'{name} not found in attachments!')
+            return []
+
+        attachment_indexes_flat: list[AttachmentIndexRecord] = []
+        if name is None:
+            for i in attachment_indexes.values():
+                attachment_indexes_flat.extend(i)
+            # Preserve order in which they were written to mcap
+            attachment_indexes_flat.sort(key=lambda x: x.offset)
+        else:
+            attachment_indexes_flat = attachment_indexes.get(name, [])
+
+        current_pos = self._file.tell()
+        attachments: list[AttachmentRecord] = []
+        for attachment_index in attachment_indexes_flat:
+            _ = self._file.seek_from_start(attachment_index.offset)
+            attachment = McapRecordParser.parse_attachment(self._file)
+            if self._check_crc and attachment.crc:  # If crc is 0, do not check
+                assert_crc(attachment.data, attachment.crc)
+            attachments.append(attachment)
+        else:
+            _ = self._file.seek_from_start(current_pos)
+
+        return attachments
+
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects.
+        """
+        metadata_indexes = self._summary.get_metadata_indexes()
+        if name and name not in metadata_indexes:
+            logging.warning(f'{name} not found in metadata!')
+            return []
+
+        metadata_indexes_flat: list[MetadataIndexRecord] = []
+        if name is None:
+            for i in metadata_indexes.values():
+                metadata_indexes_flat.extend(i)
+            # Preserve order in which they were written to mcap
+            metadata_indexes_flat.sort(key=lambda x: x.offset)
+        else:
+            metadata_indexes_flat = metadata_indexes.get(name, [])
+
+        current_pos = self._file.tell()
+        metadata_records: list[MetadataRecord] = []
+        for metadata_index in metadata_indexes_flat:
+            _ = self._file.seek_from_start(metadata_index.offset)
+            metadata = McapRecordParser.parse_metadata(self._file)
+            metadata_records.append(metadata)
+        else:
+            _ = self._file.seek_from_start(current_pos)
+
+        return metadata_records
 
 
 class McapNonChunkedReader(BaseMcapRecordReader):
@@ -1142,9 +1265,73 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             _ = self._file.seek_from_start(offset)
             yield McapRecordParser.parse_message(self._file)
 
-    # TODO: Low Priority
-    # - Metadata Index
-    # - Attachment Index
+    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+        """Get attachments from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all attachments.
+                  If provided, returns only attachments with matching name.
+
+        Returns:
+            List of AttachmentRecord objects.
+        """
+        attachment_indexes = self._summary.get_attachment_indexes()
+        if name and name not in attachment_indexes:
+            logging.warning(f'{name} not found in attachments!')
+            return []
+
+        attachment_indexes_flat: list[AttachmentIndexRecord] = []
+        if name is None:
+            for i in attachment_indexes.values():
+                attachment_indexes_flat.extend(i)
+        else:
+            attachment_indexes_flat = attachment_indexes.get(name, [])
+
+        current_pos = self._file.tell()
+        attachments: list[AttachmentRecord] = []
+        for attachment_index in attachment_indexes_flat:
+            _ = self._file.seek_from_start(attachment_index.offset)
+            attachment = McapRecordParser.parse_attachment(self._file)
+            if self._check_crc and attachment.crc:  # If crc is 0, do not check
+                assert_crc(attachment.data, attachment.crc)
+            attachments.append(attachment)
+        else:
+            _ = self._file.seek_from_start(current_pos)
+
+        return attachments
+
+    def get_metadata(self, name: str | None = None) -> list[MetadataRecord]:
+        """Get metadata records from the MCAP file.
+
+        Args:
+            name: Optional name filter. If None, returns all metadata records.
+                  If provided, returns only metadata records with matching name.
+
+        Returns:
+            List of MetadataRecord objects.
+        """
+        metadata_indexes = self._summary.get_metadata_indexes()
+        if name and name not in metadata_indexes:
+            logging.warning(f'{name} not found in metadata!')
+            return []
+
+        metadata_indexes_flat: list[MetadataIndexRecord] = []
+        if name is None:
+            for i in metadata_indexes.values():
+                metadata_indexes_flat.extend(i)
+        else:
+            metadata_indexes_flat = metadata_indexes.get(name, [])
+
+        current_pos = self._file.tell()
+        metadata_records: list[MetadataRecord] = []
+        for metadata_index in metadata_indexes_flat:
+            _ = self._file.seek_from_start(metadata_index.offset)
+            metadata = McapRecordParser.parse_metadata(self._file)
+            metadata_records.append(metadata)
+        else:
+            _ = self._file.seek_from_start(current_pos)
+
+        return metadata_records
 
 
 class McapRecordReaderFactory:
@@ -1156,6 +1343,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a file.
 
@@ -1166,6 +1354,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            chunk_cache_size: Maximum number of decompressed chunks to cache (default: 8)
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1179,6 +1368,7 @@ class McapRecordReaderFactory:
                 file_path,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                chunk_cache_size=chunk_cache_size,
             )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader
@@ -1208,6 +1398,7 @@ class McapRecordReaderFactory:
         *,
         enable_crc_check: bool = False,
         enable_summary_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        chunk_cache_size: int = 1,
     ) -> BaseMcapRecordReader:
         """Create a new MCAP reader from a bytes object.
 
@@ -1218,6 +1409,7 @@ class McapRecordReaderFactory:
                 - 'missing': Reconstruct if summary is missing (default)
                 - 'never': Raise error if summary is missing
                 - 'always': Always reconstruct even if summary exists
+            chunk_cache_size: The number of decompressed chunks to store in memory at a time.
 
         Returns:
             Appropriate reader instance (chunked or non-chunked)
@@ -1231,6 +1423,7 @@ class McapRecordReaderFactory:
                 data,
                 enable_crc_check=enable_crc_check,
                 enable_summary_reconstruction=enable_summary_reconstruction,
+                chunk_cache_size=chunk_cache_size,
             )
         except McapNoChunkIndexError:
             # If no chunks exist, use the non-chunked reader

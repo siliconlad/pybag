@@ -304,6 +304,24 @@ class BaseMcapRecordWriter(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
+    def write_attachment(self, attachment: AttachmentRecord) -> None:
+        """Write an attachment record to the MCAP file.
+
+        Args:
+            attachment: The attachment record to write.
+        """
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def write_metadata(self, metadata: MetadataRecord) -> None:
+        """Write a metadata record to the MCAP file.
+
+        Args:
+            metadata: The metadata record to write.
+        """
+        ...  # pragma: no cover
+
+    @abstractmethod
     def close(self) -> None:
         """Finalize the MCAP file by writing summary section and footer."""
         ...  # pragma: no cover
@@ -333,12 +351,16 @@ class BaseMcapRecordWriter(ABC):
         schema_records: list[SchemaRecord] | None = None,
         channel_records: list[ChannelRecord] | None = None,
         statistics_record: StatisticsRecord | None = None,
-        chunk_indexes: list[ChunkIndexRecord] | None = None
+        chunk_indexes: list[ChunkIndexRecord] | None = None,
+        attachment_indexes: list[AttachmentIndexRecord] | None = None,
+        metadata_indexes: list[MetadataIndexRecord] | None = None
     ) -> tuple[int, int]:
         """Write the summary section and return (summary_start, summary_offset_start).
 
         Args:
             chunk_indexes: Optional list of chunk index records (for chunked writers).
+            attachment_indexes: Optional list of attachment index records.
+            metadata_indexes: Optional list of metadata index records.
 
         Returns:
             Tuple of (summary_start, summary_offset_start) positions.
@@ -361,13 +383,26 @@ class BaseMcapRecordWriter(ABC):
                 McapRecordWriter.write_channel(writer, record)
         channel_group_length = writer.tell() - channel_group_start
 
+        # Write attachment index records to summary
+        attachment_index_group_start = writer.tell()
+        if attachment_indexes:
+            for record in attachment_indexes:
+                McapRecordWriter.write_attachment_index(writer, record)
+        attachment_index_group_length = writer.tell() - attachment_index_group_start
+
+        # Write metadata index records to summary
+        metadata_index_group_start = writer.tell()
+        if metadata_indexes:
+            for record in metadata_indexes:
+                McapRecordWriter.write_metadata_index(writer, record)
+        metadata_index_group_length = writer.tell() - metadata_index_group_start
+
         # Write chunk index records to summary (only for chunked writers)
         chunk_index_group_start = writer.tell()
-        chunk_index_group_length = 0
         if chunk_indexes:
             for record in chunk_indexes:
                 McapRecordWriter.write_chunk_index(writer, record)
-            chunk_index_group_length = writer.tell() - chunk_index_group_start
+        chunk_index_group_length = writer.tell() - chunk_index_group_start
 
         # Write statistics record
         statistics_group_start = writer.tell()
@@ -393,6 +428,24 @@ class BaseMcapRecordWriter(ABC):
                     group_opcode=RecordType.CHANNEL,
                     group_start=channel_group_start,
                     group_length=channel_group_length,
+                ),
+            )
+        if attachment_index_group_length > 0:
+            McapRecordWriter.write_summary_offset(
+                writer,
+                SummaryOffsetRecord(
+                    group_opcode=RecordType.ATTACHMENT_INDEX,
+                    group_start=attachment_index_group_start,
+                    group_length=attachment_index_group_length,
+                ),
+            )
+        if metadata_index_group_length > 0:
+            McapRecordWriter.write_summary_offset(
+                writer,
+                SummaryOffsetRecord(
+                    group_opcode=RecordType.METADATA_INDEX,
+                    group_start=metadata_index_group_start,
+                    group_length=metadata_index_group_length,
                 ),
             )
         if chunk_index_group_length > 0:
@@ -437,10 +490,14 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
         # Tracking for summary section
         self._schema_records: dict[int, SchemaRecord] = {}
         self._channel_records: dict[int, ChannelRecord] = {}
+        self._attachment_indexes: list[AttachmentIndexRecord] = []
+        self._metadata_indexes: list[MetadataIndexRecord] = []
 
         # Statistics tracking
         self._message_count = 0
         self._chunk_count = 0
+        self._attachment_count = 0
+        self._metadata_count = 0
         self._message_start_time: int | None = None
         self._message_end_time: int | None = None
         self._channel_message_counts: dict[int, int] = {}
@@ -493,6 +550,42 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
         """No-op for non-chunked writer."""
         pass
 
+    def write_attachment(self, attachment: AttachmentRecord) -> None:
+        """Write an attachment record immediately to the data section."""
+        offset = self._writer.tell()
+        McapRecordWriter.write_attachment(self._writer, attachment)
+        length = self._writer.tell() - offset
+
+        # Track attachment index for summary
+        self._attachment_indexes.append(
+            AttachmentIndexRecord(
+                offset=offset,
+                length=length,
+                log_time=attachment.log_time,
+                create_time=attachment.create_time,
+                data_size=len(attachment.data),
+                name=attachment.name,
+                media_type=attachment.media_type,
+            )
+        )
+        self._attachment_count += 1
+
+    def write_metadata(self, metadata: MetadataRecord) -> None:
+        """Write a metadata record immediately to the data section."""
+        offset = self._writer.tell()
+        McapRecordWriter.write_metadata(self._writer, metadata)
+        length = self._writer.tell() - offset
+
+        # Track metadata index for summary
+        self._metadata_indexes.append(
+            MetadataIndexRecord(
+                offset=offset,
+                length=length,
+                name=metadata.name,
+            )
+        )
+        self._metadata_count += 1
+
     def close(self) -> None:
         """Finalize the file by writing summary section and footer."""
         # Write DataEnd record
@@ -508,13 +601,15 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
                 message_count=self._message_count,
                 schema_count=len(self._schema_records),
                 channel_count=len(self._channel_records),
-                attachment_count=0,  # TODO: Implement
-                metadata_count=0,    # TODO: Implement
+                attachment_count=self._attachment_count,
+                metadata_count=self._metadata_count,
                 chunk_count=self._chunk_count,
                 message_start_time=self._message_start_time or 0,
                 message_end_time=self._message_end_time or 0,
                 channel_message_counts=self._channel_message_counts,
-            )
+            ),
+            attachment_indexes=self._attachment_indexes,
+            metadata_indexes=self._metadata_indexes
         )
 
         # Write footer record manually for CRC calculation
@@ -565,10 +660,14 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._schema_records: dict[int, SchemaRecord] = {}
         self._channel_records: dict[ int, ChannelRecord] = {}
         self._chunk_indexes: list[ChunkIndexRecord] = []
+        self._attachment_indexes: list[AttachmentIndexRecord] = []
+        self._metadata_indexes: list[MetadataIndexRecord] = []
 
         # Statistics tracking
         self._message_count = 0
         self._chunk_count = 0
+        self._attachment_count = 0
+        self._metadata_count = 0
         self._message_start_time: int | None = None
         self._message_end_time: int | None = None
         self._channel_message_counts: dict[int, int] = {}
@@ -656,6 +755,48 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             message.log_time
         )
 
+    def write_attachment(self, attachment: AttachmentRecord) -> None:
+        """Write an attachment record immediately to the data section (not buffered).
+
+        Attachments are written directly to the file, not buffered in chunks.
+        """
+        offset = self._writer.tell()
+        McapRecordWriter.write_attachment(self._writer, attachment)
+        length = self._writer.tell() - offset
+
+        # Track attachment index for summary
+        self._attachment_indexes.append(
+            AttachmentIndexRecord(
+                offset=offset,
+                length=length,
+                log_time=attachment.log_time,
+                create_time=attachment.create_time,
+                data_size=len(attachment.data),
+                name=attachment.name,
+                media_type=attachment.media_type,
+            )
+        )
+        self._attachment_count += 1
+
+    def write_metadata(self, metadata: MetadataRecord) -> None:
+        """Write a metadata record immediately to the data section (not buffered).
+
+        Metadata is written directly to the file, not buffered in chunks.
+        """
+        offset = self._writer.tell()
+        McapRecordWriter.write_metadata(self._writer, metadata)
+        length = self._writer.tell() - offset
+
+        # Track metadata index for summary
+        self._metadata_indexes.append(
+            MetadataIndexRecord(
+                offset=offset,
+                length=length,
+                name=metadata.name,
+            )
+        )
+        self._metadata_count += 1
+
     def _flush_chunk(self) -> None:
         """Compress and write the current chunk buffer to the file."""
         records = self._current_chunk_buffer.as_bytes()
@@ -736,14 +877,16 @@ class McapChunkedWriter(BaseMcapRecordWriter):
                 message_count=self._message_count,
                 schema_count=len(self._schema_records),
                 channel_count=len(self._channel_records),
-                attachment_count=0,  # TODO: Implement
-                metadata_count=0,    # TODO: Implement
+                attachment_count=self._attachment_count,
+                metadata_count=self._metadata_count,
                 chunk_count=self._chunk_count,
                 message_start_time=self._message_start_time or 0,
                 message_end_time=self._message_end_time or 0,
                 channel_message_counts=self._channel_message_counts,
             ),
-            chunk_indexes=self._chunk_indexes
+            chunk_indexes=self._chunk_indexes,
+            attachment_indexes=self._attachment_indexes,
+            metadata_indexes=self._metadata_indexes
         )
 
         # Write footer record manually for CRC calculation

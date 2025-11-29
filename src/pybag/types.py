@@ -40,37 +40,61 @@ class Message(Protocol):
     __msg_name__: str
 
 
-# Type-checker compatible version using Generic classes
+def _is_message_type(type_: Any) -> bool:
+    """Check if a type is a message type (has __msg_name__ attribute)."""
+    return hasattr(type_, '__msg_name__')
+
+
+def _wrap_if_message(type_: Any) -> Any:
+    """Wrap a type with Complex annotation if it's a message type."""
+    if _is_message_type(type_):
+        return Annotated[type_, ("complex", type_.__msg_name__)]
+    return type_
+
+
+# Constant is a type alias that resolves to the underlying type at the type level.
+# At runtime, Constant[T] creates an Annotated type for schema encoding.
 class _ConstantType(Generic[T]):
     """Generic type for constants."""
-    def __class_getitem__(cls, type_: type[T]) -> type[T]:
+
+    def __class_getitem__(cls, type_: Any) -> Any:
         return Annotated[type_, ("constant", type_)]
+
+
+# For type checking, Constant[T] should be equivalent to T
+# We use a TypeAlias with the class for runtime behavior
+Constant: TypeAlias = T  # type: ignore[type-arg]
+# Override at runtime with the class that provides __class_getitem__
+Constant = _ConstantType  # type: ignore[misc,assignment]
 
 
 class _ArrayType:
     """Generic type for arrays that accepts both single type and type+length."""
     @classmethod
-    def __class_getitem__(cls, params: Any) -> type[list]:
+    def __class_getitem__(cls, params: Any) -> Any:
         if isinstance(params, tuple):
             # Array[type, length] - fixed size array
             if len(params) == 2:
                 type_, length = params
-                return Annotated[list[type_], ("array", type_, length)]
+                # Auto-wrap message types with Complex
+                wrapped_type = _wrap_if_message(type_)
+                return Annotated[list[wrapped_type], ("array", wrapped_type, length)]
             else:
                 raise TypeError("Array expects either 1 or 2 parameters")
         else:
             # Array[type] - variable size array
-            return Annotated[list[params], ("array", params, None)]
+            # Auto-wrap message types with Complex
+            wrapped_type = _wrap_if_message(params)
+            return Annotated[list[wrapped_type], ("array", wrapped_type, None)]
 
 
 class _ComplexType(Generic[T]):
     """Generic type for complex/nested types."""
-    def __class_getitem__(cls, type_: type[T]) -> type[T]:
+    def __class_getitem__(cls, type_: Any) -> Any:
         return Annotated[type_, ("complex", type_.__msg_name__)]
 
 
 # Type aliases for use in type annotations
-Constant: TypeAlias = _ConstantType
 Array: TypeAlias = _ArrayType
 Complex: TypeAlias = _ComplexType
 

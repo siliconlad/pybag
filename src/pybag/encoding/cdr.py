@@ -116,6 +116,27 @@ class CdrDecoder(MessageDecoder):
             return ''
         return self._data.read(length).decode()[:-1]
 
+    def wstring(self) -> str:
+        # Wide strings use 4 bytes per character (uint32)
+        # Length is the number of characters including null terminator
+        length = self.uint32()
+        if length <= 1:
+            # Read and discard the null terminator if present
+            if length == 1:
+                self._data.align(4).read(4)
+            return ''
+        # Read each character as a uint32 and convert to string
+        chars = []
+        for _ in range(length - 1):  # Exclude null terminator
+            char_code = struct.unpack(
+                '<I' if self._is_little_endian else '>I',
+                self._data.align(4).read(4)
+            )[0]
+            chars.append(chr(char_code))
+        # Read and discard null terminator
+        self._data.align(4).read(4)
+        return ''.join(chars)
+
     # Container parsers --------------------------------------------------
 
     def array(self, type: str, length: int) -> list:
@@ -227,6 +248,18 @@ class CdrEncoder(MessageEncoder):
         # Write length (including null terminator)
         self.uint32(len(encoded) + 1)
         self._payload.write(encoded + b"\x00")
+
+    def wstring(self, value: str) -> None:
+        # Wide strings use 4 bytes per character (uint32)
+        # Write length (including null terminator)
+        self.uint32(len(value) + 1)
+        fmt = "<I" if self._is_little_endian else ">I"
+        for char in value:
+            self._payload.align(4)
+            self._payload.write(struct.pack(fmt, ord(char)))
+        # Write null terminator
+        self._payload.align(4)
+        self._payload.write(struct.pack(fmt, 0))
 
     # Container encoders -------------------------------------------------
 

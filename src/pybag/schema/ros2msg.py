@@ -309,8 +309,20 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         sub_schemas: dict[str, Schema] = {}
 
         for field in fields(cls):
+            # Allow direct message types (with __msg_name__) without Annotated wrapper
             if get_origin(field.type) is not Annotated:
-                raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
+                if isinstance(field.type, Message):
+                    # This is a direct message type - treat it as Complex
+                    field_type = Complex(field.type.__msg_name__)
+                    field_default = self._parse_default_value(field)
+                    schema.fields[field.name] = SchemaField(field_type, field_default)
+                    # Recursively parse the sub-message
+                    sub_schema, sub_sub_schemas = self._parse_message(field.type)
+                    sub_schemas[sub_schema.name] = sub_schema
+                    sub_schemas.update(sub_sub_schemas)
+                    continue
+                else:
+                    raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
 
             field_type = self._parse_annotation(field.type)
             field_default = self._parse_default_value(field)
@@ -393,11 +405,11 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         else:
             writer.write(f'{encoded_type} {field_name}\n'.encode('utf-8'))
 
-    def encode(self, message: Message | type[Message]) -> bytes:
-        schema, sub_schemas = self._parse_message(message)
+    def encode(self, schema: Message | type[Message]) -> bytes:
+        parsed_schema, sub_schemas = self._parse_message(schema)
 
         writer = BytesWriter()
-        for field_name, field in schema.fields.items():
+        for field_name, field in parsed_schema.fields.items():
             if isinstance(field, SchemaConstant):
                 self._encode_constant(writer, field_name, field)
             elif isinstance(field, SchemaField):
@@ -414,8 +426,8 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
 
         return writer.as_bytes()
 
-    def parse_schema(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
-        return self._parse_message(message)
+    def parse_schema(self, schema: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
+        return self._parse_message(schema)
 
 
 if __name__ == "__main__":
