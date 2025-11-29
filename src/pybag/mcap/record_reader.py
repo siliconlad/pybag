@@ -768,8 +768,8 @@ class McapChunkedReader(BaseMcapRecordReader):
             if (iterator := chunk_message_iterator(i, chunk_index)) is not None
         ]
         # Sort by the timestamp and break ties with the order of the chunk
-        # For reverse, negate timestamp to get descending order from heapq.merge
-        heapq_key = (lambda x: (-x[0], x[1])) if in_reverse else (lambda x: (x[0], x[1]))
+        # For reverse, negate both timestamp and chunk_index_id to get descending order from heapq.merge
+        heapq_key = (lambda x: (-x[0], -x[1])) if in_reverse else (lambda x: (x[0], x[1]))
         for _, _, message in heapq.merge(*chunk_iterators, key=heapq_key):
             yield message
 
