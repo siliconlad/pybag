@@ -10,9 +10,8 @@ from mcap_ros2.decoder import DecoderFactory
 from rosbags.highlevel import AnyReader
 from rosbags.typesys import Stores, get_typestore
 
+from benchmarks.benchmark_utils import create_test_mcap_by_size
 from pybag.mcap_reader import McapFileReader
-
-from .benchmark_utils import create_test_mcap_by_size
 
 
 @pytest.fixture(scope="module")
