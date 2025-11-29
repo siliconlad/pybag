@@ -664,59 +664,37 @@ def test_multi_topic_out_of_order_from_official_mcap(
         pytest.param(64, id="with_chunks"),
     ],
 )
+@pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_single_topic(chunk_size, enable_crc_check: bool):
-    """Test reverse iteration returns messages in descending time order."""
-    with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "reverse.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            for i in range(8):
-                writer.write_message("/test", i, std_msgs.String(data=f"msg_{i}"))
-
-        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Forward iteration
-            forward_messages = list(reader.messages("/test", in_reverse=False))
-            assert [msg.log_time for msg in forward_messages] == list(range(8))
-            assert [msg.data.data for msg in forward_messages] == [f"msg_{i}" for i in range(8)]
-
-            # Reverse iteration
-            reverse_messages = list(reader.messages("/test", in_reverse=True))
-            expected_times = list(reversed(range(8)))
-            assert [msg.log_time for msg in reverse_messages] == expected_times
-            assert [msg.data.data for msg in reverse_messages] == [f"msg_{i}" for i in expected_times]
-
-
-@pytest.mark.parametrize(
-    "chunk_size",
-    [
-        pytest.param(None, id="without_chunks"),
-        pytest.param(64, id="with_chunks"),
-    ],
-)
-@pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_multiple_topics(chunk_size, enable_crc_check: bool):
+def test_reverse_iteration_multiple_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test reverse iteration with multiple topics interleaved correctly."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "reverse_multi.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            # Interleaved timestamps
-            writer.write_message("/topic1", 10, std_msgs.String(data="topic1_10"))
-            writer.write_message("/topic2", 15, std_msgs.String(data="topic2_15"))
-            writer.write_message("/topic1", 20, std_msgs.String(data="topic1_20"))
-            writer.write_message("/topic2", 25, std_msgs.String(data="topic2_25"))
-            writer.write_message("/topic1", 30, std_msgs.String(data="topic1_30"))
+            # Write in specific interleaved order
+            writer.write_message("/topic1", 10, std_msgs.String(data="t1_10"))
+            writer.write_message("/topic2", 5, std_msgs.String(data="t2_5"))
+            writer.write_message("/topic1", 3, std_msgs.String(data="t1_3"))
+            writer.write_message("/topic2", 15, std_msgs.String(data="t2_15"))
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Forward iteration
-            forward_messages = list(reader.messages(["/topic1", "/topic2"], in_reverse=False))
-            assert [msg.log_time for msg in forward_messages] == [10, 15, 20, 25, 30]
-
             # Reverse iteration
-            reverse_messages = list(reader.messages(["/topic1", "/topic2"], in_reverse=True))
-            assert [msg.log_time for msg in reverse_messages] == [30, 25, 20, 15, 10]
-            assert [msg.data.data for msg in reverse_messages] == [
-                "topic1_30", "topic2_25", "topic1_20", "topic2_15", "topic1_10"
-            ]
+            reverse_messages = list(reader.messages(["/topic1", "/topic2"], in_log_time_order=in_log_time_order, in_reverse=True))
+            if in_log_time_order:
+                assert [msg.log_time for msg in reverse_messages] == [15, 10, 5, 3]
+                assert [msg.data.data for msg in reverse_messages] == ["t2_15", "t1_10", "t2_5", "t1_3"]
+            else:
+                assert [msg.log_time for msg in reverse_messages] == [15, 3, 5, 10]
+                assert [msg.data.data for msg in reverse_messages] == ["t2_15", "t1_3", "t2_5", "t1_10"]
+
+            # Reverse iteration (one topic)
+            reverse_messages = list(reader.messages("/topic1", in_log_time_order=in_log_time_order, in_reverse=True))
+            if in_log_time_order:
+                assert [msg.log_time for msg in reverse_messages] == [10, 3]
+                assert [msg.data.data for msg in reverse_messages] == ["t1_10", "t1_3"]
+            else:
+                assert [msg.log_time for msg in reverse_messages] == [3, 10]
+                assert [msg.data.data for msg in reverse_messages] == ["t1_3", "t1_10"]
 
 
 @pytest.mark.parametrize(
@@ -726,8 +704,9 @@ def test_reverse_iteration_multiple_topics(chunk_size, enable_crc_check: bool):
         pytest.param(64, id="with_chunks"),
     ],
 )
+@pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_with_time_filter(chunk_size, enable_crc_check: bool):
+def test_reverse_iteration_with_time_filter(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
     """Test reverse iteration respects start_time and end_time filters."""
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "reverse_filter.mcap"
@@ -735,9 +714,9 @@ def test_reverse_iteration_with_time_filter(chunk_size, enable_crc_check: bool):
             for i in range(10):
                 writer.write_message("/test", i * 10, std_msgs.String(data=f"msg_{i}"))
 
+        # Reverse iteration with time range [20, 60]
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Reverse iteration with time range [20, 60]
-            messages = list(reader.messages("/test", start_time=20, end_time=60, in_reverse=True))
+            messages = list(reader.messages("/test", start_time=20, end_time=60, in_log_time_order=in_log_time_order, in_reverse=True))
             expected_times = [60, 50, 40, 30, 20]
             assert [msg.log_time for msg in messages] == expected_times
 
@@ -750,27 +729,45 @@ def test_reverse_iteration_with_time_filter(chunk_size, enable_crc_check: bool):
     ],
 )
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_random_write_order(chunk_size, enable_crc_check: bool):
-    """Test reverse iteration handles messages written out of order."""
-    random.seed(42)
-
+def test_reverse_iteration_duplicate_timestamps(chunk_size, enable_crc_check: bool):
+    """Test reverse iteration handles duplicate timestamps correctly."""
     with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "reverse_random.mcap"
-        timestamps = list(range(10))
-        shuffled = random.sample(timestamps, len(timestamps))
-
+        path = Path(temp_dir) / "reverse_dup.mcap"
         with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            for t in shuffled:
-                writer.write_message("/test", t, std_msgs.String(data=f"msg_{t}"))
+            timestamp = 1000
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_0"))
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_1"))
+            writer.write_message("/test", timestamp, std_msgs.String(data="msg_2"))
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Forward iteration should give ascending order
-            forward_messages = list(reader.messages("/test", in_reverse=False))
-            assert [msg.log_time for msg in forward_messages] == sorted(timestamps)
+            messages = list(reader.messages("/test", in_reverse=True))
+            assert [message.data.data for message in messages] == ["msg_2", "msg_1", "msg_0"]
 
-            # Reverse iteration should give descending order
-            reverse_messages = list(reader.messages("/test", in_reverse=True))
-            assert [msg.log_time for msg in reverse_messages] == sorted(timestamps, reverse=True)
+
+@pytest.mark.parametrize(
+    "chunk_size",
+    [
+        pytest.param(None, id="without_chunks"),
+        pytest.param(64, id="with_chunks"),
+    ],
+)
+@pytest.mark.parametrize("enable_crc_check", [True, False])
+def test_reverse_iteration_with_filter(chunk_size, enable_crc_check: bool):
+    """Test reverse iteration works with message filter callback."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "reverse_filter_cb.mcap"
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+            for i in range(10):
+                writer.write_message("/test", i, std_msgs.String(data=f"msg_{i}"))
+
+        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
+            messages = list(reader.messages(
+                "/test",
+                filter=lambda msg: msg.log_time % 2 == 0,
+                in_reverse=True
+            ))
+            expected_times = [8, 6, 4, 2, 0]
+            assert [msg.log_time for msg in messages] == expected_times
 
 
 @pytest.mark.parametrize("enable_crc_check", [True, False])
@@ -799,112 +796,3 @@ def test_reverse_iteration_multiple_files(enable_crc_check: bool):
         reverse_messages = list(reader.messages("/chatter", in_reverse=True))
         assert [m.data.data for m in reverse_messages] == ["!!", "again", "world", "hello"]
         assert [m.log_time for m in reverse_messages] == [4, 3, 2, 1]
-
-
-@pytest.mark.parametrize(
-    "chunk_size",
-    [
-        pytest.param(None, id="without_chunks"),
-        pytest.param(64, id="with_chunks"),
-    ],
-)
-@pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_duplicate_timestamps(chunk_size, enable_crc_check: bool):
-    """Test reverse iteration handles duplicate timestamps correctly."""
-    with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "reverse_dup.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            timestamp = 1000
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_0"))
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_1"))
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_2"))
-
-        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Reverse iteration should return all messages at same timestamp
-            messages = list(reader.messages("/test", in_reverse=True))
-            assert len(messages) == 3
-            assert all(msg.log_time == timestamp for msg in messages)
-
-
-@pytest.mark.parametrize(
-    "chunk_size",
-    [
-        pytest.param(None, id="without_chunks"),
-        pytest.param(64, id="with_chunks"),
-    ],
-)
-@pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_with_filter(chunk_size, enable_crc_check: bool):
-    """Test reverse iteration works with message filter callback."""
-    with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "reverse_filter_cb.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            for i in range(10):
-                writer.write_message("/test", i, std_msgs.String(data=f"msg_{i}"))
-
-        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Reverse with filter for even timestamps only
-            messages = list(reader.messages(
-                "/test",
-                filter=lambda msg: msg.log_time % 2 == 0,
-                in_reverse=True
-            ))
-            expected_times = [8, 6, 4, 2, 0]
-            assert [msg.log_time for msg in messages] == expected_times
-
-
-@pytest.mark.parametrize(
-    "chunk_size",
-    [
-        pytest.param(None, id="without_chunks"),
-        pytest.param(64, id="with_chunks"),
-    ],
-)
-@pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_write_order_single_topic(chunk_size, enable_crc_check: bool):
-    """Test that in_log_time_order=False with in_reverse=True returns messages in reverse write order."""
-    with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "reverse_write.mcap"
-        # Write messages in a specific order (not time-sorted)
-        write_order = [5, 2, 8, 1, 9, 3]
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            for t in write_order:
-                writer.write_message("/test", t, std_msgs.String(data=f"msg_{t}"))
-
-        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Forward write order
-            forward_messages = list(reader.messages("/test", in_log_time_order=False, in_reverse=False))
-            assert [msg.log_time for msg in forward_messages] == write_order
-
-            # Reverse write order
-            reverse_messages = list(reader.messages("/test", in_log_time_order=False, in_reverse=True))
-            assert [msg.log_time for msg in reverse_messages] == list(reversed(write_order))
-
-
-@pytest.mark.parametrize(
-    "chunk_size",
-    [
-        pytest.param(None, id="without_chunks"),
-        pytest.param(64, id="with_chunks"),
-    ],
-)
-@pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_write_order_multiple_topics(chunk_size, enable_crc_check: bool):
-    """Test reverse write order with multiple interleaved topics."""
-    with TemporaryDirectory() as temp_dir:
-        path = Path(temp_dir) / "reverse_write_multi.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            # Write in specific interleaved order
-            writer.write_message("/topic1", 10, std_msgs.String(data="t1_10"))
-            writer.write_message("/topic2", 5, std_msgs.String(data="t2_5"))
-            writer.write_message("/topic1", 3, std_msgs.String(data="t1_3"))
-            writer.write_message("/topic2", 15, std_msgs.String(data="t2_15"))
-
-        with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
-            # Forward write order
-            forward_messages = list(reader.messages(["/topic1", "/topic2"], in_log_time_order=False, in_reverse=False))
-            assert [msg.data.data for msg in forward_messages] == ["t1_10", "t2_5", "t1_3", "t2_15"]
-
-            # Reverse write order
-            reverse_messages = list(reader.messages(["/topic1", "/topic2"], in_log_time_order=False, in_reverse=True))
-            assert [msg.data.data for msg in reverse_messages] == ["t2_15", "t1_3", "t2_5", "t1_10"]
