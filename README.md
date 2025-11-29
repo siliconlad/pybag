@@ -8,7 +8,11 @@ A Python library to work with bag files (MCAP format) without ROS.
 ## Installation
 
 ```bash
+# Add dependency to your package
 uv add pybag-sdk
+
+# Install pybag cli
+uv tool install pybag-sdk
 ```
 
 ## Quick Start
