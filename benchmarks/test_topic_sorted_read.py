@@ -10,7 +10,7 @@ from pytest_benchmark.fixture import BenchmarkFixture
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
 
-from pybag.cli.mcap_sort_by_topic import sort_by_topic
+from pybag.cli.mcap_sort import sort_mcap
 from pybag.mcap.record_reader import McapRecordReaderFactory
 
 from .benchmark_utils import (
@@ -136,7 +136,7 @@ def test_read_single_topic_sorted(benchmark: BenchmarkFixture) -> None:
     """Benchmark reading a single topic from topic-sorted MCAP."""
     with TemporaryDirectory() as tmpdir:
         mcap = create_multi_topic_mcap(Path(tmpdir) / "test", topics=5, messages_per_topic=200)
-        sorted_mcap = sort_by_topic(mcap, chunk_size=1024 * 256, chunk_compression="lz4", overwrite=True)
+        sorted_mcap = sort_mcap(mcap, chunk_size=1024 * 256, chunk_compression="lz4", overwrite=True, by_topic=True)
         benchmark(lambda: deque(read_single_topic(sorted_mcap, "/odom_0"), maxlen=0))
 
 
@@ -151,5 +151,5 @@ def test_read_all_topics_sorted(benchmark: BenchmarkFixture) -> None:
     """Benchmark reading all topics from topic-sorted MCAP."""
     with TemporaryDirectory() as tmpdir:
         mcap = create_multi_topic_mcap(Path(tmpdir) / "test", topics=5, messages_per_topic=200)
-        sorted_mcap = sort_by_topic(mcap, chunk_size=1024 * 256, chunk_compression="lz4", overwrite=True)
+        sorted_mcap = sort_mcap(mcap, chunk_size=1024 * 256, chunk_compression="lz4", overwrite=True, by_topic=True)
         benchmark(lambda: deque(read_all_topics(sorted_mcap), maxlen=0))
