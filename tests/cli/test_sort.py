@@ -14,264 +14,250 @@ from pybag.mcap_writer import McapFileWriter
 from pybag.serialize import MessageSerializerFactory
 
 
-def create_test_mcap_with_multiple_topics(path: Path) -> Path:
-    """Create a simple MCAP with multiple topics for testing."""
-    from rosbags.rosbag2 import StoragePlugin, Writer
-    from rosbags.typesys import Stores, get_typestore
+def create_test_mcap_with_multiple_topics(path: Path, chunk_size: int = 1024) -> Path:
+    """Create a simple MCAP with multiple topics for testing.
 
-    typestore = get_typestore(Stores.LATEST)
-    String = typestore.types["std_msgs/msg/String"]
+    Args:
+        path: Path to the output MCAP file.
+        chunk_size: Chunk size in bytes for consistent test behavior.
 
-    with Writer(path, version=9, storage_plugin=StoragePlugin.MCAP) as writer:
-        conn1 = writer.add_connection("/topic1", String.__msgtype__, typestore=typestore)
-        conn2 = writer.add_connection("/topic2", String.__msgtype__, typestore=typestore)
-        conn3 = writer.add_connection("/topic3", String.__msgtype__, typestore=typestore)
-
-        # Write messages in interleaved order
+    Returns:
+        Path to the created MCAP file.
+    """
+    with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression="lz4") as writer:
+        # Write messages in interleaved order (3 topics, 10 messages each)
         for i in range(10):
-            msg1 = String(data=f"topic1_msg{i}")
-            msg2 = String(data=f"topic2_msg{i}")
-            msg3 = String(data=f"topic3_msg{i}")
+            writer.write_message("/topic1", i * 1_000_000_000, std_msgs.String(data=f"topic1_msg{i}"))
+            writer.write_message("/topic2", i * 1_000_000_000 + 100, std_msgs.String(data=f"topic2_msg{i}"))
+            writer.write_message("/topic3", i * 1_000_000_000 + 200, std_msgs.String(data=f"topic3_msg{i}"))
 
-            writer.write(conn1, i * 1_000_000_000, typestore.serialize_cdr(msg1, String.__msgtype__))
-            writer.write(conn2, i * 1_000_000_000 + 100, typestore.serialize_cdr(msg2, String.__msgtype__))
-            writer.write(conn3, i * 1_000_000_000 + 200, typestore.serialize_cdr(msg3, String.__msgtype__))
-
-    return next(Path(path).rglob("*.mcap"))
+    return path
 
 
-def test_sort_by_topic_same_input_output_error():
+def test_sort_by_topic_same_input_output_error(tmp_path: Path):
     """Test that using same input and output raises error."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = create_test_mcap_with_multiple_topics(Path(tmpdir) / "input")
+    input_mcap = create_test_mcap_with_multiple_topics(tmp_path / "input.mcap")
 
-        with pytest.raises(ValueError, match="Input path cannot be same as output"):
-            sort_mcap(input_mcap, input_mcap, sort_by_topic=True)
+    with pytest.raises(ValueError, match="Input path cannot be same as output"):
+        sort_mcap(input_mcap, input_mcap, sort_by_topic=True)
 
 
-def test_sort_by_topic_overwrite():
+def test_sort_by_topic_overwrite(tmp_path: Path):
     """Test that overwrite flag works."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = create_test_mcap_with_multiple_topics(Path(tmpdir) / "input")
-        output_mcap = Path(tmpdir) / "output.mcap"
+    input_mcap = create_test_mcap_with_multiple_topics(tmp_path / "input.mcap")
+    output_mcap = tmp_path / "output.mcap"
 
-        # Create initial output
-        _ = sort_mcap(input_mcap, output_mcap)
+    # Create initial output
+    _ = sort_mcap(input_mcap, output_mcap, sort_by_topic=True)
 
-        # Should fail without overwrite flag
-        with pytest.raises(ValueError, match="Output mcap exists"):
-            _ = sort_mcap(input_mcap, output_mcap)
+    # Should fail without overwrite flag
+    with pytest.raises(ValueError, match="Output mcap exists"):
+        _ = sort_mcap(input_mcap, output_mcap, sort_by_topic=True)
 
-        # Should succeed with overwrite flag
-        result = sort_mcap(input_mcap, output_mcap, overwrite=True)
-        assert result.exists()
+    # Should succeed with overwrite flag
+    result = sort_mcap(input_mcap, output_mcap, sort_by_topic=True, overwrite=True)
+    assert result.exists()
 
 
-def test_sort_no_flags_returns_input():
+def test_sort_no_flags_returns_input(tmp_path: Path):
     """Test that sort_mcap with no flags returns input path without creating output."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = create_test_mcap_with_multiple_topics(Path(tmpdir) / "input")
-        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+    input_mcap = create_test_mcap_with_multiple_topics(tmp_path / "input.mcap")
+    output_mcap = tmp_path / "output_sorted.mcap"
 
-        result = sort_mcap(input_mcap, output_mcap)
+    result = sort_mcap(input_mcap, output_mcap)
 
-        # Should return input path
-        assert result.resolve() == input_mcap.resolve()
-        assert not output_mcap.exists()  # Output should not be created
+    # Should return input path
+    assert result.resolve() == input_mcap.resolve()
+    assert not output_mcap.exists()  # Output should not be created
 
 
-def test_sort_by_topic():
+def test_sort_by_topic(tmp_path: Path):
     """Test that sort_mcap with by_topic creates a valid output file."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = create_test_mcap_with_multiple_topics(Path(tmpdir) / "input")
-        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+    input_mcap = create_test_mcap_with_multiple_topics(tmp_path / "input.mcap")
+    output_mcap = tmp_path / "output_sorted.mcap"
 
-        result = sort_mcap(
-            input_mcap,
-            output_mcap,
-            chunk_size=1024,
-            chunk_compression="lz4",
-            sort_by_topic=True
-        )
+    result = sort_mcap(
+        input_mcap,
+        output_mcap,
+        chunk_size=1024,
+        chunk_compression="lz4",
+        sort_by_topic=True
+    )
 
-        # Verify output file exists
-        assert result.exists()
-        assert result.resolve() == output_mcap.resolve()
+    # Verify output file exists
+    assert result.exists()
+    assert result.resolve() == output_mcap.resolve()
 
-        # Verify messages are grouped by topic
-        with McapRecordReaderFactory.from_file(output_mcap) as reader:
-            messages = list(reader.get_messages(in_log_time_order=False))
-            assert len(messages) == 30
+    # Verify messages are grouped by topic
+    with McapRecordReaderFactory.from_file(output_mcap) as reader:
+        messages = list(reader.get_messages(in_log_time_order=False))
+        assert len(messages) == 30
 
-            # Group messages by topic and check log time ordering within each
-            current_channel_id = None
-            channel_ids: set[int] = set()
+        # Group messages by topic and check log time ordering within each
+        current_channel_id = None
+        channel_ids: set[int] = set()
 
-            for msg in messages:
-                if msg.channel_id != current_channel_id:
-                    # New topic - verify previous topic was sorted
-                    assert msg.channel_id not in channel_ids
-                    current_channel_id = msg.channel_id
-                    channel_ids.add(msg.channel_id)
+        for msg in messages:
+            if msg.channel_id != current_channel_id:
+                # New topic - verify previous topic was sorted
+                assert msg.channel_id not in channel_ids
+                current_channel_id = msg.channel_id
+                channel_ids.add(msg.channel_id)
 
 
-def test_sort_log_time():
+def test_sort_log_time(tmp_path: Path):
     """Test that sort_mcap with log_time only sorts all messages by log time."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = create_test_mcap_with_multiple_topics(Path(tmpdir) / "input")
-        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+    input_mcap = create_test_mcap_with_multiple_topics(tmp_path / "input.mcap")
+    output_mcap = tmp_path / "output_sorted.mcap"
 
-        result = sort_mcap(
-            input_mcap,
-            output_mcap,
-            chunk_size=1024,
-            chunk_compression="lz4",
-            sort_by_log_time=True
-        )
+    result = sort_mcap(
+        input_mcap,
+        output_mcap,
+        chunk_size=1024,
+        chunk_compression="lz4",
+        sort_by_log_time=True
+    )
 
-        # Verify output file exists
-        assert result.exists()
-        assert result.resolve() == output_mcap.resolve()
+    # Verify output file exists
+    assert result.exists()
+    assert result.resolve() == output_mcap.resolve()
 
-        # Verify messages are sorted by log time
-        with McapRecordReaderFactory.from_file(output_mcap) as reader:
-            messages = list(reader.get_messages(in_log_time_order=False))
-            log_times = [m.log_time for m in messages]
-            assert log_times == sorted(log_times)
-            assert len(messages) == 30
+    # Verify messages are sorted by log time
+    with McapRecordReaderFactory.from_file(output_mcap) as reader:
+        messages = list(reader.get_messages(in_log_time_order=False))
+        log_times = [m.log_time for m in messages]
+        assert log_times == sorted(log_times)
+        assert len(messages) == 30
 
 
-def test_sort_by_topic_and_log_time():
+def test_sort_by_topic_and_log_time(tmp_path: Path):
     """Test that sort_mcap with both flags groups by topic and sorts by log time within."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = create_test_mcap_with_multiple_topics(Path(tmpdir) / "input")
-        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+    input_mcap = create_test_mcap_with_multiple_topics(tmp_path / "input.mcap")
+    output_mcap = tmp_path / "output_sorted.mcap"
 
-        result = sort_mcap(
-            input_mcap,
-            output_mcap,
-            chunk_size=1024,
-            chunk_compression="lz4",
-            sort_by_topic=True,
-            sort_by_log_time=True
-        )
+    result = sort_mcap(
+        input_mcap,
+        output_mcap,
+        chunk_size=1024,
+        chunk_compression="lz4",
+        sort_by_topic=True,
+        sort_by_log_time=True
+    )
 
-        # Verify output file exists
-        assert result.exists()
-        assert result.resolve() == output_mcap.resolve()
+    # Verify output file exists
+    assert result.exists()
+    assert result.resolve() == output_mcap.resolve()
 
-        # Verify messages are grouped by topic and sorted by log time within each topic
-        with McapRecordReaderFactory.from_file(output_mcap) as reader:
-            channels = reader.get_channels()
-            messages = list(reader.get_messages(in_log_time_order=False))
+    # Verify messages are grouped by topic and sorted by log time within each topic
+    with McapRecordReaderFactory.from_file(output_mcap) as reader:
+        channels = reader.get_channels()
+        messages = list(reader.get_messages(in_log_time_order=False))
 
-            # Group messages by topic and check log time ordering within each
-            current_topic = None
-            topic_log_times: list[int] = []
+        # Group messages by topic and check log time ordering within each
+        current_topic = None
+        topic_log_times: list[int] = []
 
-            for msg in messages:
-                topic = channels[msg.channel_id].topic
-                if topic != current_topic:
-                    # New topic - verify previous topic was sorted
-                    if topic_log_times:
-                        assert topic_log_times == sorted(topic_log_times)
-                    current_topic = topic
-                    topic_log_times = [msg.log_time]
-                else:
-                    topic_log_times.append(msg.log_time)
-            if topic_log_times:  # Check the last topic
-                assert topic_log_times == sorted(topic_log_times)
+        for msg in messages:
+            topic = channels[msg.channel_id].topic
+            if topic != current_topic:
+                # New topic - verify previous topic was sorted
+                if topic_log_times:
+                    assert topic_log_times == sorted(topic_log_times)
+                current_topic = topic
+                topic_log_times = [msg.log_time]
+            else:
+                topic_log_times.append(msg.log_time)
+        if topic_log_times:  # Check the last topic
+            assert topic_log_times == sorted(topic_log_times)
 
-            assert len(messages) == 30
+        assert len(messages) == 30
 
 
-def test_sort_preserves_attachments():
+def test_sort_preserves_attachments(tmp_path: Path):
     """Test that sort_mcap preserves attachments from the source file."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = Path(tmpdir) / "input.mcap"
-        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+    input_mcap = tmp_path / "input.mcap"
+    output_mcap = tmp_path / "output_sorted.mcap"
 
-        # Create MCAP with messages and attachments using pybag writer
-        with McapFileWriter.open(input_mcap, chunk_size=1024, chunk_compression="lz4") as writer:
-            # Write some messages
-            writer.write_message("/topic1", 1_000_000_000, std_msgs.String(data="msg1"))
-            writer.write_message("/topic2", 2_000_000_000, std_msgs.String(data="msg2"))
-            writer.write_message("/topic1", 3_000_000_000, std_msgs.String(data="msg3"))
+    # Create MCAP with messages and attachments using pybag writer
+    with McapFileWriter.open(input_mcap, chunk_size=1024, chunk_compression="lz4") as writer:
+        # Write some messages
+        writer.write_message("/topic1", 1_000_000_000, std_msgs.String(data="msg1"))
+        writer.write_message("/topic2", 2_000_000_000, std_msgs.String(data="msg2"))
+        writer.write_message("/topic1", 3_000_000_000, std_msgs.String(data="msg3"))
 
-            # Write attachments
-            writer.write_attachment(
-                name="calibration.yaml",
-                data=b"key: value",
-                media_type="application/x-yaml",
-                log_time=2_500_000_000,
-                create_time=2_000_000_000,
-            )
-
-        # Sort the MCAP
-        result = sort_mcap(
-            input_mcap,
-            output_mcap,
-            chunk_size=1024,
-            chunk_compression="lz4",
-            sort_by_topic=True,
+        # Write attachments
+        writer.write_attachment(
+            name="calibration.yaml",
+            data=b"key: value",
+            media_type="application/x-yaml",
+            log_time=2_500_000_000,
+            create_time=2_000_000_000,
         )
-        assert result.exists()
 
-        # Verify attachments are preserved
-        with McapRecordReaderFactory.from_file(output_mcap) as reader:
-            attachments = reader.get_attachments()
-            assert len(attachments) == 1
+    # Sort the MCAP
+    result = sort_mcap(
+        input_mcap,
+        output_mcap,
+        chunk_size=1024,
+        chunk_compression="lz4",
+        sort_by_topic=True,
+    )
+    assert result.exists()
 
-            # Check attachment content
-            attachment_by_name = {a.name: a for a in attachments}
-            assert "calibration.yaml" in attachment_by_name
-            assert attachment_by_name["calibration.yaml"].data == b"key: value"
-            assert attachment_by_name["calibration.yaml"].media_type == "application/x-yaml"
+    # Verify attachments are preserved
+    with McapRecordReaderFactory.from_file(output_mcap) as reader:
+        attachments = reader.get_attachments()
+        assert len(attachments) == 1
 
-            # Also verify messages are still there
-            messages = list(reader.get_messages())
-            assert len(messages) == 3
+        # Check attachment content
+        attachment_by_name = {a.name: a for a in attachments}
+        assert "calibration.yaml" in attachment_by_name
+        assert attachment_by_name["calibration.yaml"].data == b"key: value"
+        assert attachment_by_name["calibration.yaml"].media_type == "application/x-yaml"
+
+        # Also verify messages are still there
+        messages = list(reader.get_messages())
+        assert len(messages) == 3
 
 
-def test_sort_preserves_metadata():
+def test_sort_preserves_metadata(tmp_path: Path):
     """Test that sort_mcap preserves metadata from the source file."""
-    with TemporaryDirectory() as tmpdir:
-        input_mcap = Path(tmpdir) / "input.mcap"
-        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+    input_mcap = tmp_path / "input.mcap"
+    output_mcap = tmp_path / "output_sorted.mcap"
 
-        # Create MCAP with messages and metadata using pybag writer
-        with McapFileWriter.open(input_mcap, chunk_size=1024, chunk_compression="lz4") as writer:
-            # Write some messages
-            writer.write_message("/topic1", 1_000_000_000, std_msgs.String(data="msg1"))
-            writer.write_message("/topic2", 2_000_000_000, std_msgs.String(data="msg2"))
+    # Create MCAP with messages and metadata using pybag writer
+    with McapFileWriter.open(input_mcap, chunk_size=1024, chunk_compression="lz4") as writer:
+        # Write some messages
+        writer.write_message("/topic1", 1_000_000_000, std_msgs.String(data="msg1"))
+        writer.write_message("/topic2", 2_000_000_000, std_msgs.String(data="msg2"))
 
-            # Write metadata
-            writer.write_metadata(
-                name="device_info",
-                metadata={"device_id": "sensor_123"}
-            )
-
-        # Sort the MCAP
-        result = sort_mcap(
-            input_mcap,
-            output_mcap,
-            chunk_size=1024,
-            chunk_compression="lz4",
-            sort_by_log_time=True
+        # Write metadata
+        writer.write_metadata(
+            name="device_info",
+            metadata={"device_id": "sensor_123"}
         )
-        assert result.exists()
 
-        # Verify metadata is preserved
-        with McapRecordReaderFactory.from_file(output_mcap) as reader:
-            metadata_records = reader.get_metadata()
-            assert len(metadata_records) == 2
+    # Sort the MCAP
+    result = sort_mcap(
+        input_mcap,
+        output_mcap,
+        chunk_size=1024,
+        chunk_compression="lz4",
+        sort_by_log_time=True
+    )
+    assert result.exists()
 
-            # Check metadata content
-            metadata_by_name = {m.name: m for m in metadata_records}
+    # Verify metadata is preserved
+    with McapRecordReaderFactory.from_file(output_mcap) as reader:
+        metadata_records = reader.get_metadata()
+        assert len(metadata_records) == 1
 
-            assert "device_info" in metadata_by_name
-            assert metadata_by_name["device_info"].metadata == {"device_id": "sensor_123"}
+        # Check metadata content
+        metadata_by_name = {m.name: m for m in metadata_records}
 
-            # Also verify messages are still there
-            messages = list(reader.get_messages())
-            assert len(messages) == 2
+        assert "device_info" in metadata_by_name
+        assert metadata_by_name["device_info"].metadata == {"device_id": "sensor_123"}
+
+        # Also verify messages are still there
+        messages = list(reader.get_messages())
+        assert len(messages) == 2
