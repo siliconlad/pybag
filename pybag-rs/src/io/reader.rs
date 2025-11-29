@@ -55,6 +55,52 @@ pub trait Reader {
     }
 }
 
+/// Trait for zero-copy reading from memory-mapped data.
+pub trait SliceReader {
+    /// Get a slice of `n` bytes at current position and advance.
+    fn slice(&mut self, n: usize) -> Result<&[u8]>;
+
+    /// Peek at a slice without advancing position.
+    fn peek_slice(&self, n: usize) -> Result<&[u8]>;
+
+    /// Get the underlying data slice.
+    fn data(&self) -> &[u8];
+
+    /// Skip `n` bytes.
+    fn skip(&mut self, n: usize) -> Result<()>;
+
+    /// Read a u8.
+    #[inline]
+    fn read_u8(&mut self) -> Result<u8> {
+        let slice = self.slice(1)?;
+        Ok(slice[0])
+    }
+
+    /// Read a u16 little-endian.
+    #[inline]
+    fn read_u16_le(&mut self) -> Result<u16> {
+        let slice = self.slice(2)?;
+        Ok(u16::from_le_bytes([slice[0], slice[1]]))
+    }
+
+    /// Read a u32 little-endian.
+    #[inline]
+    fn read_u32_le(&mut self) -> Result<u32> {
+        let slice = self.slice(4)?;
+        Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
+    }
+
+    /// Read a u64 little-endian.
+    #[inline]
+    fn read_u64_le(&mut self) -> Result<u64> {
+        let slice = self.slice(8)?;
+        Ok(u64::from_le_bytes([
+            slice[0], slice[1], slice[2], slice[3],
+            slice[4], slice[5], slice[6], slice[7],
+        ]))
+    }
+}
+
 /// Memory-mapped file reader for maximum performance.
 pub struct FileReader {
     mmap: Mmap,
@@ -67,6 +113,25 @@ impl FileReader {
         let file = File::open(path)?;
         let mmap = unsafe { Mmap::map(&file)? };
         Ok(Self { mmap, position: 0 })
+    }
+}
+
+impl FileReader {
+    /// Get the underlying mmap slice at a specific position.
+    #[inline]
+    pub fn get_slice(&self, start: usize, len: usize) -> Option<&[u8]> {
+        let end = start + len;
+        if end <= self.mmap.len() {
+            Some(&self.mmap[start..end])
+        } else {
+            None
+        }
+    }
+
+    /// Get the underlying mmap.
+    #[inline]
+    pub fn mmap(&self) -> &[u8] {
+        &self.mmap
     }
 }
 
@@ -133,6 +198,46 @@ impl Reader for FileReader {
 
     fn len(&self) -> u64 {
         self.mmap.len() as u64
+    }
+}
+
+impl SliceReader for FileReader {
+    #[inline]
+    fn slice(&mut self, n: usize) -> Result<&[u8]> {
+        let start = self.position as usize;
+        let end = start + n;
+        if end > self.mmap.len() {
+            return Err(PybagError::BufferTooSmall {
+                needed: n,
+                available: self.mmap.len() - start,
+            });
+        }
+        self.position = end as u64;
+        Ok(&self.mmap[start..end])
+    }
+
+    #[inline]
+    fn peek_slice(&self, n: usize) -> Result<&[u8]> {
+        let start = self.position as usize;
+        let end = start + n;
+        if end > self.mmap.len() {
+            return Err(PybagError::BufferTooSmall {
+                needed: n,
+                available: self.mmap.len() - start,
+            });
+        }
+        Ok(&self.mmap[start..end])
+    }
+
+    #[inline]
+    fn data(&self) -> &[u8] {
+        &self.mmap
+    }
+
+    #[inline]
+    fn skip(&mut self, n: usize) -> Result<()> {
+        self.position += n as u64;
+        Ok(())
     }
 }
 
@@ -230,5 +335,84 @@ impl Reader for BytesReader {
 
     fn len(&self) -> u64 {
         self.data.len() as u64
+    }
+}
+
+/// Zero-copy view into a slice of bytes.
+#[derive(Clone)]
+pub struct SliceView<'a> {
+    data: &'a [u8],
+    position: usize,
+}
+
+impl<'a> SliceView<'a> {
+    /// Create a new slice view.
+    #[inline]
+    pub fn new(data: &'a [u8]) -> Self {
+        Self { data, position: 0 }
+    }
+
+    /// Get remaining bytes.
+    #[inline]
+    pub fn remaining(&self) -> usize {
+        self.data.len() - self.position
+    }
+
+    /// Check if at end.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.position >= self.data.len()
+    }
+
+    /// Get current position.
+    #[inline]
+    pub fn position(&self) -> usize {
+        self.position
+    }
+
+    /// Set position.
+    #[inline]
+    pub fn set_position(&mut self, pos: usize) {
+        self.position = pos.min(self.data.len());
+    }
+}
+
+impl<'a> SliceReader for SliceView<'a> {
+    #[inline]
+    fn slice(&mut self, n: usize) -> Result<&[u8]> {
+        let start = self.position;
+        let end = start + n;
+        if end > self.data.len() {
+            return Err(PybagError::BufferTooSmall {
+                needed: n,
+                available: self.data.len() - start,
+            });
+        }
+        self.position = end;
+        Ok(&self.data[start..end])
+    }
+
+    #[inline]
+    fn peek_slice(&self, n: usize) -> Result<&[u8]> {
+        let start = self.position;
+        let end = start + n;
+        if end > self.data.len() {
+            return Err(PybagError::BufferTooSmall {
+                needed: n,
+                available: self.data.len() - start,
+            });
+        }
+        Ok(&self.data[start..end])
+    }
+
+    #[inline]
+    fn data(&self) -> &[u8] {
+        self.data
+    }
+
+    #[inline]
+    fn skip(&mut self, n: usize) -> Result<()> {
+        self.position += n;
+        Ok(())
     }
 }

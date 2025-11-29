@@ -9,6 +9,7 @@ use tempfile::TempDir;
 use pybag_rs::mcap::reader::McapReader;
 use pybag_rs::mcap::writer::McapWriter;
 use pybag_rs::mcap::records::{ChannelRecord, MessageRecord, SchemaRecord};
+use pybag_rs::mcap::zerocopy::{FastMcapReader, count_messages_fast};
 
 // Import official mcap library
 use mcap;
@@ -99,6 +100,30 @@ fn read_with_official_mcap(path: &Path) -> usize {
     count
 }
 
+/// Read messages using our fast zero-copy implementation (iterator).
+fn read_with_pybag_rs_fast(path: &Path) -> usize {
+    let reader = FastMcapReader::open(path).expect("Failed to open MCAP file");
+    let mut count = 0;
+    for msg in reader.iter_messages() {
+        let _ = black_box(msg);
+        count += 1;
+    }
+    count
+}
+
+/// Read messages using our fast zero-copy implementation (callback).
+fn read_with_pybag_rs_fast_callback(path: &Path) -> usize {
+    let reader = FastMcapReader::open(path).expect("Failed to open MCAP file");
+    reader.for_each_message(|msg| {
+        let _ = black_box(msg);
+    }).expect("Failed to read messages")
+}
+
+/// Count messages using fast path (for chunked files).
+fn count_with_pybag_rs_fast(path: &Path) -> usize {
+    count_messages_fast(path).expect("Failed to count messages")
+}
+
 fn benchmark_reading(c: &mut Criterion) {
     let mut group = c.benchmark_group("mcap_reading");
 
@@ -125,6 +150,22 @@ fn benchmark_reading(c: &mut Criterion) {
             &mcap_path,
             |b, path| {
                 b.iter(|| read_with_official_mcap(black_box(path)))
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("pybag_rs_fast", message_count),
+            &mcap_path,
+            |b, path| {
+                b.iter(|| read_with_pybag_rs_fast(black_box(path)))
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("pybag_rs_fast_callback", message_count),
+            &mcap_path,
+            |b, path| {
+                b.iter(|| read_with_pybag_rs_fast_callback(black_box(path)))
             },
         );
     }
