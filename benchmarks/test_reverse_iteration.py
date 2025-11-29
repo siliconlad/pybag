@@ -20,7 +20,6 @@ from pybag.mcap_reader import McapFileReader
 
 from .benchmark_utils import create_test_mcap
 
-
 # =============================================================================
 # Raw message iteration (without deserialization)
 # =============================================================================
