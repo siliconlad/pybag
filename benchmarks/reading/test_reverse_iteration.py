@@ -31,34 +31,11 @@ def read_raw_reverse_with_pybag(mcap: Path) -> Iterator[bytes]:
 
 
 def read_raw_reverse_with_official(mcap: Path) -> Iterator[bytes]:
-    """Read raw messages in reverse order using official mcap library.
-
-    The official library doesn't support native reverse iteration,
-    so we must collect all messages and reverse them.
-    """
+    """Read raw messages in reverse order using official mcap library."""
     with open(mcap, "rb") as f:
         reader = make_reader(f)
-        # Must collect all messages first, then reverse
-        messages = list(reader.iter_messages(log_time_order=True))
-        for _schema, _channel, message in reversed(messages):
+        for _, _, message in reader.iter_messages(reverse=True):
             yield message.data
-
-
-def read_raw_reverse_with_official_generator(mcap: Path) -> Iterator[bytes]:
-    """Read raw messages in reverse order using official mcap library.
-
-    Alternative approach: use a deque with maxlen to keep last N messages,
-    but this still requires full iteration for complete reverse.
-    This version collects and reverses.
-    """
-    with open(mcap, "rb") as f:
-        reader = make_reader(f)
-        # Collect all and reverse - the only way to get true reverse order
-        all_messages = []
-        for _schema, _channel, message in reader.iter_messages(log_time_order=True):
-            all_messages.append(message.data)
-        for data in reversed(all_messages):
-            yield data
 
 
 def test_pybag_raw_reverse(benchmark: BenchmarkFixture) -> None:
@@ -75,6 +52,20 @@ def test_official_raw_reverse(benchmark: BenchmarkFixture) -> None:
         benchmark(lambda: deque(read_raw_reverse_with_official(mcap), maxlen=0))
 
 
+def test_pybag_raw_reverse_large(benchmark: BenchmarkFixture) -> None:
+    """Benchmark pybag's reverse iteration on a larger file (10k messages)."""
+    with TemporaryDirectory() as tmpdir:
+        mcap = create_test_mcap(Path(tmpdir) / "test", message_count=10000)
+        benchmark(lambda: deque(read_raw_reverse_with_pybag(mcap), maxlen=0))
+
+
+def test_official_raw_reverse_large(benchmark: BenchmarkFixture) -> None:
+    """Benchmark official library's reverse iteration on a larger file (10k messages)."""
+    with TemporaryDirectory() as tmpdir:
+        mcap = create_test_mcap(Path(tmpdir) / "test", message_count=10000)
+        benchmark(lambda: deque(read_raw_reverse_with_official(mcap), maxlen=0))
+
+
 # =============================================================================
 # Decoded message iteration (with deserialization)
 # =============================================================================
@@ -82,22 +73,16 @@ def test_official_raw_reverse(benchmark: BenchmarkFixture) -> None:
 def read_decoded_reverse_with_pybag(mcap: Path) -> Iterator[Any]:
     """Read decoded messages in reverse order using pybag's native support."""
     with McapFileReader.from_file(mcap) as reader:
-        for topic in reader.get_topics():
+        for topic in reader.get_topics():  # TODO: Support reading all messages
             for message in reader.messages(topic, in_reverse=True):
                 yield message.data
 
 
 def read_decoded_reverse_with_official(mcap: Path) -> Iterator[Any]:
-    """Read decoded messages in reverse order using official mcap library.
-
-    Must collect all messages and reverse since there's no native reverse support.
-    """
+    """Read decoded messages in reverse order using official mcap library."""
     with open(mcap, "rb") as f:
         reader = make_reader(f, decoder_factories=[DecoderFactory()])
-        # Collect all messages first
-        messages = list(reader.iter_decoded_messages(log_time_order=True))
-        # Reverse and yield
-        for _schema, _channel, _message, ros_msg in reversed(messages):
+        for _, _, _, ros_msg in reader.iter_decoded_messages(reverse=True):
             yield ros_msg
 
 
@@ -123,12 +108,10 @@ def test_pybag_raw_forward(benchmark: BenchmarkFixture) -> None:
     """Benchmark pybag's forward iteration for comparison."""
     with TemporaryDirectory() as tmpdir:
         mcap = create_test_mcap(Path(tmpdir) / "test", message_count=5000)
-
         def read_forward():
             with McapRecordReaderFactory.from_file(mcap) as reader:
                 for message in reader.get_messages(in_reverse=False):
-                    pass
-
+                    yield message
         benchmark(read_forward)
 
 
@@ -136,12 +119,10 @@ def test_pybag_raw_reverse_only(benchmark: BenchmarkFixture) -> None:
     """Benchmark pybag's reverse iteration for comparison with forward."""
     with TemporaryDirectory() as tmpdir:
         mcap = create_test_mcap(Path(tmpdir) / "test", message_count=5000)
-
         def read_reverse():
             with McapRecordReaderFactory.from_file(mcap) as reader:
                 for message in reader.get_messages(in_reverse=True):
-                    pass
-
+                    yield message
         benchmark(read_reverse)
 
 
@@ -159,52 +140,25 @@ def test_pybag_raw_reverse_first_100(benchmark: BenchmarkFixture) -> None:
 
         def read_first_100_reverse():
             with McapRecordReaderFactory.from_file(mcap) as reader:
-                count = 0
-                for message in reader.get_messages(in_reverse=True):
-                    count += 1
+                for count, message in enumerate(reader.get_messages(in_reverse=True)):
                     if count >= 100:
                         break
+                    yield message
 
         benchmark(read_first_100_reverse)
 
 
 def test_official_raw_reverse_first_100(benchmark: BenchmarkFixture) -> None:
-    """Benchmark getting first 100 messages in reverse order with official library.
-
-    The official library must read ALL messages before reversing, even if we only
-    need the first 100 from the end.
-    """
+    """Benchmark getting first 100 messages in reverse order with official library."""
     with TemporaryDirectory() as tmpdir:
         mcap = create_test_mcap(Path(tmpdir) / "test", message_count=5000)
 
         def read_first_100_reverse():
             with open(mcap, "rb") as f:
                 reader = make_reader(f)
-                # Must read ALL messages first
-                messages = list(reader.iter_messages(log_time_order=True))
-                # Then get last 100 (first 100 in reverse order)
-                count = 0
-                for _schema, _channel, message in reversed(messages):
-                    count += 1
+                for count, (_schema, _channel, message) in enumerate(reader.iter_messages(reverse=True)):
                     if count >= 100:
                         break
+                    yield message
 
         benchmark(read_first_100_reverse)
-
-
-# =============================================================================
-# Large file benchmarks
-# =============================================================================
-
-def test_pybag_raw_reverse_large(benchmark: BenchmarkFixture) -> None:
-    """Benchmark pybag's reverse iteration on a larger file (10k messages)."""
-    with TemporaryDirectory() as tmpdir:
-        mcap = create_test_mcap(Path(tmpdir) / "test", message_count=10000)
-        benchmark(lambda: deque(read_raw_reverse_with_pybag(mcap), maxlen=0))
-
-
-def test_official_raw_reverse_large(benchmark: BenchmarkFixture) -> None:
-    """Benchmark official library's reverse iteration on a larger file (10k messages)."""
-    with TemporaryDirectory() as tmpdir:
-        mcap = create_test_mcap(Path(tmpdir) / "test", message_count=10000)
-        benchmark(lambda: deque(read_raw_reverse_with_official(mcap), maxlen=0))
