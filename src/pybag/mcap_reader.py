@@ -118,7 +118,7 @@ class McapFileReader:
             end_time: End time to filter by. If None, read to the end.
             filter: Callable to filter messages. If None, all messages are returned.
             in_log_time_order: Return messages in log time order if True, otherwise in write order.
-            in_reverse: Return messages in reverse time order (latest first) if True.
+            in_reverse: Return messages in reverse order (last first) if True.
 
         Returns:
             Generator yielding DecodedMessage objects from matching topics.

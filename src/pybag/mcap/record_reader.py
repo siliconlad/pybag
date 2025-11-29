@@ -572,8 +572,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
             in_log_time_order: Return messages in log time order if True, otherwise in write order.
-            in_reverse: Return messages in reverse time order (latest first) if True.
-                     Only valid when in_log_time_order is True.
+            in_reverse: Return messages in reverse order (last first) if True.
 
         Returns:
             A generator of MessageRecord objects.
@@ -612,11 +611,19 @@ class McapChunkedReader(BaseMcapRecordReader):
         if self._has_overlapping_chunks(relevant_chunks):
             logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
             yield from self._get_messages_with_overlaps(
-                relevant_chunks, channel_id_set, start_timestamp, end_timestamp, in_reverse=in_reverse
+                relevant_chunks,
+                channel_id_set,
+                start_timestamp,
+                end_timestamp,
+                in_reverse=in_reverse,
             )
         else:
             yield from self._get_messages_sequential(
-                relevant_chunks, channel_id_set, start_timestamp, end_timestamp, in_reverse=in_reverse
+                relevant_chunks,
+                channel_id_set,
+                start_timestamp,
+                end_timestamp,
+                in_reverse=in_reverse,
             )
 
     def _has_overlapping_chunks(self, chunks: list[ChunkIndexRecord]) -> bool:
@@ -741,15 +748,15 @@ class McapChunkedReader(BaseMcapRecordReader):
                     if end_timestamp is not None and timestamp > end_timestamp:
                         continue
                     message_refs.append((timestamp, offset))
-            # Sort by timestamp (ascending or descending based on reverse flag)
-            message_refs.sort(reverse=in_reverse)
+            message_refs.sort()  # Sort to make sure timestamps are in correct order
 
             if not message_refs:
                 return
 
             # Load the chunk once and parse messages as needed (using cache)
             reader = BytesReader(self._decompress_chunk_cached(chunk_index.chunk_start_offset))
-            for timestamp, offset in message_refs:
+            message_refs_it = reversed(message_refs) if in_reverse else iter(message_refs)
+            for timestamp, offset in message_refs_it:
                 reader.seek_from_start(offset)
                 message = McapRecordParser.parse_message(reader)
                 yield timestamp, chunk_index_id, message
@@ -761,12 +768,9 @@ class McapChunkedReader(BaseMcapRecordReader):
         ]
         # Sort by the timestamp and break ties with the order of the chunk
         # For reverse, negate timestamp to get descending order from heapq.merge
-        if in_reverse:
-            for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (-x[0], x[1])):
-                yield message
-        else:
-            for _, _, message in heapq.merge(*chunk_iterators, key=lambda x: (x[0], x[1])):
-                yield message
+        heapq_key = (lambda x: (-x[0], x[1])) if in_reverse else (lambda x: (x[0], x[1]))
+        for _, _, message in heapq.merge(*chunk_iterators, key=heapq_key):
+            yield message
 
     def _get_messages_write_order(
         self,
@@ -1248,8 +1252,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             start_timestamp: The start timestamp to filter by. If None, no filtering is done.
             end_timestamp: The end timestamp to filter by. If None, no filtering is done.
             in_log_time_order: Return records in log time order if true, else in the order they appear in the file
-            in_reverse: Return messages in reverse time order (latest first) if True.
-                     Only valid when in_log_time_order is True.
+            in_reverse: Return messages in reverse order (last first) if True.
 
         Returns:
             A generator of MessageRecord objects.
