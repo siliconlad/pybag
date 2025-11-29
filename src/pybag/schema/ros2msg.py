@@ -405,11 +405,11 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         else:
             writer.write(f'{encoded_type} {field_name}\n'.encode('utf-8'))
 
-    def encode(self, message: Message | type[Message]) -> bytes:
-        schema, sub_schemas = self._parse_message(message)
+    def encode(self, schema: Message | type[Message]) -> bytes:
+        parsed_schema, sub_schemas = self._parse_message(schema)
 
         writer = BytesWriter()
-        for field_name, field in schema.fields.items():
+        for field_name, field in parsed_schema.fields.items():
             if isinstance(field, SchemaConstant):
                 self._encode_constant(writer, field_name, field)
             elif isinstance(field, SchemaField):
@@ -426,8 +426,8 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
 
         return writer.as_bytes()
 
-    def parse_schema(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
-        return self._parse_message(message)
+    def parse_schema(self, schema: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
+        return self._parse_message(schema)
 
 
 if __name__ == "__main__":
