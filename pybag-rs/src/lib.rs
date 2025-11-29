@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 use crate::encoding::cdr::CdrDecoder;
 use crate::io::FileReader;
 use crate::mcap::reader::McapReader;
+use crate::mcap::zerocopy::FastMcapReader;
 use crate::schema::ros2msg::Ros2MsgParser;
 use crate::schema::types::{FieldType, PrimitiveType, Schema};
 
@@ -352,10 +353,90 @@ impl PyMcapFileReader {
     }
 }
 
+/// Lightweight message struct for fast iteration (no CDR decoding).
+#[pyclass]
+pub struct PyRawMessage {
+    #[pyo3(get)]
+    pub channel_id: u16,
+    #[pyo3(get)]
+    pub sequence: u32,
+    #[pyo3(get)]
+    pub log_time: u64,
+    #[pyo3(get)]
+    pub publish_time: u64,
+    data: Vec<u8>,
+}
+
+#[pymethods]
+impl PyRawMessage {
+    #[getter]
+    fn data(&self, py: Python<'_>) -> PyObject {
+        PyBytes::new_bound(py, &self.data).into_any().unbind()
+    }
+}
+
+/// Fast zero-copy MCAP reader for maximum performance.
+/// This reader returns raw bytes without CDR decoding.
+#[pyclass]
+pub struct PyFastMcapReader {
+    reader: FastMcapReader,
+}
+
+#[pymethods]
+impl PyFastMcapReader {
+    /// Open an MCAP file for fast reading.
+    #[staticmethod]
+    fn from_file(file_path: &str) -> PyResult<Self> {
+        let reader = FastMcapReader::open(file_path)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("{}", e)))?;
+        Ok(Self { reader })
+    }
+
+    /// Get all messages as a list (returns raw bytes, no CDR decoding).
+    fn get_messages(&self, py: Python<'_>) -> PyResult<Vec<PyRawMessage>> {
+        let mut messages = Vec::new();
+        self.reader.for_each_message(|msg| {
+            messages.push(PyRawMessage {
+                channel_id: msg.channel_id,
+                sequence: msg.sequence,
+                log_time: msg.log_time,
+                publish_time: msg.publish_time,
+                data: msg.data.to_vec(),
+            });
+        }).map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("{}", e)))?;
+        Ok(messages)
+    }
+
+    /// Count messages efficiently without loading data.
+    fn count_messages(&self) -> PyResult<usize> {
+        let mut count = 0;
+        self.reader.for_each_message(|_| {
+            count += 1;
+        }).map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("{}", e)))?;
+        Ok(count)
+    }
+
+    fn __enter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    #[pyo3(signature = (_exc_type=None, _exc_value=None, _traceback=None))]
+    fn __exit__(
+        &self,
+        _exc_type: Option<&Bound<'_, PyAny>>,
+        _exc_value: Option<&Bound<'_, PyAny>>,
+        _traceback: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<bool> {
+        Ok(false)
+    }
+}
+
 /// Python module for pybag_rs.
 #[pymodule]
 fn pybag_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMcapFileReader>()?;
+    m.add_class::<PyFastMcapReader>()?;
     m.add_class::<PyDecodedMessage>()?;
+    m.add_class::<PyRawMessage>()?;
     Ok(())
 }
