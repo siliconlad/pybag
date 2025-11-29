@@ -80,6 +80,10 @@ def sort_mcap(
             reader.get_messages(in_log_time_order=False)
         )
 
+        # Read all attachments and metadata to preserve them
+        all_attachments = reader.get_attachments()
+        all_metadata = reader.get_metadata()
+
         # Write the sorted MCAP
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
@@ -156,6 +160,14 @@ def sort_mcap(
                     )
                     sequence_counters[msg_record.channel_id] += 1
                     writer.write_message(new_record)
+
+            # Write all attachments to preserve them
+            for attachment in all_attachments:
+                writer.write_attachment(attachment)
+
+            # Write all metadata to preserve them
+            for metadata in all_metadata:
+                writer.write_metadata(metadata)
 
     logger.info(f"Sorted MCAP written to {output_path}")
     return output_path

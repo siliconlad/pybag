@@ -1,5 +1,4 @@
 """Tests for the sort CLI command."""
-import logging
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -7,6 +6,8 @@ import pytest
 
 from pybag.cli.mcap_sort import sort_mcap
 from pybag.mcap.record_reader import McapRecordReaderFactory
+from pybag.mcap_writer import McapFileWriter
+import pybag.ros2.humble.std_msgs as std_msgs
 
 
 def create_test_mcap_with_multiple_topics(path: Path) -> Path:
@@ -169,3 +170,104 @@ def test_sort_by_topic_and_log_time():
                 assert topic_log_times == sorted(topic_log_times)
 
             assert len(messages) == 30
+
+
+def test_sort_preserves_attachments():
+    """Test that sort_mcap preserves attachments from the source file."""
+    with TemporaryDirectory() as tmpdir:
+        input_mcap = Path(tmpdir) / "input.mcap"
+        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+
+        # Create MCAP with messages and attachments using pybag writer
+        with McapFileWriter.open(input_mcap, chunk_size=1024, chunk_compression="lz4") as writer:
+            # Write some messages
+            writer.write_message("/topic1", 1_000_000_000, std_msgs.String(data="msg1"))
+            writer.write_message("/topic2", 2_000_000_000, std_msgs.String(data="msg2"))
+            writer.write_message("/topic1", 3_000_000_000, std_msgs.String(data="msg3"))
+
+            # Write attachments
+            writer.write_attachment(
+                name="image.png",
+                data=b"\x89PNG\r\n\x1a\n" + b"\x00" * 100,
+                media_type="image/png",
+                log_time=1_500_000_000,
+                create_time=1_000_000_000,
+            )
+            writer.write_attachment(
+                name="calibration.yaml",
+                data=b"camera_matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1]",
+                media_type="application/x-yaml",
+                log_time=2_500_000_000,
+                create_time=2_000_000_000,
+            )
+
+        # Sort the MCAP
+        result = sort_mcap(input_mcap, output_mcap, chunk_size=1024, chunk_compression="lz4", by_topic=True)
+        assert result.exists()
+
+        # Verify attachments are preserved
+        with McapRecordReaderFactory.from_file(output_mcap) as reader:
+            attachments = reader.get_attachments()
+            assert len(attachments) == 2
+
+            # Check attachment content
+            attachment_by_name = {a.name: a for a in attachments}
+
+            assert "image.png" in attachment_by_name
+            assert attachment_by_name["image.png"].data == b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+            assert attachment_by_name["image.png"].media_type == "image/png"
+            assert attachment_by_name["image.png"].log_time == 1_500_000_000
+            assert attachment_by_name["image.png"].create_time == 1_000_000_000
+
+            assert "calibration.yaml" in attachment_by_name
+            assert attachment_by_name["calibration.yaml"].data == b"camera_matrix: [1, 0, 0, 0, 1, 0, 0, 0, 1]"
+            assert attachment_by_name["calibration.yaml"].media_type == "application/x-yaml"
+
+            # Also verify messages are still there
+            messages = list(reader.get_messages())
+            assert len(messages) == 3
+
+
+def test_sort_preserves_metadata():
+    """Test that sort_mcap preserves metadata from the source file."""
+    with TemporaryDirectory() as tmpdir:
+        input_mcap = Path(tmpdir) / "input.mcap"
+        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+
+        # Create MCAP with messages and metadata using pybag writer
+        with McapFileWriter.open(input_mcap, chunk_size=1024, chunk_compression="lz4") as writer:
+            # Write some messages
+            writer.write_message("/topic1", 1_000_000_000, std_msgs.String(data="msg1"))
+            writer.write_message("/topic2", 2_000_000_000, std_msgs.String(data="msg2"))
+
+            # Write metadata
+            writer.write_metadata(
+                name="recording_info",
+                metadata={"location": "warehouse", "operator": "robot1"}
+            )
+            writer.write_metadata(
+                name="device_info",
+                metadata={"device_id": "sensor_123", "firmware": "v2.0"}
+            )
+
+        # Sort the MCAP
+        result = sort_mcap(input_mcap, output_mcap, chunk_size=1024, chunk_compression="lz4", log_time=True)
+        assert result.exists()
+
+        # Verify metadata is preserved
+        with McapRecordReaderFactory.from_file(output_mcap) as reader:
+            metadata_records = reader.get_metadata()
+            assert len(metadata_records) == 2
+
+            # Check metadata content
+            metadata_by_name = {m.name: m for m in metadata_records}
+
+            assert "recording_info" in metadata_by_name
+            assert metadata_by_name["recording_info"].metadata == {"location": "warehouse", "operator": "robot1"}
+
+            assert "device_info" in metadata_by_name
+            assert metadata_by_name["device_info"].metadata == {"device_id": "sensor_123", "firmware": "v2.0"}
+
+            # Also verify messages are still there
+            messages = list(reader.get_messages())
+            assert len(messages) == 2
