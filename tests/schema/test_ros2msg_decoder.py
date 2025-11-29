@@ -740,7 +740,9 @@ def test_byte_field_with_default_parsing():
 
     # Verify the default value was parsed correctly
     assert 'value' in parsed_schema.fields
-    assert parsed_schema.fields['value'].default == 42
+    field = parsed_schema.fields['value']
+    assert isinstance(field, SchemaField)
+    assert field.default == 42
 
 
 def test_byte_array_default_parsing():
@@ -756,4 +758,6 @@ def test_byte_array_default_parsing():
     parsed_schema, _ = decoder.parse_schema(schema)
 
     assert 'data' in parsed_schema.fields
-    assert parsed_schema.fields['data'].default == [1, 2, 3]
+    field = parsed_schema.fields['data']
+    assert isinstance(field, SchemaField)
+    assert field.default == [1, 2, 3]
