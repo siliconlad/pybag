@@ -1,5 +1,6 @@
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -12,7 +13,7 @@ from pybag.types import Message
 @dataclass
 class FixedArray(Message):
     __msg_name__ = 'test_msgs/msg/FixedArray'
-    data: t.Array[t.int32, 5]
+    data: t.Array[t.int32, Literal[5]]
 
 
 @dataclass

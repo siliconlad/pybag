@@ -1,6 +1,7 @@
 import zlib
 from abc import ABC, abstractmethod
 from enum import IntEnum
+from io import BufferedReader
 from pathlib import Path
 
 
@@ -48,15 +49,19 @@ class BaseReader(ABC):
 
 
 class FileReader(BaseReader):
+    _file: BufferedReader
+
     def __init__(self, file_path: Path | str, mode: str = 'rb'):
         self._file_path = Path(file_path).absolute()
-        self._file = open(self._file_path, mode)
+        self._file = open(self._file_path, mode)  # type: ignore[assignment]
 
     def peek(self, size: int) -> bytes:
         # Returns empty bytes when end of file
         return self._file.peek(size)
 
     def read(self, size: int | None = None) -> bytes:
+        if size is None:
+            return self._file.read()
         return self._file.read(size)
 
     def seek_from_start(self, offset: int) -> int:
