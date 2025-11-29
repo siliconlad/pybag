@@ -5,8 +5,12 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from pybag.cli.mcap_sort import sort_mcap
+from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
+from pybag.mcap.record_writer import McapRecordWriterFactory
+from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.mcap_writer import McapFileWriter
+from pybag.serialize import MessageSerializerFactory
 import pybag.ros2.humble.std_msgs as std_msgs
 
 
@@ -271,3 +275,165 @@ def test_sort_preserves_metadata():
             # Also verify messages are still there
             messages = list(reader.get_messages())
             assert len(messages) == 2
+
+
+def _create_mcap_with_custom_sequences(path: Path) -> None:
+    """Create an MCAP file with specific sequence numbers for testing.
+
+    Creates messages with non-zero sequence numbers to test preservation:
+    - /topic1: messages with sequences 100, 101, 102
+    - /topic2: messages with sequences 200, 201
+    Messages are interleaved in write order.
+    """
+    serializer = MessageSerializerFactory.from_profile("ros2")
+    assert serializer is not None
+
+    with McapRecordWriterFactory.create_writer(
+        FileWriter(path),
+        chunk_size=1024,
+        chunk_compression="lz4",
+        profile="ros2",
+    ) as writer:
+        # Write schema
+        schema = SchemaRecord(
+            id=1,
+            name="std_msgs/msg/String",
+            encoding=serializer.schema_encoding,
+            data=serializer.serialize_schema(std_msgs.String),
+        )
+        writer.write_schema(schema)
+
+        # Write channels
+        channel1 = ChannelRecord(
+            id=1, schema_id=1, topic="/topic1",
+            message_encoding="cdr", metadata={}
+        )
+        channel2 = ChannelRecord(
+            id=2, schema_id=1, topic="/topic2",
+            message_encoding="cdr", metadata={}
+        )
+        writer.write_channel(channel1)
+        writer.write_channel(channel2)
+
+        # Write interleaved messages with specific sequence numbers
+        # Topic1: seq 100 at t=1s
+        writer.write_message(MessageRecord(
+            channel_id=1, sequence=100,
+            log_time=1_000_000_000, publish_time=1_000_000_000,
+            data=serializer.serialize_message(std_msgs.String(data="t1_msg0")),
+        ))
+        # Topic2: seq 200 at t=2s
+        writer.write_message(MessageRecord(
+            channel_id=2, sequence=200,
+            log_time=2_000_000_000, publish_time=2_000_000_000,
+            data=serializer.serialize_message(std_msgs.String(data="t2_msg0")),
+        ))
+        # Topic1: seq 101 at t=3s
+        writer.write_message(MessageRecord(
+            channel_id=1, sequence=101,
+            log_time=3_000_000_000, publish_time=3_000_000_000,
+            data=serializer.serialize_message(std_msgs.String(data="t1_msg1")),
+        ))
+        # Topic2: seq 201 at t=4s
+        writer.write_message(MessageRecord(
+            channel_id=2, sequence=201,
+            log_time=4_000_000_000, publish_time=4_000_000_000,
+            data=serializer.serialize_message(std_msgs.String(data="t2_msg1")),
+        ))
+        # Topic1: seq 102 at t=5s
+        writer.write_message(MessageRecord(
+            channel_id=1, sequence=102,
+            log_time=5_000_000_000, publish_time=5_000_000_000,
+            data=serializer.serialize_message(std_msgs.String(data="t1_msg2")),
+        ))
+
+
+def test_sort_by_topic_only_preserves_sequence_numbers():
+    """Test that --by-topic without --log-time preserves original sequence numbers.
+
+    When only grouping by topic (no time sorting), the per-channel message order
+    is unchanged, so original sequence numbers from the publisher should remain
+    intact for downstream consumers to detect dropped packets.
+    """
+    with TemporaryDirectory() as tmpdir:
+        input_mcap = Path(tmpdir) / "input.mcap"
+        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+
+        _create_mcap_with_custom_sequences(input_mcap)
+
+        # Sort with by_topic only (no log_time)
+        result = sort_mcap(input_mcap, output_mcap, chunk_size=1024, chunk_compression="lz4", by_topic=True)
+        assert result.exists()
+
+        # Verify sequence numbers are preserved
+        with McapRecordReaderFactory.from_file(output_mcap) as reader:
+            channels = reader.get_channels()
+            messages = list(reader.get_messages(in_log_time_order=False))
+
+            # Group messages by topic
+            topic1_messages = [m for m in messages if channels[m.channel_id].topic == "/topic1"]
+            topic2_messages = [m for m in messages if channels[m.channel_id].topic == "/topic2"]
+
+            # Verify original sequences are preserved
+            assert [m.sequence for m in topic1_messages] == [100, 101, 102]
+            assert [m.sequence for m in topic2_messages] == [200, 201]
+
+
+def test_sort_log_time_renumbers_sequences():
+    """Test that --log-time renumbers sequence numbers.
+
+    When sorting by log time, message order changes, so sequences must be
+    renumbered to keep them monotonic (0, 1, 2, ...).
+    """
+    with TemporaryDirectory() as tmpdir:
+        input_mcap = Path(tmpdir) / "input.mcap"
+        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+
+        _create_mcap_with_custom_sequences(input_mcap)
+
+        # Sort with log_time only
+        result = sort_mcap(input_mcap, output_mcap, chunk_size=1024, chunk_compression="lz4", log_time=True)
+        assert result.exists()
+
+        # Verify sequence numbers are renumbered from 0
+        with McapRecordReaderFactory.from_file(output_mcap) as reader:
+            channels = reader.get_channels()
+            messages = list(reader.get_messages(in_log_time_order=False))
+
+            # Group messages by topic
+            topic1_messages = [m for m in messages if channels[m.channel_id].topic == "/topic1"]
+            topic2_messages = [m for m in messages if channels[m.channel_id].topic == "/topic2"]
+
+            # Verify sequences are renumbered from 0
+            assert [m.sequence for m in topic1_messages] == [0, 1, 2]
+            assert [m.sequence for m in topic2_messages] == [0, 1]
+
+
+def test_sort_by_topic_and_log_time_renumbers_sequences():
+    """Test that --by-topic --log-time renumbers sequence numbers.
+
+    When both flags are used, log time sorting changes the order within each
+    topic, so sequences must be renumbered.
+    """
+    with TemporaryDirectory() as tmpdir:
+        input_mcap = Path(tmpdir) / "input.mcap"
+        output_mcap = Path(tmpdir) / "output_sorted.mcap"
+
+        _create_mcap_with_custom_sequences(input_mcap)
+
+        # Sort with both flags
+        result = sort_mcap(input_mcap, output_mcap, chunk_size=1024, chunk_compression="lz4", by_topic=True, log_time=True)
+        assert result.exists()
+
+        # Verify sequence numbers are renumbered from 0
+        with McapRecordReaderFactory.from_file(output_mcap) as reader:
+            channels = reader.get_channels()
+            messages = list(reader.get_messages(in_log_time_order=False))
+
+            # Group messages by topic
+            topic1_messages = [m for m in messages if channels[m.channel_id].topic == "/topic1"]
+            topic2_messages = [m for m in messages if channels[m.channel_id].topic == "/topic2"]
+
+            # Verify sequences are renumbered from 0
+            assert [m.sequence for m in topic1_messages] == [0, 1, 2]
+            assert [m.sequence for m in topic2_messages] == [0, 1]

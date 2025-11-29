@@ -96,10 +96,9 @@ def sort_mcap(
                 writer.write_schema(schema)
 
             written_channel_ids: set[int] = set()
-            sequence_counters: dict[int, int] = defaultdict(int)
 
-            if by_topic:
-                # Group messages by topic
+            if by_topic and not log_time:
+                # by_topic only: group messages by topic, preserve original sequences
                 messages_by_topic: dict[str, list[MessageRecord]] = defaultdict(list)
                 for msg_record in all_messages:
                     topic = all_channels[msg_record.channel_id].topic
@@ -109,22 +108,47 @@ def sort_mcap(
                     f"Writing sorted MCAP with {len(messages_by_topic)} topics..."
                 )
 
-                # Write messages grouped by topic
+                # Write messages grouped by topic, preserving original sequence numbers
                 for topic, messages in messages_by_topic.items():
-                    # Sort by log time within each topic if requested
-                    if log_time:
-                        messages = sorted(messages, key=lambda m: m.log_time)
-
                     logger.info(f"Writing {len(messages)} messages for topic {topic}")
 
-                    # Write messages for this topic
                     for msg_record in messages:
                         # Write the channel record the first time
                         if msg_record.channel_id not in written_channel_ids:
                             writer.write_channel(all_channels[msg_record.channel_id])
                             written_channel_ids.add(msg_record.channel_id)
 
-                        # Write message with updated sequence number
+                        # Preserve original sequence number since order is unchanged
+                        writer.write_message(msg_record)
+
+                    # Flush the chunk to ensure topic separation
+                    writer.flush_chunk()
+
+            elif by_topic and log_time:
+                # by_topic + log_time: group by topic, sort by log time within each topic
+                # Sequences must be renumbered since order changes within each channel
+                sequence_counters: dict[int, int] = defaultdict(int)
+
+                messages_by_topic: dict[str, list[MessageRecord]] = defaultdict(list)
+                for msg_record in all_messages:
+                    topic = all_channels[msg_record.channel_id].topic
+                    messages_by_topic[topic].append(msg_record)
+
+                logger.info(
+                    f"Writing sorted MCAP with {len(messages_by_topic)} topics..."
+                )
+
+                for topic, messages in messages_by_topic.items():
+                    messages = sorted(messages, key=lambda m: m.log_time)
+                    logger.info(f"Writing {len(messages)} messages for topic {topic}")
+
+                    for msg_record in messages:
+                        # Write the channel record the first time
+                        if msg_record.channel_id not in written_channel_ids:
+                            writer.write_channel(all_channels[msg_record.channel_id])
+                            written_channel_ids.add(msg_record.channel_id)
+
+                        # Renumber sequence since log time sorting changes order
                         new_record = MessageRecord(
                             channel_id=msg_record.channel_id,
                             sequence=sequence_counters[msg_record.channel_id],
@@ -137,8 +161,12 @@ def sort_mcap(
 
                     # Flush the chunk to ensure topic separation
                     writer.flush_chunk()
+
             else:
                 # log_time only: sort all messages by log time without grouping
+                # Sequences must be renumbered since order changes
+                sequence_counters: dict[int, int] = defaultdict(int)
+
                 logger.info(
                     f"Writing sorted MCAP with {len(all_messages)} messages in log time order..."
                 )
