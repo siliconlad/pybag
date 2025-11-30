@@ -98,6 +98,10 @@ def filter_mcap(
                 logger.warning("No topics match filter.")
                 # Still write attachments and metadata even if no messages match
                 for attachment in all_attachments:
+                    if start_ns is not None and attachment.log_time < start_ns:
+                        continue
+                    if end_ns is not None and attachment.log_time > end_ns:
+                        continue
                     writer.write_attachment(attachment)
                 for metadata in all_metadata:
                     writer.write_metadata(metadata)
@@ -136,8 +140,12 @@ def filter_mcap(
                 sequence_counters[msg_record.channel_id] += 1
                 writer.write_message(new_record)
 
-            # Write all attachments to preserve them
+            # Write attachments (filtered by time if time range is specified)
             for attachment in all_attachments:
+                if start_ns is not None and attachment.log_time < start_ns:
+                    continue
+                if end_ns is not None and attachment.log_time > end_ns:
+                    continue
                 writer.write_attachment(attachment)
 
             # Write all metadata to preserve them
