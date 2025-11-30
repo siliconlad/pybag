@@ -111,6 +111,8 @@ __all__ = [
     "float32",
     "float64",
     "bool",
+    "byte",
+    "char",
     "string",
     "wstring",
     "Message",

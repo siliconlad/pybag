@@ -93,7 +93,9 @@ class BytesReader(BaseReader):
 
     def read(self, size: int | None = None) -> bytes:
         if size is None:
-            return self._data
+            result = self._data[self._position:]
+            self._position = len(self._data)
+            return result
         result = self._data[self._position:self._position + size]
         self._position += size
         return result
