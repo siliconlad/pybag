@@ -186,7 +186,7 @@ def test_compressed_image_rosbags(typestore: Typestore):
         assert messages[0].data.header.stamp.nanosec == 2
         assert messages[0].data.header.frame_id == 'frame'
         assert messages[0].data.format == 'jpeg'
-        assert messages[0].data.data == [1, 2, 3]
+        assert messages[0].data.data == b'\x01\x02\x03'
 
 
 def test_fluid_pressure_rosbags(typestore: Typestore):
@@ -269,7 +269,7 @@ def test_image_rosbags(typestore: Typestore):
         assert messages[0].data.encoding == 'rgb8'
         assert messages[0].data.is_bigendian == 0
         assert messages[0].data.step == 1920
-        assert messages[0].data.data == [0, 1, 2, 3]
+        assert messages[0].data.data == b'\x00\x01\x02\x03'
 
 
 def test_imu_rosbags(typestore: Typestore):
@@ -685,7 +685,7 @@ def test_point_cloud2_rosbags(typestore: Typestore):
         assert messages[0].data.is_bigendian == False
         assert messages[0].data.point_step == 4
         assert messages[0].data.row_step == 8
-        assert messages[0].data.data == [1, 2, 3, 4, 5, 6, 7, 8]
+        assert messages[0].data.data == b'\x01\x02\x03\x04\x05\x06\x07\x08'
         assert messages[0].data.is_dense == True
 
 

@@ -250,12 +250,18 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             elif isinstance(field_type, Array):
                 elem = field_type.type
                 if isinstance(elem, Primitive) and elem.type in _STRUCT_FORMAT:
-                    size = _STRUCT_SIZE[elem.type]
-                    fmt = _STRUCT_FORMAT[elem.type] * field_type.length
-                    lines.append(f"{_TAB}_data.align({size})")
-                    lines.append(
-                        f"{_TAB}_fields[{field_name!r}] = list(struct.unpack(fmt_prefix + '{fmt}', _data.read({size * field_type.length})))"
-                    )
+                    # Special optimization for uint8 - keep as bytes instead of unpacking
+                    if elem.type == 'uint8':
+                        lines.append(
+                            f"{_TAB}_fields[{field_name!r}] = _data.read({field_type.length})"
+                        )
+                    else:
+                        size = _STRUCT_SIZE[elem.type]
+                        fmt = _STRUCT_FORMAT[elem.type] * field_type.length
+                        lines.append(f"{_TAB}_data.align({size})")
+                        lines.append(
+                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack(fmt_prefix + '{fmt}', _data.read({size * field_type.length})))"
+                        )
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
@@ -276,13 +282,18 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             elif isinstance(field_type, Sequence):
                 elem = field_type.type
                 if isinstance(elem, Primitive) and elem.type in _STRUCT_FORMAT:
-                    size = _STRUCT_SIZE[elem.type]
-                    char = _STRUCT_FORMAT[elem.type]
-                    lines.append(f"{_TAB}_len = decoder.uint32()")
-                    lines.append(f"{_TAB}_data.align({size})")
-                    lines.append(
-                        f"{_TAB}_fields[{field_name!r}] = list(struct.unpack(fmt_prefix + '{char}' * _len, _data.read({size} * _len)))"
-                    )
+                    # Special optimization for uint8 - keep as bytes instead of unpacking
+                    if elem.type == 'uint8':
+                        lines.append(f"{_TAB}_len = decoder.uint32()")
+                        lines.append(f"{_TAB}_fields[{field_name!r}] = _data.read(_len)")
+                    else:
+                        size = _STRUCT_SIZE[elem.type]
+                        char = _STRUCT_FORMAT[elem.type]
+                        lines.append(f"{_TAB}_len = decoder.uint32()")
+                        lines.append(f"{_TAB}_data.align({size})")
+                        lines.append(
+                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack(fmt_prefix + '{char}' * _len, _data.read({size} * _len)))"
+                        )
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
@@ -435,6 +446,19 @@ def compile_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> Callab
                         f"{pad}    raise ValueError(f'Fixed array size mismatch: expected {expected_length} elements, got {{len({values_var})}}')"
                     )
                 if isinstance(elem, Primitive) and elem.type in _WRITE_FORMAT:
+                    # Special optimization for uint8 - write bytes directly if input is bytes/bytearray
+                    if elem.type == 'uint8':
+                        length_var = new_var("length")
+                        result.append(f"{pad}{length_var} = len({values_var})")
+                        result.append(f"{pad}if {length_var}:")
+                        child_pad = _TAB * (indent + 1)
+                        result.append(f"{child_pad}if isinstance({values_var}, (bytes, bytearray)):")
+                        result.append(f"{child_pad}    _payload.write({values_var})")
+                        result.append(f"{child_pad}else:")
+                        result.append(
+                            f"{child_pad}    _payload.write(struct_pack(fmt_prefix + 'B' * {length_var}, *{values_var}))"
+                        )
+                        return result
                     base_var = values_var
                     if elem.type in {"byte", "char"}:
                         converted_var = new_var("converted")
@@ -483,6 +507,23 @@ def compile_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> Callab
                 if isinstance(elem, Primitive) and elem.type in _WRITE_FORMAT:
                     values_var = new_var("values")
                     result = [f"{pad}{values_var} = {value_expr}"]
+                    # Special optimization for uint8 - write bytes directly if input is bytes/bytearray
+                    if elem.type == 'uint8':
+                        length_var = new_var("length")
+                        result.append(f"{pad}{length_var} = len({values_var})")
+                        result.append(f"{pad}_payload.align(4)")
+                        result.append(
+                            f"{pad}_payload.write(struct_pack(fmt_prefix + 'I', {length_var}))"
+                        )
+                        result.append(f"{pad}if {length_var}:")
+                        child_pad = _TAB * (indent + 1)
+                        result.append(f"{child_pad}if isinstance({values_var}, (bytes, bytearray)):")
+                        result.append(f"{child_pad}    _payload.write({values_var})")
+                        result.append(f"{child_pad}else:")
+                        result.append(
+                            f"{child_pad}    _payload.write(struct_pack(fmt_prefix + 'B' * {length_var}, *{values_var}))"
+                        )
+                        return result
                     base_var = values_var
                     if elem.type in {"byte", "char"}:
                         converted_var = new_var("converted")
