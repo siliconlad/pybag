@@ -835,12 +835,12 @@ def test_message_order_publish_time(chunk_size, enable_crc_check: bool):
             assert [msg.data.data for msg in messages] == ["msg_5", "msg_4", "msg_3", "msg_2", "msg_1"]
 
             # Test log order reversed (descending by log_time)
-            messages = list(reader.messages("/test", order="log", reverse=True))
+            messages = list(reader.messages("/test", order="log", in_reverse=True))
             assert [msg.log_time for msg in messages] == [5, 4, 3, 2, 1]
             assert [msg.data.data for msg in messages] == ["msg_5", "msg_4", "msg_3", "msg_2", "msg_1"]
 
             # Test publish order reversed (descending by publish_time)
-            messages = list(reader.messages("/test", order="publish", reverse=True))
+            messages = list(reader.messages("/test", order="publish", in_reverse=True))
             assert [msg.publish_time for msg in messages] == [5, 4, 3, 2, 1]
             assert [msg.data.data for msg in messages] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5"]
 
@@ -849,7 +849,7 @@ def test_message_order_publish_time(chunk_size, enable_crc_check: bool):
             assert [msg.data.data for msg in messages] == ["msg_1", "msg_2", "msg_3", "msg_4", "msg_5"]
 
             # Test file order reversed
-            messages = list(reader.messages("/test", order="file", reverse=True))
+            messages = list(reader.messages("/test", order="file", in_reverse=True))
             assert [msg.data.data for msg in messages] == ["msg_5", "msg_4", "msg_3", "msg_2", "msg_1"]
 
 
@@ -888,7 +888,7 @@ def test_message_order_publish_time_random(chunk_size, enable_crc_check: bool):
                 f"Messages not in publish_time order: {publish_times_result}"
 
             # Verify publish ordering reversed
-            messages = list(reader.messages("/test", order="publish", reverse=True))
+            messages = list(reader.messages("/test", order="publish", in_reverse=True))
             publish_times_result = [msg.publish_time for msg in messages]
             assert publish_times_result == sorted(publish_times_result, reverse=True), \
                 f"Messages not in reverse publish_time order: {publish_times_result}"
@@ -925,12 +925,12 @@ def test_message_order_multiple_files_publish_time(enable_crc_check: bool):
         assert [m.data.data for m in messages] == ["f2_a", "f1_b", "f2_b", "f1_a"]
 
         # Test log order reversed (4, 3, 2, 1)
-        messages = list(reader.messages("/chatter", order="log", reverse=True))
+        messages = list(reader.messages("/chatter", order="log", in_reverse=True))
         assert [m.log_time for m in messages] == [4, 3, 2, 1]
         assert [m.data.data for m in messages] == ["f2_b", "f1_b", "f2_a", "f1_a"]
 
         # Test publish order reversed (4, 3, 2, 1 in publish_time)
-        messages = list(reader.messages("/chatter", order="publish", reverse=True))
+        messages = list(reader.messages("/chatter", order="publish", in_reverse=True))
         assert [m.publish_time for m in messages] == [4, 3, 2, 1]
         assert [m.data.data for m in messages] == ["f1_a", "f2_b", "f1_b", "f2_a"]
 

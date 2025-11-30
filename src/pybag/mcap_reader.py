@@ -107,7 +107,7 @@ class McapFileReader:
         *,
         in_log_time_order: bool | None = None,
         order: MessageOrder = "log",
-        reverse: bool = False,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages in the MCAP file.
@@ -128,7 +128,7 @@ class McapFileReader:
                 - "log": Order by log_time.
                 - "publish": Order by publish_time.
                 - "file": Order by position in file (write order).
-            reverse: If True, return messages in descending order. Defaults to False.
+            in_reverse: If True, return messages in descending order. Defaults to False.
 
         Returns:
             Generator yielding DecodedMessage objects from matching topics.
@@ -201,13 +201,13 @@ class McapFileReader:
         )
 
         # For log order without reverse, yield directly (streaming)
-        if order == "log" and not reverse:
+        if order == "log" and not in_reverse:
             for msg in raw_messages:
                 decoded = decode_message(msg)
                 if filter is None or filter(decoded):
                     yield decoded
         # For file order without reverse, yield directly (streaming)
-        elif order == "file" and not reverse:
+        elif order == "file" and not in_reverse:
             for msg in raw_messages:
                 decoded = decode_message(msg)
                 if filter is None or filter(decoded):
@@ -217,10 +217,10 @@ class McapFileReader:
             decoded_messages = [decode_message(msg) for msg in raw_messages]
 
             if order == "log":
-                decoded_messages.sort(key=lambda m: (m.log_time, m.sequence), reverse=reverse)
+                decoded_messages.sort(key=lambda m: (m.log_time, m.sequence), reverse=in_reverse)
             elif order == "publish":
-                decoded_messages.sort(key=lambda m: (m.publish_time, m.log_time, m.sequence), reverse=reverse)
-            elif order == "file" and reverse:
+                decoded_messages.sort(key=lambda m: (m.publish_time, m.log_time, m.sequence), reverse=in_reverse)
+            elif order == "file" and in_reverse:
                 decoded_messages.reverse()
 
             for decoded in decoded_messages:
@@ -335,7 +335,7 @@ class McapMultipleFileReader:
                 - "log": Order by log_time.
                 - "publish": Order by publish_time.
                 - "file": Not supported for multiple files (raises ValueError).
-            reverse: If True, return messages in descending order. Defaults to False.
+            in_reverse: If True, return messages in descending order. Defaults to False.
 
         Returns:
             Generator yielding DecodedMessage objects from matching topics.
@@ -366,7 +366,7 @@ class McapMultipleFileReader:
             it = iter(reader.messages(topic, start_time, end_time, order=order, in_reverse=in_reverse))
             try:
                 msg = next(it)
-                time_key = -get_time_key(msg) if reverse else get_time_key(msg)
+                time_key = -get_time_key(msg) if in_reverse else get_time_key(msg)
                 heapq.heappush(heap, (time_key, len(heap), msg, it))
             except StopIteration:
                 continue
@@ -379,7 +379,7 @@ class McapMultipleFileReader:
                 yield msg
             try:
                 next_msg = next(it)
-                time_key = -get_time_key(next_msg) if reverse else get_time_key(next_msg)
+                time_key = -get_time_key(next_msg) if in_reverse else get_time_key(next_msg)
                 heapq.heappush(heap, (time_key, idx, next_msg, it))
             except StopIteration:
                 pass
