@@ -77,8 +77,8 @@ def filter_mcap(
         for topic in topics_to_include:
             channel_ids_to_include.update(topic_to_channel_ids[topic])
 
-        # Read all attachments and metadata to preserve them
-        all_attachments = reader.get_attachments()
+        # Read attachments (filtered by time) and metadata
+        all_attachments = reader.get_attachments(start_time=start_ns, end_time=end_ns)
         all_metadata = reader.get_metadata()
 
         # Step 2: Write the filtered MCAP using factory
@@ -98,10 +98,6 @@ def filter_mcap(
                 logger.warning("No topics match filter.")
                 # Still write attachments and metadata even if no messages match
                 for attachment in all_attachments:
-                    if start_ns is not None and attachment.log_time < start_ns:
-                        continue
-                    if end_ns is not None and attachment.log_time > end_ns:
-                        continue
                     writer.write_attachment(attachment)
                 for metadata in all_metadata:
                     writer.write_metadata(metadata)
@@ -140,12 +136,8 @@ def filter_mcap(
                 sequence_counters[msg_record.channel_id] += 1
                 writer.write_message(new_record)
 
-            # Write attachments (filtered by time if time range is specified)
+            # Write attachments (already filtered by time)
             for attachment in all_attachments:
-                if start_ns is not None and attachment.log_time < start_ns:
-                    continue
-                if end_ns is not None and attachment.log_time > end_ns:
-                    continue
                 writer.write_attachment(attachment)
 
             # Write all metadata to preserve them

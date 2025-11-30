@@ -161,12 +161,21 @@ class BaseMcapRecordReader(ABC):
     # Attachment Management
 
     @abstractmethod
-    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+    def get_attachments(
+        self,
+        name: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+    ) -> list[AttachmentRecord]:
         """Get attachments from the MCAP file.
 
         Args:
             name: Optional name filter. If None, returns all attachments.
                   If provided, returns only attachments with matching name.
+            start_time: Optional start time filter in nanoseconds. If provided,
+                        only attachments with log_time >= start_time are returned.
+            end_time: Optional end time filter in nanoseconds. If provided,
+                      only attachments with log_time <= end_time are returned.
 
         Returns:
             List of AttachmentRecord objects.
@@ -828,12 +837,21 @@ class McapChunkedReader(BaseMcapRecordReader):
                 reader.seek_from_start(offset)
                 yield McapRecordParser.parse_message(reader)
 
-    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+    def get_attachments(
+        self,
+        name: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+    ) -> list[AttachmentRecord]:
         """Get attachments from the MCAP file.
 
         Args:
             name: Optional name filter. If None, returns all attachments.
                   If provided, returns only attachments with matching name.
+            start_time: Optional start time filter in nanoseconds. If provided,
+                        only attachments with log_time >= start_time are returned.
+            end_time: Optional end time filter in nanoseconds. If provided,
+                      only attachments with log_time <= end_time are returned.
 
         Returns:
             List of AttachmentRecord objects.
@@ -851,6 +869,12 @@ class McapChunkedReader(BaseMcapRecordReader):
             attachment_indexes_flat.sort(key=lambda x: x.offset)
         else:
             attachment_indexes_flat = attachment_indexes.get(name, [])
+
+        # Filter by time using the index's log_time field
+        if start_time is not None:
+            attachment_indexes_flat = [a for a in attachment_indexes_flat if a.log_time >= start_time]
+        if end_time is not None:
+            attachment_indexes_flat = [a for a in attachment_indexes_flat if a.log_time <= end_time]
 
         current_pos = self._file.tell()
         attachments: list[AttachmentRecord] = []
@@ -1298,12 +1322,21 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             _ = self._file.seek_from_start(offset)
             yield McapRecordParser.parse_message(self._file)
 
-    def get_attachments(self, name: str | None = None) -> list[AttachmentRecord]:
+    def get_attachments(
+        self,
+        name: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+    ) -> list[AttachmentRecord]:
         """Get attachments from the MCAP file.
 
         Args:
             name: Optional name filter. If None, returns all attachments.
                   If provided, returns only attachments with matching name.
+            start_time: Optional start time filter in nanoseconds. If provided,
+                        only attachments with log_time >= start_time are returned.
+            end_time: Optional end time filter in nanoseconds. If provided,
+                      only attachments with log_time <= end_time are returned.
 
         Returns:
             List of AttachmentRecord objects.
@@ -1319,6 +1352,12 @@ class McapNonChunkedReader(BaseMcapRecordReader):
                 attachment_indexes_flat.extend(i)
         else:
             attachment_indexes_flat = attachment_indexes.get(name, [])
+
+        # Filter by time using the index's log_time field
+        if start_time is not None:
+            attachment_indexes_flat = [a for a in attachment_indexes_flat if a.log_time >= start_time]
+        if end_time is not None:
+            attachment_indexes_flat = [a for a in attachment_indexes_flat if a.log_time <= end_time]
 
         current_pos = self._file.tell()
         attachments: list[AttachmentRecord] = []
