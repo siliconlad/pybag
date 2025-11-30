@@ -28,30 +28,6 @@ class FileWriter(BaseWriter):
     def __init__(self, file_path: Path | str, mode: str = "wb"):
         self._file_path = Path(file_path).absolute()
         self._file = open(self._file_path, mode)
-        self._bytes_written = 0
-
-    def write(self, data: bytes) -> int:
-        self._bytes_written += len(data)
-        return self._file.write(data)
-
-    def tell(self) -> int:
-        return self._bytes_written
-
-    def close(self) -> None:
-        self._file.close()
-
-
-class AppendFileWriter(BaseWriter):
-    """Write binary data to a file, supporting seek and truncate for append mode.
-
-    Unlike FileWriter which only supports forward writing, this class opens
-    the file in read+write mode to allow seeking and truncating for MCAP append operations.
-    """
-
-    def __init__(self, file_path: Path | str):
-        self._file_path = Path(file_path).absolute()
-        # Open in read+write binary mode (file must exist)
-        self._file = open(self._file_path, "r+b")
 
     def write(self, data: bytes) -> int:
         return self._file.write(data)
@@ -99,6 +75,10 @@ class BytesWriter(BaseWriter):
     def clear(self) -> None:
         self._buffer.clear()
 
+    def truncate(self, size: int) -> None:
+        """Truncate the buffer to the given size."""
+        del self._buffer[size:]
+
     def close(self) -> None:
         self._buffer.clear()
 
@@ -106,9 +86,9 @@ class BytesWriter(BaseWriter):
 class CrcWriter(BaseWriter):
     """Write binary data and track CRC32."""
 
-    def __init__(self, writer: BaseWriter):
+    def __init__(self, writer: BaseWriter, initial_crc: int = 0):
         self._writer = writer
-        self._crc = 0
+        self._crc = initial_crc
 
     def write(self, data: bytes) -> int:
         self._crc = zlib.crc32(data, self._crc)
@@ -116,6 +96,14 @@ class CrcWriter(BaseWriter):
 
     def tell(self) -> int:
         return self._writer.tell()
+
+    def seek(self, offset: int) -> int:
+        """Seek to a specific position (delegates to underlying writer)."""
+        return self._writer.seek(offset)  # type: ignore[attr-defined]
+
+    def truncate(self) -> None:
+        """Truncate at current position (delegates to underlying writer)."""
+        self._writer.truncate()  # type: ignore[attr-defined]
 
     def get_crc(self) -> int:
         return self._crc

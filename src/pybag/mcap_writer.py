@@ -4,27 +4,16 @@ import logging
 from pathlib import Path
 from typing import Literal
 
-from pybag.io.raw_reader import FileReader
-from pybag.io.raw_writer import AppendFileWriter, BaseWriter, FileWriter
+from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
-from pybag.mcap.record_parser import (
-    DATA_END_SIZE,
-    FOOTER_SIZE,
-    MAGIC_BYTES_SIZE
-)
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import (
-    AttachmentIndexRecord,
     AttachmentRecord,
     ChannelRecord,
-    ChunkIndexRecord,
     MessageRecord,
-    MetadataIndexRecord,
     MetadataRecord,
-    SchemaRecord,
-    StatisticsRecord
+    SchemaRecord
 )
-from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
 
@@ -147,92 +136,15 @@ class McapFileWriter:
         Returns:
             A writer configured to append to the existing file.
         """
-        file_path = Path(file_path)
-
-        # Read the existing file to load summary information
-        with FileReader(file_path) as reader:
-            # Try chunked summary first, fall back to non-chunked
-            try:
-                summary: McapChunkedSummary | McapNonChunkedSummary = McapChunkedSummary(
-                    reader,
-                    enable_crc_check=False,
-                    enable_reconstruction='missing',
-                )
-                is_chunked = True
-            except Exception:
-                # Fall back to non-chunked summary
-                summary = McapNonChunkedSummary(
-                    reader,
-                    enable_crc_check=False,
-                    enable_reconstruction='missing',
-                )
-                is_chunked = False
-
-            # Load existing data
-            schemas = summary.get_schemas()
-            channels = summary.get_channels()
-            statistics = summary.get_statistics()
-            if statistics is None:
-                statistics = StatisticsRecord(
-                    message_count=0,
-                    schema_count=len(schemas),
-                    channel_count=len(channels),
-                    attachment_count=0,
-                    metadata_count=0,
-                    chunk_count=0,
-                    message_start_time=0,
-                    message_end_time=0,
-                    channel_message_counts={},
-                )
-
-            # Get chunk indexes for chunked files
-            chunk_indexes: list[ChunkIndexRecord] = []
-            if is_chunked and isinstance(summary, McapChunkedSummary):
-                chunk_indexes = summary.get_chunk_indexes()
-
-            # Get attachment and metadata indexes
-            attachment_indexes_dict = summary.get_attachment_indexes()
-            metadata_indexes_dict = summary.get_metadata_indexes()
-
-            # Flatten the dictionaries to lists
-            attachment_indexes: list[AttachmentIndexRecord] = []
-            for indexes in attachment_indexes_dict.values():
-                attachment_indexes.extend(indexes)
-
-            metadata_indexes: list[MetadataIndexRecord] = []
-            for indexes in metadata_indexes_dict.values():
-                metadata_indexes.extend(indexes)
-
-            # Calculate the data end position
-            # The data section ends at footer.summary_start - DATA_END_SIZE
-            # or if there's no summary, it ends at file_size - FOOTER_SIZE - MAGIC_BYTES_SIZE - DATA_END_SIZE
-            footer = summary._footer
-            if footer.summary_start != 0:
-                data_end_position = footer.summary_start - DATA_END_SIZE
-            else:
-                reader.seek_from_end(0)
-                file_size = reader.tell()
-                data_end_position = file_size - FOOTER_SIZE - MAGIC_BYTES_SIZE - DATA_END_SIZE
-
-        # Create append writer
-        append_writer = AppendFileWriter(file_path)
+        # Create low-level append writer (handles file reading internally)
         record_writer = McapRecordWriterFactory.create_append_writer(
-            append_writer,
+            file_path,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
-            schemas=schemas,
-            channels=channels,
-            statistics=statistics,
-            chunk_indexes=chunk_indexes,
-            attachment_indexes=attachment_indexes,
-            metadata_indexes=metadata_indexes,
-            data_end_position=data_end_position,
         )
 
         # Create the high-level writer instance
         instance = cls.__new__(cls)
-
-        # Initialize the record writer directly (bypass __init__)
         instance._record_writer = record_writer
         instance._profile = profile
 
@@ -242,26 +154,16 @@ class McapFileWriter:
             raise ValueError(f"Unknown encoding type: {profile}")
         instance._message_serializer = message_serializer
 
-        # Initialize tracking from existing data
-        # Find the next schema and channel IDs
+        # Initialize high-level tracking from record writer's loaded state
+        schemas = record_writer._schema_records
+        channels = record_writer._channel_records
+
         instance._next_schema_id = max(schemas.keys(), default=0) + 1
         instance._next_channel_id = max(channels.keys(), default=0) + 1
-
-        # Build topic -> channel_id mapping
         instance._topics = {ch.topic: ch.id for ch in channels.values()}
-
-        # Build schema name -> schema_id mapping (for matching existing schemas)
         instance._schema_names = {sch.name: sch.id for sch in schemas.values()}
-
-        # We cannot directly map type[Message] -> schema_id without the original types
-        # So we start with an empty mapping; new types will get new IDs
-        instance._schemas = {}
-
-        # Initialize sequence numbers from existing message counts
-        instance._sequences = {
-            channel_id: count
-            for channel_id, count in statistics.channel_message_counts.items()
-        }
+        instance._schemas: dict[type[Message], int] = {}
+        instance._sequences = dict(record_writer._channel_message_counts)
 
         return instance
 
