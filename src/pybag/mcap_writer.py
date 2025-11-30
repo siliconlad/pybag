@@ -7,7 +7,11 @@ from typing import Literal
 from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import AppendFileWriter, BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
-from pybag.mcap.record_parser import DATA_END_SIZE, FOOTER_SIZE, MAGIC_BYTES_SIZE
+from pybag.mcap.record_parser import (
+    DATA_END_SIZE,
+    FOOTER_SIZE,
+    MAGIC_BYTES_SIZE
+)
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import (
     AttachmentIndexRecord,
@@ -18,7 +22,7 @@ from pybag.mcap.records import (
     MetadataIndexRecord,
     MetadataRecord,
     SchemaRecord,
-    StatisticsRecord,
+    StatisticsRecord
 )
 from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
 from pybag.serialize import MessageSerializer, MessageSerializerFactory

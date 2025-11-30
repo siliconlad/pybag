@@ -8,7 +8,12 @@ import lz4.frame
 import zstandard as zstd
 
 from pybag import __version__
-from pybag.io.raw_writer import AppendFileWriter, BaseWriter, BytesWriter, CrcWriter
+from pybag.io.raw_writer import (
+    AppendFileWriter,
+    BaseWriter,
+    BytesWriter,
+    CrcWriter
+)
 from pybag.mcap.records import (
     AttachmentIndexRecord,
     AttachmentRecord,
