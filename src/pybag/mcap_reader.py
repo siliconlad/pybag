@@ -105,7 +105,6 @@ class McapFileReader:
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
-        in_log_time_order: bool | None = None,
         order: MessageOrder = "log",
         in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
@@ -121,9 +120,6 @@ class McapFileReader:
             start_time: Start time to filter by. If None, start from the beginning.
             end_time: End time to filter by. If None, read to the end.
             filter: Callable to filter messages. If None, all messages are returned.
-            in_log_time_order: Deprecated. Use order instead.
-                If True, equivalent to order="log".
-                If False, equivalent to order="file".
             order: The field to order messages by. Defaults to "log".
                 - "log": Order by log_time.
                 - "publish": Order by publish_time.
@@ -133,12 +129,6 @@ class McapFileReader:
         Returns:
             Generator yielding DecodedMessage objects from matching topics.
         """
-        # Handle backward compatibility with in_log_time_order
-        if in_log_time_order is not None:
-            if in_log_time_order:
-                order = "log"
-            else:
-                order = "file"
         # If empty list we return no messages
         if (concrete_topics := self._expand_topics(topic)) == []:
             return
@@ -318,7 +308,6 @@ class McapMultipleFileReader:
         end_time: int | None = None,
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
-        in_log_time_order: bool | None = None,
         order: MessageOrder = "log",
         in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
@@ -330,7 +319,6 @@ class McapMultipleFileReader:
             start_time: Start time to filter by. If None, start from the beginning.
             end_time: End time to filter by. If None, read to the end.
             filter: Callable to filter messages. If None, all messages are returned.
-            in_log_time_order: Deprecated. Use order instead.
             order: The field to order messages by. Defaults to "log".
                 - "log": Order by log_time.
                 - "publish": Order by publish_time.
@@ -343,13 +331,6 @@ class McapMultipleFileReader:
         Raises:
             ValueError: If order="file" is specified (not supported for multiple files).
         """
-        # Handle backward compatibility with in_log_time_order
-        if in_log_time_order is not None:
-            if in_log_time_order:
-                order = "log"
-            else:
-                raise ValueError('in_log_time_order=False is not supported for multiple files')
-
         if order == "file":
             raise ValueError('order="file" is not supported for multiple files')
 
