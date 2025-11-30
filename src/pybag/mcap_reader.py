@@ -144,6 +144,7 @@ class McapFileReader:
             return
         logging.debug(f"Expanded topics: {concrete_topics}")
 
+        # Get the channels corresponding to the topics given
         channel_infos = {}  # dict[channel_id, tuple[channel_record, schema]]
         for topic_name in concrete_topics:
             channel_id = self._reader.get_channel_id(topic_name)
@@ -319,7 +320,7 @@ class McapMultipleFileReader:
         *,
         in_log_time_order: bool | None = None,
         order: MessageOrder = "log",
-        reverse: bool = False,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """
         Iterate over messages from all MCAP files in the specified order.
@@ -362,7 +363,7 @@ class McapMultipleFileReader:
         # Initialize the heap with the first message of each file
         heap: list[tuple[int, int, DecodedMessage, Generator[DecodedMessage, None, None]]] = []
         for reader in self._readers:
-            it = iter(reader.messages(topic, start_time, end_time, order=order, reverse=reverse))
+            it = iter(reader.messages(topic, start_time, end_time, order=order, in_reverse=in_reverse))
             try:
                 msg = next(it)
                 time_key = -get_time_key(msg) if reverse else get_time_key(msg)

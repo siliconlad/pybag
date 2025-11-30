@@ -194,6 +194,16 @@ class McapFileWriter:
         # Delegate to low-level writer
         self._record_writer.write_message(record)
 
+    def flush_chunk(self) -> None:
+        """Flush the current chunk if using a chunked writer.
+
+        For chunked writers, this forces the current chunk to be written even if
+        it hasn't reached the size threshold. This is useful when switching topics
+        to ensure that each chunk only contains messages from one topic.
+        For non-chunked writers, this is a no-op.
+        """
+        self._record_writer.flush_chunk()
+
     # TODO: Smarter API (e.g. auto-encode text, auto media_type)?
     def write_attachment(
         self,
