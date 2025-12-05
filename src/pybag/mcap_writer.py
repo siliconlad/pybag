@@ -6,7 +6,7 @@ from typing import Literal
 
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
-from pybag.mcap.record_writer import McapRecordWriterFactory
+from pybag.mcap.record_writer import BaseMcapRecordWriter, McapRecordWriterFactory
 from pybag.mcap.records import (
     AttachmentRecord,
     ChannelRecord,
@@ -30,28 +30,22 @@ class McapFileWriter:
 
     def __init__(
         self,
-        writer: BaseWriter,
+        writer: BaseWriter | None = None,
         *,
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
+        _record_writer: BaseMcapRecordWriter | None = None,
     ) -> None:
         """Initialize a high-level MCAP file writer.
 
         Args:
-            writer: The underlying writer to write binary data to.
+            writer: The underlying writer to write binary data to. Required unless _record_writer is provided.
             profile: The MCAP profile to use (default: "ros2").
             chunk_size: If provided, creates chunks of approximately this size in bytes. If None, writes without chunking.
             chunk_compression: Compression algorithm for chunks ("lz4" or "zstd" or None for no compression).
+            _record_writer: Internal use only. Pre-configured record writer for append mode.
         """
-        # Create the low-level record writer via factory
-        self._record_writer = McapRecordWriterFactory.create_writer(
-            writer,
-            chunk_size=chunk_size,
-            chunk_compression=chunk_compression,
-            profile=profile,
-        )
-
         # Get message serializer for this profile
         self._profile = profile
         message_serializer = MessageSerializerFactory.from_profile(self._profile)
@@ -59,13 +53,36 @@ class McapFileWriter:
             raise ValueError(f"Unknown encoding type: {self._profile}")
         self._message_serializer: MessageSerializer = message_serializer
 
-        # High-level tracking
-        self._next_schema_id = 1  # Schema ID must be non-zero
-        self._next_channel_id = 1
-        self._topics: dict[str, int] = {}  # topic -> channel_id
-        self._schemas: dict[type[Message], int] = {}  # type -> schema_id
-        self._schema_names: dict[str, int] = {}  # schema name -> schema_id
-        self._sequences: dict[int, int] = {}  # channel_id -> sequence number
+        # Use provided record writer or create one via factory
+        if _record_writer is not None:
+            self._record_writer = _record_writer
+            # Initialize tracking from existing state (append mode)
+            # Note: These attributes are implementation details but are guaranteed
+            # to exist on all concrete writers created by McapRecordWriterFactory
+            schemas = _record_writer._schema_records
+            channels = _record_writer._channel_records
+            self._next_schema_id = max(schemas.keys(), default=0) + 1
+            self._next_channel_id = max(channels.keys(), default=0) + 1
+            self._topics = {ch.topic: ch.id for ch in channels.values()}
+            self._schema_names = {sch.name: sch.id for sch in schemas.values()}
+            self._schemas: dict[type[Message], int] = {}
+            self._sequences = dict(_record_writer._channel_message_counts)
+        else:
+            if writer is None:
+                raise ValueError("writer is required when _record_writer is not provided")
+            self._record_writer = McapRecordWriterFactory.create_writer(
+                writer,
+                chunk_size=chunk_size,
+                chunk_compression=chunk_compression,
+                profile=profile,
+            )
+            # Initialize fresh tracking (write mode)
+            self._next_schema_id = 1  # Schema ID must be non-zero
+            self._next_channel_id = 1
+            self._topics = {}  # topic -> channel_id
+            self._schemas = {}  # type -> schema_id
+            self._schema_names = {}  # schema name -> schema_id
+            self._sequences = {}  # channel_id -> sequence number
 
     def __enter__(self) -> "McapFileWriter":
         """Context manager entry."""
@@ -136,36 +153,12 @@ class McapFileWriter:
         Returns:
             A writer configured to append to the existing file.
         """
-        # Create low-level append writer (handles file reading internally)
         record_writer = McapRecordWriterFactory.create_append_writer(
             file_path,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
         )
-
-        # Create the high-level writer instance
-        instance = cls.__new__(cls)
-        instance._record_writer = record_writer
-        instance._profile = profile
-
-        # Get message serializer
-        message_serializer = MessageSerializerFactory.from_profile(profile)
-        if message_serializer is None:
-            raise ValueError(f"Unknown encoding type: {profile}")
-        instance._message_serializer = message_serializer
-
-        # Initialize high-level tracking from record writer's loaded state
-        schemas = record_writer._schema_records
-        channels = record_writer._channel_records
-
-        instance._next_schema_id = max(schemas.keys(), default=0) + 1
-        instance._next_channel_id = max(channels.keys(), default=0) + 1
-        instance._topics = {ch.topic: ch.id for ch in channels.values()}
-        instance._schema_names = {sch.name: sch.id for sch in schemas.values()}
-        instance._schemas: dict[type[Message], int] = {}
-        instance._sequences = dict(record_writer._channel_message_counts)
-
-        return instance
+        return cls(profile=profile, _record_writer=record_writer)
 
     def add_channel(self, topic: str, channel_type: type[Message]) -> int:
         """Add a channel to the MCAP output.
