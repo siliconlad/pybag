@@ -17,6 +17,16 @@ class BaseWriter(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
+    def seek(self, offset: int) -> int:
+        """Seek to a specific position"""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def truncate(self) -> None:
+        """Truncate at current position"""
+        ...  # pragma: no cover
+
+    @abstractmethod
     def close(self) -> None:
         """Close the writer."""
         ...  # pragma: no cover
@@ -75,8 +85,11 @@ class BytesWriter(BaseWriter):
     def clear(self) -> None:
         self._buffer.clear()
 
+    def seek(self, offset: int) -> int:
+        # TODO: Implement seek for BytesWriter
+        raise NotImplementedError("seek is not yet supported")
+
     def truncate(self, size: int) -> None:
-        """Truncate the buffer to the given size."""
         del self._buffer[size:]
 
     def close(self) -> None:
@@ -98,12 +111,10 @@ class CrcWriter(BaseWriter):
         return self._writer.tell()
 
     def seek(self, offset: int) -> int:
-        """Seek to a specific position (delegates to underlying writer)."""
-        return self._writer.seek(offset)  # type: ignore[attr-defined]
+        return self._writer.seek(offset)
 
     def truncate(self) -> None:
-        """Truncate at current position (delegates to underlying writer)."""
-        self._writer.truncate()  # type: ignore[attr-defined]
+        self._writer.truncate()
 
     def get_crc(self) -> int:
         return self._crc
