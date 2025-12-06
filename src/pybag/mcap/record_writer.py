@@ -36,7 +36,11 @@ from pybag.mcap.records import (
     StatisticsRecord,
     SummaryOffsetRecord
 )
-from pybag.mcap.summary import McapChunkedSummary, McapNonChunkedSummary
+from pybag.mcap.summary import (
+    McapChunkedSummary,
+    McapNonChunkedSummary,
+    McapSummary
+)
 
 # Footer payload size: 8 bytes summary_start + 8 bytes summary_offset_start + 4 bytes summary_crc
 FOOTER_PAYLOAD_SIZE = 20
@@ -574,14 +578,16 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
     chunking. Tracks all records and statistics for the summary section.
     """
 
-    def __init__(self, writer: BaseWriter, *, profile: str = "ros2") -> None:
+    def __init__(self, writer: BaseWriter, *, summary: McapSummary | None = None, profile: str = "ros2") -> None:
         """Initialize a non-chunked MCAP writer.
 
         Args:
             writer: The underlying writer to write binary data to.
+            summary: Existing summary
             profile: The MCAP profile to use (default: "ros2").
         """
         self._writer = CrcWriter(writer)
+        self._summary = summary
         self._profile = profile
 
         # Tracking for summary section
@@ -735,6 +741,7 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self,
         writer: BaseWriter,
         *,
+        summary: McapSummary | None = None,
         chunk_size: int,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
         profile: str = "ros2",
@@ -743,11 +750,13 @@ class McapChunkedWriter(BaseMcapRecordWriter):
 
         Args:
             writer: The underlying writer to write binary data to.
+            summary: Existing summary
             chunk_size: The size threshold for flushing chunks (in bytes).
             chunk_compression: Compression algorithm ("lz4" or "zstd").
             profile: The MCAP profile to use (default: "ros2").
         """
         self._writer = CrcWriter(writer)
+        self._summary = summary
         self._profile = profile
         self._chunk_size = chunk_size
         self._chunk_compression = chunk_compression or ""
@@ -1000,215 +1009,6 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._writer.close()
 
 
-class McapAppendNonChunkedWriter(McapNonChunkedWriter):
-    """Low-level MCAP writer for appending to non-chunked files.
-
-    Loads the existing summary from an MCAP file. On first write, truncates at
-    the data section end and continues writing. On close, writes an updated
-    summary section and footer.
-    """
-
-    def __init__(self, file_path: Path | str) -> None:
-        """Initialize an append writer for non-chunked MCAP files.
-
-        Args:
-            file_path: Path to the existing MCAP file to append to.
-        """
-        file_path = Path(file_path)
-
-        # Load summary data from existing file
-        (schemas, channels, statistics, _, attachment_indexes,
-         metadata_indexes, data_end_position, data_section_crc) = _load_mcap_summary(file_path)
-
-        # Create file writer in read+write mode
-        writer = FileWriter(file_path, mode="r+b")
-
-        # Don't call super().__init__ - it writes magic bytes and header
-        # Initialize CrcWriter with existing CRC to continue accumulating
-        if data_section_crc == 0:
-            logging.warning("Data section CRC is 0, CRC validation disabled for appended data")
-        self._writer = CrcWriter(writer, initial_crc=data_section_crc)
-
-        # Store truncation info for lazy truncation
-        self._data_end_position = data_end_position
-        self._needs_truncation = True
-
-        # Load existing records
-        self._schema_records: dict[int, SchemaRecord] = dict(schemas)
-        self._channel_records: dict[int, ChannelRecord] = dict(channels)
-        self._attachment_indexes: list[AttachmentIndexRecord] = list(attachment_indexes)
-        self._metadata_indexes: list[MetadataIndexRecord] = list(metadata_indexes)
-
-        # Statistics tracking (start from existing values)
-        self._message_count = statistics.message_count
-        self._chunk_count = statistics.chunk_count
-        self._attachment_count = statistics.attachment_count
-        self._metadata_count = statistics.metadata_count
-        # Only treat 0 as "no messages yet" when message_count == 0; otherwise 0 is a valid timestamp
-        has_messages = statistics.message_count > 0
-        self._message_start_time: int | None = statistics.message_start_time if has_messages else None
-        self._message_end_time: int | None = statistics.message_end_time if has_messages else None
-        self._channel_message_counts: dict[int, int] = dict(statistics.channel_message_counts)
-
-    def _maybe_truncate(self) -> None:
-        """Truncate the file at data_end_position if not already done."""
-        if self._needs_truncation:
-            self._writer.seek(self._data_end_position)
-            self._writer.truncate()
-            self._needs_truncation = False
-
-    def write_schema(self, schema: SchemaRecord) -> None:
-        """Write a schema record immediately to the data section."""
-        self._maybe_truncate()
-        super().write_schema(schema)
-
-    def write_channel(self, channel: ChannelRecord) -> None:
-        """Write a channel record immediately to the data section."""
-        self._maybe_truncate()
-        super().write_channel(channel)
-
-    def write_message(self, message: MessageRecord) -> None:
-        """Write a message record immediately to the data section."""
-        self._maybe_truncate()
-        super().write_message(message)
-
-    def write_attachment(self, attachment: AttachmentRecord) -> None:
-        """Write an attachment record immediately to the data section."""
-        self._maybe_truncate()
-        super().write_attachment(attachment)
-
-    def write_metadata(self, metadata: MetadataRecord) -> None:
-        """Write a metadata record immediately to the data section."""
-        self._maybe_truncate()
-        super().write_metadata(metadata)
-
-    def close(self) -> None:
-        """Finalize the file by writing summary section and footer.
-
-        If no writes happened, just close without modifying the file.
-        """
-        if self._needs_truncation:
-            # No writes happened, just close without modifying
-            self._writer.close()
-            return
-        super().close()
-
-
-class McapAppendChunkedWriter(McapChunkedWriter):
-    """Low-level MCAP writer for appending to chunked files.
-
-    Loads the existing summary from a chunked MCAP file. On first write, truncates
-    at the data section end and continues writing. On close, writes an updated
-    summary section and footer.
-    """
-
-    def __init__(
-        self,
-        file_path: Path | str,
-        *,
-        chunk_size: int,
-        chunk_compression: Literal["lz4", "zstd"] | None = None,
-    ) -> None:
-        """Initialize an append writer for chunked MCAP files.
-
-        Args:
-            file_path: Path to the existing MCAP file to append to.
-            chunk_size: The size threshold for flushing chunks (in bytes).
-            chunk_compression: Compression algorithm ("lz4" or "zstd").
-        """
-        file_path = Path(file_path)
-
-        # Load summary data from existing file
-        (schemas, channels, statistics, chunk_indexes, attachment_indexes,
-         metadata_indexes, data_end_position, data_section_crc) = _load_mcap_summary(file_path)
-
-        # Create file writer in read+write mode
-        writer = FileWriter(file_path, mode="r+b")
-
-        # Don't call super().__init__ - it writes magic bytes and header
-        # Initialize CrcWriter with existing CRC to continue accumulating
-        if data_section_crc == 0:
-            logging.warning("Data section CRC is 0, CRC validation disabled for appended data")
-        self._writer = CrcWriter(writer, initial_crc=data_section_crc)
-        self._chunk_size = chunk_size
-        self._chunk_compression = chunk_compression or ""
-        self._compress_chunk = self._create_chunk_compressor()
-
-        # Store truncation info for lazy truncation
-        self._data_end_position = data_end_position
-        self._needs_truncation = True
-
-        # Load existing records
-        self._schema_records: dict[int, SchemaRecord] = dict(schemas)
-        self._channel_records: dict[int, ChannelRecord] = dict(channels)
-        self._chunk_indexes: list[ChunkIndexRecord] = list(chunk_indexes)
-        self._attachment_indexes: list[AttachmentIndexRecord] = list(attachment_indexes)
-        self._metadata_indexes: list[MetadataIndexRecord] = list(metadata_indexes)
-
-        # Statistics tracking (start from existing values)
-        self._message_count = statistics.message_count
-        self._chunk_count = statistics.chunk_count
-        self._attachment_count = statistics.attachment_count
-        self._metadata_count = statistics.metadata_count
-        # Only treat 0 as "no messages yet" when message_count == 0; otherwise 0 is a valid timestamp
-        has_messages = statistics.message_count > 0
-        self._message_start_time: int | None = statistics.message_start_time if has_messages else None
-        self._message_end_time: int | None = statistics.message_end_time if has_messages else None
-        self._channel_message_counts: dict[int, int] = dict(statistics.channel_message_counts)
-
-        # Current chunk buffering
-        self._current_chunk_buffer: BytesWriter = BytesWriter()
-        self._current_chunk_start_time: int | None = None
-        self._current_chunk_end_time: int | None = None
-        self._current_message_index: dict[int, list[tuple[int, int]]] = {}
-
-    def _maybe_truncate(self) -> None:
-        """Truncate the file at data_end_position if not already done."""
-        if self._needs_truncation:
-            self._writer.seek(self._data_end_position)
-            self._writer.truncate()
-            self._needs_truncation = False
-
-    def write_schema(self, schema: SchemaRecord) -> None:
-        """Write a schema record immediately to the data section (not buffered)."""
-        self._maybe_truncate()
-        super().write_schema(schema)
-
-    def write_channel(self, channel: ChannelRecord) -> None:
-        """Write a channel record immediately to the data section (not buffered)."""
-        self._maybe_truncate()
-        super().write_channel(channel)
-
-    def write_message(self, message: MessageRecord) -> None:
-        """Write a message record to the current chunk buffer.
-
-        If the buffer size exceeds the chunk size threshold, flush the chunk.
-        """
-        self._maybe_truncate()
-        super().write_message(message)
-
-    def write_attachment(self, attachment: AttachmentRecord) -> None:
-        """Write an attachment record immediately to the data section (not buffered)."""
-        self._maybe_truncate()
-        super().write_attachment(attachment)
-
-    def write_metadata(self, metadata: MetadataRecord) -> None:
-        """Write a metadata record immediately to the data section (not buffered)."""
-        self._maybe_truncate()
-        super().write_metadata(metadata)
-
-    def close(self) -> None:
-        """Finalize the file by flushing remaining chunk and writing summary.
-
-        If no writes happened, just close without modifying the file.
-        """
-        if self._needs_truncation:
-            # No writes happened, just close without modifying
-            self._writer.close()
-            return
-        super().close()
-
-
 class McapRecordWriterFactory:
     """Factory for creating appropriate MCAP record writers."""
 
@@ -1216,6 +1016,7 @@ class McapRecordWriterFactory:
     def create_writer(
         writer: BaseWriter,
         *,
+        summary: McapSummary | None = None,
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
         profile: str = "ros2",
@@ -1233,38 +1034,12 @@ class McapRecordWriterFactory:
             A BaseMcapRecordWriter instance (either chunked or non-chunked).
         """
         if chunk_size is None:
-            return McapNonChunkedWriter(writer, profile=profile)
+            return McapNonChunkedWriter(writer, profile=profile, summary=summary)
         else:
             return McapChunkedWriter(
                 writer,
+                summary=summary,
                 chunk_size=chunk_size,
                 chunk_compression=chunk_compression,
                 profile=profile,
-            )
-
-    @staticmethod
-    def create_append_writer(
-        file_path: Path | str,
-        *,
-        chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = None,
-    ) -> BaseMcapRecordWriter:
-        """Create an appropriate MCAP append writer based on configuration.
-
-        Args:
-            file_path: Path to the existing MCAP file to append to.
-            chunk_size: If provided, creates a chunked writer with this size threshold.
-                       If None, creates a non-chunked writer.
-            chunk_compression: Compression algorithm for chunks ("lz4" or "zstd").
-
-        Returns:
-            A BaseMcapRecordWriter instance (either chunked or non-chunked append writer).
-        """
-        if chunk_size is None:
-            return McapAppendNonChunkedWriter(file_path)
-        else:
-            return McapAppendChunkedWriter(
-                file_path,
-                chunk_size=chunk_size,
-                chunk_compression=chunk_compression,
             )

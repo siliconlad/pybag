@@ -1,4 +1,5 @@
 import logging
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Literal, TypeAlias
 
@@ -43,7 +44,59 @@ Offset: TypeAlias = int
 """Integer representing an offset from the start of a file/bytes."""
 
 
-class McapChunkedSummary:
+# TODO: Summary should load enough to work without reading summary section again
+
+class McapSummary(ABC):
+    @abstractmethod
+    def next_schema_id(self) -> SchemaId:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def next_channel_id(self) -> ChannelId:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def next_sequence_id(self, channel_id: ChannelId) -> int:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_channel_id(self, topic: str) -> ChannelId:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_schema_id(self, message: type[Mesage]) -> SchemaId:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_schemas(self) -> dict[SchemaId, SchemaRecord]:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_channels(self) -> dict[ChannelId, ChannelRecord]:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_statistics(self) -> StatisticsRecord | None:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_chunk_indexes(self) -> list[ChunkIndexRecord]:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_message_indexes(self) -> dict[ChannelId, MessageIndexRecord]:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_attachment_indexes(self) -> dict[str, list[AttachmentIndexRecord]]:
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def get_metadata_indexes(self) -> dict[str, list[MetadataIndexRecord]]:
+        ...  # pragma: no cover
+
+
+class McapChunkedSummary(McapSummary):
     """Summary information for a chunked MCAP file.
 
     This class handles loading summary information from an MCAP file, either from
@@ -60,7 +113,7 @@ class McapChunkedSummary:
 
     def __init__(
         self,
-        file: BaseReader,
+        file: BaseReader | = None,
         *,
         enable_crc_check: bool = False,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
@@ -78,6 +131,10 @@ class McapChunkedSummary:
         self._cached_metadata_indexes: dict[str, list[MetadataIndexRecord]] = defaultdict(list)
         self._cached_attachment_indexes: dict[str, list[AttachmentIndexRecord]] = defaultdict(list)
         self._message_indexes: dict[Offset, dict[ChannelId, MessageIndexRecord]] = {}
+
+        # If no file, then we are creating a new summary
+        if self._file is None:
+            return
 
         # Read footer to determine if summary sections exist
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
@@ -303,6 +360,24 @@ class McapChunkedSummary:
         self._cached_schemas = found_schemas
         self._cached_channels = found_channels
         self._cached_chunk_indexes = found_chunk_indexes
+
+    def next_schema_id(self) -> int:
+        return max(self.get_schemas().keys()) + 1
+
+    def next_channel_id(self) -> int:
+        return max(self.get_channels().keys()) + 1
+
+    def next_sequence_id(self, channel_id: ChannelId) -> int:
+        # TODO: Implement
+        raise NotImplementedError("next_sequence_id is not implemented")
+
+    def get_channel_id(self, topic: str) -> ChannelId:
+        # TODO: Implement
+        raise NotImplementedError("next_sequence_id is not implemented")
+
+    def get_schema_id(self, message: type[Message]) -> SchemaId:
+        # TODO: Implement
+        raise NotImplementedError("next_sequence_id is not implemented")
 
     def get_schemas(self) -> dict[SchemaId, SchemaRecord]:
         """Get all schemas defined in the MCAP file.
@@ -805,7 +880,7 @@ class McapChunkedSummary:
         raise RuntimeError("Impossible.")
 
 
-class McapNonChunkedSummary:
+class McapNonChunkedSummary(McapSummary):
     """Summary information for a non-chunked MCAP file.
 
     This class handles loading summary information from a non-chunked MCAP file,
@@ -839,6 +914,10 @@ class McapNonChunkedSummary:
         self._cached_attachment_indexes: dict[str, list[AttachmentIndexRecord]] = defaultdict(list)
         self._cached_statistics: StatisticsRecord | None = None
 
+        # If no file, then we are creating a new summary
+        if self._file is None:
+            return
+
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         self._footer: FooterRecord = McapRecordParser.parse_footer(self._file)
 
@@ -867,6 +946,24 @@ class McapNonChunkedSummary:
         else:
             logging.debug('Building summary offset from summary section')
             self._build_summary_offset()
+
+    def next_schema_id(self) -> int:
+        return max(self.get_schemas().keys()) + 1
+
+    def next_channel_id(self) -> int:
+        return max(self.get_channels().keys()) + 1
+
+    def next_sequence_id(self, channel_id: ChannelId) -> int:
+        # TODO: Implement
+        raise NotImplementedError("next_sequence_id is not implemented")
+
+    def get_channel_id(self, topic: str) -> ChannelId:
+        # TODO: Implement
+        raise NotImplementedError("next_sequence_id is not implemented")
+
+    def get_schema_id(self, message: type[Message]) -> SchemaId:
+        # TODO: Implement
+        raise NotImplementedError("next_sequence_id is not implemented")
 
     def _load_summary_offset(self):
         _ = self._file.seek_from_start(self._footer.summary_offset_start)
@@ -1128,6 +1225,12 @@ class McapNonChunkedSummary:
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
 
+    def get_chunk_indexes(self) -> list[ChunkIndexRecord]:
+        return []
+
+    def get_message_indexes(self) -> dict[ChannelId, MessageIndexRecord]:
+        return {}  # TODO: Move from McapNonChunkedReader
+
     def get_attachment_indexes(self) -> dict[str, list[AttachmentIndexRecord]]:
         """Get all attachment indexes from the MCAP file.
 
@@ -1232,3 +1335,16 @@ class McapNonChunkedSummary:
         # Either we built self._cached_channels
         # or we hit one of the if statements above
         raise RuntimeError("Impossible.")
+
+
+class McapSummaryFactory:
+    @staticmethod
+    def create_summary(
+        file: BaseReader | None = None,
+        enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        *,
+        is_chunked: bool
+    ) -> McapSummary:
+        if is_chunked:
+            return McapChunkedSummary(file)
+        return McapNonChunkedSummary(file)

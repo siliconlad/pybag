@@ -4,9 +4,10 @@ import logging
 from pathlib import Path
 from typing import Literal
 
+from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
-from pybag.mcap.record_writer import BaseMcapRecordWriter, McapRecordWriterFactory
+from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import (
     AttachmentRecord,
     ChannelRecord,
@@ -14,6 +15,7 @@ from pybag.mcap.records import (
     MetadataRecord,
     SchemaRecord
 )
+from pybag.mcap.summary import McapSummary, McapSummaryFactory
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
 
@@ -30,59 +32,41 @@ class McapFileWriter:
 
     def __init__(
         self,
-        writer: BaseWriter | None = None,
+        writer: BaseWriter,
         *,
+        mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
-        _record_writer: BaseMcapRecordWriter | None = None,
+        summary: McapSummary | None = None
     ) -> None:
         """Initialize a high-level MCAP file writer.
 
         Args:
-            writer: The underlying writer to write binary data to. Required unless _record_writer is provided.
+            writer: The underlying writer to write binary data to.
+            mode: The mode to open the file in: 'a' for append, 'w' for write.
+                  In append mode, the file must already exist and be a valid MCAP file.
             profile: The MCAP profile to use (default: "ros2").
             chunk_size: If provided, creates chunks of approximately this size in bytes. If None, writes without chunking.
             chunk_compression: Compression algorithm for chunks ("lz4" or "zstd" or None for no compression).
-            _record_writer: Internal use only. Pre-configured record writer for append mode.
         """
+        self._summary = summary or McapSummaryFactory.create_summary(is_chunked=chunk_size is not None)
+
+        # Create the low-level record writer via factory
+        self._record_writer = McapRecordWriterFactory.create_writer(
+            writer,
+            summary=self._summary,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
+            profile=profile,
+        )
+
         # Get message serializer for this profile
         self._profile = profile
         message_serializer = MessageSerializerFactory.from_profile(self._profile)
         if message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
         self._message_serializer: MessageSerializer = message_serializer
-
-        # Use provided record writer or create one via factory
-        if _record_writer is not None:
-            self._record_writer = _record_writer
-            # Initialize tracking from existing state (append mode)
-            # Note: These attributes are implementation details but are guaranteed
-            # to exist on all concrete writers created by McapRecordWriterFactory
-            schemas = _record_writer._schema_records
-            channels = _record_writer._channel_records
-            self._next_schema_id = max(schemas.keys(), default=0) + 1
-            self._next_channel_id = max(channels.keys(), default=0) + 1
-            self._topics = {ch.topic: ch.id for ch in channels.values()}
-            self._schema_names = {sch.name: sch.id for sch in schemas.values()}
-            self._schemas: dict[type[Message], int] = {}
-            self._sequences = dict(_record_writer._channel_message_counts)
-        else:
-            if writer is None:
-                raise ValueError("writer is required when _record_writer is not provided")
-            self._record_writer = McapRecordWriterFactory.create_writer(
-                writer,
-                chunk_size=chunk_size,
-                chunk_compression=chunk_compression,
-                profile=profile,
-            )
-            # Initialize fresh tracking (write mode)
-            self._next_schema_id = 1  # Schema ID must be non-zero
-            self._next_channel_id = 1
-            self._topics = {}  # topic -> channel_id
-            self._schemas = {}  # type -> schema_id
-            self._schema_names = {}  # schema name -> schema_id
-            self._sequences = {}  # channel_id -> sequence number
 
     def __enter__(self) -> "McapFileWriter":
         """Context manager entry."""
@@ -97,7 +81,7 @@ class McapFileWriter:
         cls,
         file_path: str | Path,
         *,
-        mode: Literal["w", "a"] = "w",
+        mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
@@ -106,7 +90,7 @@ class McapFileWriter:
 
         Args:
             file_path: The path to the file to write to.
-            mode: The mode to open the file in. 'w' for write (default), 'a' for append.
+            mode: The mode to open the file in: 'a' for append, 'w' for write.
                   In append mode, the file must already exist and be a valid MCAP file.
             profile: The profile to use for the MCAP file.
             chunk_size: The size of the chunk to write to in bytes.
@@ -116,49 +100,18 @@ class McapFileWriter:
         Returns:
             A writer backed by a file on disk.
         """
-        if mode == "w":
-            return cls(
-                FileWriter(file_path),
-                profile=profile,
-                chunk_size=chunk_size,
-                chunk_compression=chunk_compression,
-            )
-        elif mode == "a":
-            return cls._open_append(
-                file_path,
-                profile=profile,
-                chunk_size=chunk_size,
-                chunk_compression=chunk_compression,
-            )
-        else:
-            raise ValueError(f"Invalid mode: {mode}. Use 'w' for write or 'a' for append.")
-
-    @classmethod
-    def _open_append(
-        cls,
-        file_path: str | Path,
-        *,
-        profile: str = "ros2",
-        chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
-    ) -> "McapFileWriter":
-        """Open an existing MCAP file for appending.
-
-        Args:
-            file_path: The path to the existing MCAP file.
-            profile: The profile to use (should match existing file).
-            chunk_size: The size of the chunk to write to in bytes.
-            chunk_compression: The compression to use for the chunk.
-
-        Returns:
-            A writer configured to append to the existing file.
-        """
-        record_writer = McapRecordWriterFactory.create_append_writer(
-            file_path,
+        return cls(
+            FileWriter(file_path),
+            mode=mode,
+            profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
+            summary=McapSummaryFactory.create_summary(
+                file=FileReader(file_path),
+                enable_reconstruction='never',
+                is_chunked=chunk_size is not None
+            ),
         )
-        return cls(profile=profile, _record_writer=record_writer)
 
     def add_channel(self, topic: str, channel_type: type[Message]) -> int:
         """Add a channel to the MCAP output.
@@ -174,39 +127,26 @@ class McapFileWriter:
             The channel ID.
         """
         # Check if topic already exists
-        if (channel_id := self._topics.get(topic)) is not None:
+        if (channel_id := self._summary.get_channel_id(topic)) is not None:
             return channel_id
 
-        # Check that the channel type has a __msg_name__ attribute
-        if not hasattr(channel_type, '__msg_name__'):
-            raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
-
         # Register the schema if it's not already registered
-        # First check by type (for newly created schemas in this session)
-        if (schema_id := self._schemas.get(channel_type)) is None:
-            # Then check by name (for schemas loaded from existing file in append mode)
-            schema_name = channel_type.__msg_name__
-            if (schema_id := self._schema_names.get(schema_name)) is None:
-                # Schema doesn't exist, create a new one
-                schema_id = self._next_schema_id
-                self._next_schema_id += 1
+        if (schema_id := self._summary.get_schema_id(channel_type)) is None:
+            schema_id = self._summary.next_schema_id()
+            # Check that the channel type has a __msg_name__ attribute
+            if not hasattr(channel_type, '__msg_name__'):
+                raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
 
-                schema_record = SchemaRecord(
-                    id=schema_id,
-                    name=schema_name,
-                    encoding=self._message_serializer.schema_encoding,
-                    data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
-                )
-
-                self._record_writer.write_schema(schema_record)
-                self._schema_names[schema_name] = schema_id
-
-            # Track by type as well for future lookups in this session
-            self._schemas[channel_type] = schema_id  # type: ignore[assignment]
+            schema_record = SchemaRecord(
+                id=schema_id,
+                name=channel_type.__msg_name__,
+                encoding=self._message_serializer.schema_encoding,
+                data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
+            )
+            self._record_writer.write_schema(schema_record)
 
         # Register the channel
-        channel_id = self._next_channel_id
-        self._next_channel_id += 1
+        channel_id = self._summary.next_channel_id()
         channel_record = ChannelRecord(
             id=channel_id,
             schema_id=schema_id,
@@ -216,8 +156,6 @@ class McapFileWriter:
         )
 
         self._record_writer.write_channel(channel_record)
-        self._topics[topic] = channel_id
-        self._sequences[channel_id] = 0
 
         return channel_id
 
@@ -242,8 +180,7 @@ class McapFileWriter:
         channel_id = self.add_channel(topic, type(message))
 
         # Get and increment sequence number
-        sequence = self._sequences[channel_id]
-        self._sequences[channel_id] = sequence + 1
+        sequence = self._summary.next_sequence_id(channel_id)
 
         # Use publish_time if provided, otherwise default to timestamp (log_time)
         actual_publish_time = publish_time if publish_time is not None else timestamp
