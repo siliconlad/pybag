@@ -50,23 +50,25 @@ class McapFileWriter:
             chunk_size: If provided, creates chunks of approximately this size in bytes. If None, writes without chunking.
             chunk_compression: Compression algorithm for chunks ("lz4" or "zstd" or None for no compression).
         """
-        self._summary = summary or McapSummaryFactory.create_summary(is_chunked=chunk_size is not None)
-
-        # Create the low-level record writer via factory
-        self._record_writer = McapRecordWriterFactory.create_writer(
-            writer,
-            summary=self._summary,
-            chunk_size=chunk_size,
-            chunk_compression=chunk_compression,
-            profile=profile,
-        )
-
         # Get message serializer for this profile
         self._profile = profile
         message_serializer = MessageSerializerFactory.from_profile(self._profile)
         if message_serializer is None:
             raise ValueError(f"Unknown encoding type: {self._profile}")
         self._message_serializer: MessageSerializer = message_serializer
+
+        # Create empty summary if one is not provided
+        self._summary = summary or McapSummaryFactory.create_summary(is_chunked=chunk_size is not None)
+
+        # Create the low-level record writer via factory
+        self._record_writer = McapRecordWriterFactory.create_writer(
+            writer,
+            mode=mode,
+            summary=self._summary,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
+            profile=profile,
+        )
 
     def __enter__(self) -> "McapFileWriter":
         """Context manager entry."""
@@ -100,15 +102,15 @@ class McapFileWriter:
         Returns:
             A writer backed by a file on disk.
         """
+        logging.debug('Creating mcap file writer')
         return cls(
-            FileWriter(file_path),
+            FileWriter(file_path, mode='wb' if mode == 'w' else 'r+b'),
             mode=mode,
             profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
             summary=McapSummaryFactory.create_summary(
-                file=FileReader(file_path),
-                enable_reconstruction='never',
+                file=FileReader(file_path) if mode == 'a' else None,
                 is_chunked=chunk_size is not None
             ),
         )
@@ -154,7 +156,6 @@ class McapFileWriter:
             message_encoding=self._message_serializer.message_encoding,
             metadata={},
         )
-
         self._record_writer.write_channel(channel_record)
 
         return channel_id

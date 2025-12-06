@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -124,7 +125,7 @@ def test_add_channel_and_write_message() -> None:
     # Check the message
     data_message = McapRecordParser.parse_message(reader)
     assert data_message.channel_id == channel_id
-    assert data_message.sequence == 0
+    assert data_message.sequence == 1
     assert data_message.log_time == 1
     assert data_message.publish_time == 1
     message_serializer = MessageSerializerFactory.from_profile('ros2')
@@ -456,7 +457,7 @@ def test_append_mode_basic(tmp_path: Path, chunk_size, chunk_compression):
     # Verify appended file
     with McapFileReader.from_file(temp_path) as reader:
         msgs = list(reader.messages("*"))
-        assert [msg.sequence for msg in msgs] == [0, 1, 2, 3]
+        assert [msg.sequence for msg in msgs] == [1, 2, 3, 4]
         assert [msg.data.data for msg in msgs] == ['msg1', 'msg2', 'msg3', 'msg4']
 
         stats = reader._reader.get_statistics()

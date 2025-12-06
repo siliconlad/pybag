@@ -42,6 +42,8 @@ def sort_mcap(
     Returns:
         The path to the output MCAP file, or input path if no sorting requested.
     """
+    logging.debug('Sorting mcap...')
+
     # Resolve input path
     input_path = Path(input_path).resolve()
 
@@ -68,7 +70,9 @@ def sort_mcap(
 
         # Read all attachments and metadata to preserve them
         all_attachments = reader.get_attachments()
+        logging.debug(f'Found {len(all_attachments)} attachments')
         all_metadata = reader.get_metadata()
+        logging.debug(f'Found {len(all_metadata)} metadata')
 
         # Write the sorted MCAP
         with McapRecordWriterFactory.create_writer(

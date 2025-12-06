@@ -1,6 +1,13 @@
 import zlib
 from abc import ABC, abstractmethod
+from enum import IntEnum
 from pathlib import Path
+
+
+class FilePosition(IntEnum):
+    START = 0    # Start of the file
+    CURRENT = 1  # Current file position
+    END = 2      # End of the file
 
 
 class BaseWriter(ABC):
@@ -17,8 +24,23 @@ class BaseWriter(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
-    def seek(self, offset: int) -> int:
-        """Seek to a specific position"""
+    def read(self, size: int = -1) -> bytes:
+        """Read the next bytes in the reader."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def seek_from_start(self, offset: int) -> int:
+        """Seek from the start of the reader."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def seek_from_end(self, offset: int) -> int:
+        """Seek from the end of the reader."""
+        ...  # pragma: no cover
+
+    @abstractmethod
+    def seek_from_current(self, offset: int) -> int:
+        """Seek from the current position of the reader."""
         ...  # pragma: no cover
 
     @abstractmethod
@@ -45,9 +67,17 @@ class FileWriter(BaseWriter):
     def tell(self) -> int:
         return self._file.tell()
 
-    def seek(self, offset: int) -> int:
-        """Seek to a specific position in the file."""
-        return self._file.seek(offset)
+    def seek_from_start(self, offset: int) -> int:
+        return self._file.seek(offset, FilePosition.START)
+
+    def seek_from_end(self, offset: int) -> int:
+        return self._file.seek(-offset, FilePosition.END)
+
+    def seek_from_current(self, offset: int) -> int:
+        return self._file.seek(offset, FilePosition.CURRENT)
+
+    def read(self, size: int = -1) -> bytes:
+        return self._file.read(size)
 
     def truncate(self) -> None:
         """Truncate the file at the current position."""
@@ -85,12 +115,25 @@ class BytesWriter(BaseWriter):
     def clear(self) -> None:
         self._buffer.clear()
 
-    def seek(self, offset: int) -> int:
-        # TODO: Implement seek for BytesWriter
-        raise NotImplementedError("seek is not yet supported")
+    def seek_from_start(self, offset: int) -> int:
+        # TODO: Implement for BytesWriter
+        raise NotImplementedError("seek_from_start is not yet supported")
 
-    def truncate(self, size: int) -> None:
-        del self._buffer[size:]
+    def seek_from_end(self, offset: int) -> int:
+        # TODO: Implement for BytesWriter
+        raise NotImplementedError("seek_from_end is not yet supported")
+
+    def seek_from_current(self, offset: int) -> int:
+        # TODO: Implement for BytesWriter
+        raise NotImplementedError("seek_from_current is not yet supported")
+
+    def read(self, size: int | None = None) -> bytes:
+        # TODO: Implement for BytesWriter
+        raise NotImplementedError("read is not yet supported")
+
+    def truncate(self) -> None:
+        # TODO: Implement for BytesWriter
+        raise NotImplementedError("truncate is not yet supported")
 
     def close(self) -> None:
         self._buffer.clear()
@@ -110,8 +153,17 @@ class CrcWriter(BaseWriter):
     def tell(self) -> int:
         return self._writer.tell()
 
-    def seek(self, offset: int) -> int:
-        return self._writer.seek(offset)
+    def seek_from_start(self, offset: int) -> int:
+        return self._writer.seek_from_start(offset)
+
+    def seek_from_end(self, offset: int) -> int:
+        return self._writer.seek_from_end(offset)
+
+    def seek_from_current(self, offset: int) -> int:
+        return self._writer.seek_from_current(offset)
+
+    def read(self, size: int = -1) -> bytes:
+        return self._writer.read(size)
 
     def truncate(self) -> None:
         self._writer.truncate()
