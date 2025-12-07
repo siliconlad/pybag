@@ -8,6 +8,7 @@ from typing import Literal
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
+from pybag.mcap.summary import McapSummaryFactory
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,8 @@ def sort_mcap(
     Returns:
         The path to the output MCAP file, or input path if no sorting requested.
     """
+    logging.debug('Sorting mcap...')
+
     # Resolve input path
     input_path = Path(input_path).resolve()
 
@@ -68,11 +71,14 @@ def sort_mcap(
 
         # Read all attachments and metadata to preserve them
         all_attachments = reader.get_attachments()
+        logging.debug(f'Found {len(all_attachments)} attachments')
         all_metadata = reader.get_metadata()
+        logging.debug(f'Found {len(all_metadata)} metadata')
 
         # Write the sorted MCAP
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
+            McapSummaryFactory.create_summary(chunk_size=chunk_size),
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
             profile=reader.get_header().profile,

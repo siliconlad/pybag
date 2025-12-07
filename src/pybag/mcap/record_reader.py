@@ -230,6 +230,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             self._file,
             enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
+            load_summary_eagerly=False,
         )
 
         # Caches for message indexes
@@ -262,6 +263,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A McapChunkedReader instance
         """
+        logging.debug('Creating McapChunkedReader')
         return McapChunkedReader(
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
@@ -291,6 +293,7 @@ class McapChunkedReader(BaseMcapRecordReader):
         Returns:
             A McapChunkedReader instance
         """
+        logging.debug('Creating McapChunkedReader')
         return McapChunkedReader(
             BytesReader(data),
             enable_crc_check=enable_crc_check,
@@ -869,6 +872,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             attachment_indexes_flat.sort(key=lambda x: x.offset)
         else:
             attachment_indexes_flat = attachment_indexes.get(name, [])
+        logging.debug(f'Found {len(attachment_indexes_flat)} attachment indexes')
 
         # Filter by time using the index's log_time field
         if start_time is not None:
@@ -962,6 +966,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             self._file,
             enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
+            load_summary_eagerly=False,
         )
         self._message_indexes = self._build_message_index()
 
@@ -1022,6 +1027,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         Returns:
             A McapNonChunkedReader instance
         """
+        logging.debug('Creating McapNonChunkedReader')
         return McapNonChunkedReader(
             FileReader(file_path),
             enable_crc_check=enable_crc_check,
@@ -1048,6 +1054,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
         Returns:
             A McapNonChunkedReader instance
         """
+        logging.debug('Creating McapNonChunkedReader')
         return McapNonChunkedReader(
             BytesReader(data),
             enable_crc_check=enable_crc_check,

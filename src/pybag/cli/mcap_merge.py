@@ -7,6 +7,7 @@ from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
+from pybag.mcap.summary import McapSummaryFactory
 
 
 def merge_mcap(
@@ -45,6 +46,7 @@ def merge_mcap(
 
     with McapRecordWriterFactory.create_writer(
         FileWriter(output),
+        McapSummaryFactory.create_summary(chunk_size=chunk_size),
         chunk_size=chunk_size,
         chunk_compression=chunk_compression,
         profile="ros2"  # TODO: Support other profiles

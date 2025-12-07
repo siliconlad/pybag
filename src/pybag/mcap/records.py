@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 
 
@@ -111,15 +111,15 @@ class MetadataIndexRecord:
 
 @dataclass
 class StatisticsRecord:
-    message_count: int
-    schema_count: int
-    channel_count: int
-    attachment_count: int
-    metadata_count: int
-    chunk_count: int
-    message_start_time: int
-    message_end_time: int
-    channel_message_counts: dict[int, int]
+    message_count: int = 0
+    schema_count: int = 0
+    channel_count: int = 0
+    attachment_count: int = 0
+    metadata_count: int = 0
+    chunk_count: int = 0
+    message_start_time: int = 0
+    message_end_time: int = 0
+    channel_message_counts: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass

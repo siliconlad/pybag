@@ -14,6 +14,7 @@ from pybag.mcap.record_writer import (
     McapRecordWriterFactory
 )
 from pybag.mcap.records import ChannelRecord, SchemaRecord
+from pybag.mcap.summary import McapSummaryFactory
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,7 @@ def recover_mcap(
         # Create output writer
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
+            McapSummaryFactory.create_summary(chunk_size=chunk_size),
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
             profile=header.profile
