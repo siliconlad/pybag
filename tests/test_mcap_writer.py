@@ -12,7 +12,8 @@ import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
-from pybag.io.raw_reader import BytesReader, CrcReader
+from pybag.io.raw_reader import BytesReader, CrcReader, FileReader
+from pybag.mcap.crc import assert_data_crc
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.record_reader import McapChunkedReader
 from pybag.mcap.records import RecordType
@@ -463,6 +464,34 @@ def test_append_mode_basic(
         assert stats.message_count == 4
         assert stats.message_start_time == 1000
         assert stats.message_end_time == 4000
+
+
+@pytest.mark.parametrize('chunk_size', [None, 1024])
+def test_append_mode_crc_preserved(
+    tmp_path: Path,
+    chunk_size: int | None,
+) -> None:
+    """Ensure appended files keep a valid data section CRC."""
+    temp_path = tmp_path / 'crc_append.mcap'
+
+    with McapFileWriter.open(
+        temp_path,
+        mode="w",
+        chunk_size=chunk_size,
+        chunk_compression=None
+    ) as writer:
+        writer.write_message("/topic", 1000, std_msgs.String(data="first"))
+
+    with McapFileWriter.open(
+        temp_path,
+        mode="a",
+        chunk_size=chunk_size,
+        chunk_compression=None
+    ) as writer:
+        writer.write_message("/topic", 2000, std_msgs.String(data="second"))
+
+    with FileReader(temp_path) as reader:
+        assert_data_crc(reader)
 
 
 @pytest.mark.parametrize('write_chunk_size', [None, 1024])

@@ -37,6 +37,24 @@ from pybag.mcap.summary import (
 )
 
 
+def _prepare_append_writer(writer: BaseWriter) -> CrcWriter:
+    """Seek to the start of the existing DATA_END and seed CRC from prior data."""
+    # Read footer to locate the existing data end record
+    _ = writer.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
+    footer = McapRecordParser.parse_footer(writer)
+
+    if footer.summary_start != 0:
+        data_end_offset = footer.summary_start - DATA_END_SIZE
+        _ = writer.seek_from_start(data_end_offset)
+    else:
+        _ = writer.seek_from_end(FOOTER_SIZE + DATA_END_SIZE + MAGIC_BYTES_SIZE)
+
+    data_end = McapRecordParser.parse_data_end(writer)
+    # Rewind to the start of the DataEnd record so new writes overwrite it
+    writer.seek_from_current(-DATA_END_SIZE)
+    return CrcWriter(writer, initial_crc=data_end.data_section_crc)
+
+
 class BaseMcapRecordWriter(ABC):
     """Abstract base class for low-level MCAP record writers.
 
@@ -138,7 +156,7 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
             has_file_start: File already contains magic bytes + header
         """
 
-        self._writer = CrcWriter(writer)
+        self._writer = CrcWriter(writer) if mode == 'w' else _prepare_append_writer(writer)
         self._summary = summary
         self._profile = profile
 
@@ -147,12 +165,6 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
             McapRecordWriter.write_magic_bytes(self._writer)
             header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
             McapRecordWriter.write_header(self._writer, header)
-        else:
-            _ = self._writer.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-            footer = McapRecordParser.parse_footer(self._writer)
-            if footer.summary_start != 0:
-                _ = self._writer.seek_from_start(footer.summary_start)
-            self._writer.seek_from_current(-DATA_END_SIZE)
 
     def __enter__(self) -> 'McapNonChunkedWriter':
         return self
@@ -249,7 +261,7 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             profile: The MCAP profile to use (default: "ros2").
             has_file_start: File already contains magic bytes + header
         """
-        self._writer = CrcWriter(writer)
+        self._writer = CrcWriter(writer) if mode == 'w' else _prepare_append_writer(writer)
         self._summary = summary
         self._profile = profile
         self._chunk_size = chunk_size
@@ -267,12 +279,6 @@ class McapChunkedWriter(BaseMcapRecordWriter):
             McapRecordWriter.write_magic_bytes(self._writer)
             header = HeaderRecord(profile=profile, library=f"pybag {__version__}")
             McapRecordWriter.write_header(self._writer, header)
-        else:
-            _ = self._writer.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
-            footer = McapRecordParser.parse_footer(self._writer)
-            if footer.summary_start != 0:
-                _ = self._writer.seek_from_start(footer.summary_start)
-            self._writer.seek_from_current(-DATA_END_SIZE)
 
     def __enter__(self) -> 'McapChunkedWriter':
         return self
