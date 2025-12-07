@@ -142,3 +142,8 @@ cython_debug/
 mcaps/
 *.mcap
 .claude/
+
+# Zig
+pybag-zig/.zig-cache/
+pybag-zig/zig-out/
+pybag-zig/bench
