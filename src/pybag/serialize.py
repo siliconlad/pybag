@@ -36,13 +36,16 @@ class MessageSerializer:
 
         message_type = type(message)
         if (serializer := self._compiled.get(message_type)) is None:
-            # Check if message has encode() method
-            if hasattr(message, 'encode') and callable(getattr(message, 'encode')):
-                # Use the encode() method from the message instance
-                serializer = lambda encoder, msg: msg.encode(encoder)
+            schema, sub_schemas = self._schema_encoder.parse_schema(message_type)
+
+            # Try to use pre-compiled encoder first
+            from pybag import precompiled
+            precompiled_encoder = precompiled.get_encoder(schema.name)
+
+            if precompiled_encoder is not None:
+                serializer = precompiled_encoder
             else:
                 # Fall back to runtime compilation
-                schema, sub_schemas = self._schema_encoder.parse_schema(message_type)
                 serializer = compile_serializer(schema, sub_schemas)
 
             self._compiled[message_type] = serializer

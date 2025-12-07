@@ -26,37 +26,16 @@ class MessageDeserializer:
         if schema.id not in self._compiled:
             msg_schema, schema_msgs = self._schema_decoder.parse_schema(schema)
 
-            # Try to find message class with decode() method
-            message_class = self._find_message_class(msg_schema.name)
+            # Try to use pre-compiled decoder first
+            from pybag import precompiled
+            precompiled_decoder = precompiled.get_decoder(msg_schema.name)
 
-            if message_class is not None and hasattr(message_class, 'decode'):
-                # Use the decode() static method from the message class
-                self._compiled[schema.id] = message_class.decode
+            if precompiled_decoder is not None:
+                self._compiled[schema.id] = precompiled_decoder
             else:
                 # Fall back to runtime compilation
                 self._compiled[schema.id] = compile_schema(msg_schema, schema_msgs)
         return self._compiled[schema.id](decoder)
-
-    def _find_message_class(self, msg_name: str) -> type | None:
-        """Find the message class by name (e.g., 'std_msgs/msg/Header')."""
-        try:
-            # Parse message name: 'std_msgs/msg/Header' -> ('std_msgs', 'Header')
-            parts = msg_name.split('/')
-            if len(parts) != 3:
-                return None
-
-            package = parts[0]
-            class_name = parts[2]
-
-            # Try to import from ros2.humble (can be extended to support other distros)
-            try:
-                module = __import__(f'pybag.ros2.humble.{package}', fromlist=[class_name])
-                return getattr(module, class_name, None)
-            except (ImportError, AttributeError):
-                return None
-
-        except Exception:
-            return None
 
 
 class MessageDeserializerFactory:
