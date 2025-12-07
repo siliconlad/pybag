@@ -185,7 +185,6 @@ class McapNonChunkedWriter(BaseMcapRecordWriter):
     def write_message(self, message: MessageRecord) -> None:
         """Write a message record immediately to the data section."""
         self._summary.add_message(message)
-        logging.debug('Writing message')
         McapRecordWriter.write_message(self._writer, message)
 
     def flush_chunk(self) -> None:
