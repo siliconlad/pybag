@@ -4,6 +4,7 @@ from enum import IntEnum
 from typing import Any, Callable, Iterator
 
 from pybag.io.raw_reader import BaseReader, BytesReader
+from pybag.io.raw_writer import BaseWriter
 from pybag.mcap.records import (
     AttachmentIndexRecord,
     AttachmentRecord,
@@ -203,7 +204,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def parse_footer(cls, file: BaseReader) -> FooterRecord:
+    def parse_footer(cls, file: BaseReader | BaseWriter) -> FooterRecord:
         """Parse the footer record of an MCAP file."""
         if (record_type := file.read(1)) != b'\x02':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
