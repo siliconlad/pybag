@@ -1,7 +1,7 @@
 import logging
 import struct
 from enum import IntEnum
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Protocol
 
 from pybag.io.raw_reader import BaseReader, BytesReader
 from pybag.io.raw_writer import BaseWriter
@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 MAGIC_BYTES_SIZE = 8
 FOOTER_SIZE = 29  # Includes the 1 byte record type and 8 bytes record length
 DATA_END_SIZE = 13  # Includes the 1 byte record type and 8 bytes record length
+
+
+class _Readable(Protocol):
+    """Minimal readable interface used when parsing from writer-backed files."""
+
+    def read(self, size: int = -1) -> bytes:
+        ...
 
 class McapRecordType(IntEnum):
     HEADER = 1
@@ -204,7 +211,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def parse_footer(cls, file: BaseReader | BaseWriter) -> FooterRecord:
+    def parse_footer(cls, file: _Readable) -> FooterRecord:
         """Parse the footer record of an MCAP file."""
         if (record_type := file.read(1)) != b'\x02':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
@@ -383,7 +390,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def parse_data_end(cls, file: BaseReader) -> DataEndRecord:
+    def parse_data_end(cls, file: _Readable) -> DataEndRecord:
         if (record_type := file.read(1)) != b'\x0f':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
