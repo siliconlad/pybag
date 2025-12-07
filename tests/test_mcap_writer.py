@@ -414,16 +414,15 @@ def test_metadata_roundtrip(chunk_size, chunk_compression):
 # Append Mode Tests
 # =============================================================================
 
-
-@pytest.mark.parametrize(
-    "chunk_size,chunk_compression",
-    [
-        pytest.param(None, None, id="non_chunked"),
-        pytest.param(1024, "lz4", id="chunked_lz4"),
-        pytest.param(1024, "zstd", id="chunked_zstd"),
-    ],
-)
-def test_append_mode_basic(tmp_path: Path, chunk_size, chunk_compression):
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_basic(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: str | None,
+):
     """Test basic append mode - append messages to existing file."""
     temp_path = tmp_path / 'test.mcap'
 
@@ -431,7 +430,7 @@ def test_append_mode_basic(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="w",
-        chunk_size=chunk_size,
+        chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
@@ -448,7 +447,7 @@ def test_append_mode_basic(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="a",
-        chunk_size=chunk_size,
+        chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/topic1", 3000, std_msgs.String(data="msg3"))
@@ -466,14 +465,15 @@ def test_append_mode_basic(tmp_path: Path, chunk_size, chunk_compression):
         assert stats.message_end_time == 4000
 
 
-@pytest.mark.parametrize(
-    "chunk_size,chunk_compression",
-    [
-        pytest.param(None, None, id="non_chunked"),
-        pytest.param(1024, "lz4", id="chunked_lz4"),
-    ],
-)
-def test_append_mode_new_topic(tmp_path: Path, chunk_size, chunk_compression):
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_new_topic(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: str | None,
+):
     """Test append mode with a new topic not in the original file."""
     temp_path = tmp_path / 'test.mcap'
 
@@ -481,7 +481,7 @@ def test_append_mode_new_topic(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="w",
-        chunk_size=chunk_size,
+        chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
@@ -490,7 +490,7 @@ def test_append_mode_new_topic(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="a",
-        chunk_size=chunk_size,
+        chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/topic2", 2000, std_msgs.Int32(data=42))
@@ -506,14 +506,15 @@ def test_append_mode_new_topic(tmp_path: Path, chunk_size, chunk_compression):
         assert len(msgs) == 2
 
 
-@pytest.mark.parametrize(
-    "chunk_size,chunk_compression",
-    [
-        pytest.param(None, None, id="non_chunked"),
-        pytest.param(1024, "lz4", id="chunked_lz4"),
-    ],
-)
-def test_append_mode_attachments(tmp_path: Path, chunk_size, chunk_compression):
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_attachments(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: str | None,
+):
     """Test append mode preserves and adds attachments."""
     temp_path = tmp_path / 'test.mcap'
 
@@ -521,7 +522,7 @@ def test_append_mode_attachments(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="w",
-        chunk_size=chunk_size,
+        chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
@@ -536,7 +537,7 @@ def test_append_mode_attachments(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="a",
-        chunk_size=chunk_size,
+        chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
@@ -560,14 +561,15 @@ def test_append_mode_attachments(tmp_path: Path, chunk_size, chunk_compression):
         assert stats.attachment_count == 2
 
 
-@pytest.mark.parametrize(
-    "chunk_size,chunk_compression",
-    [
-        pytest.param(None, None, id="non_chunked"),
-        pytest.param(1024, "lz4", id="chunked_lz4"),
-    ],
-)
-def test_append_mode_metadata(tmp_path: Path, chunk_size, chunk_compression):
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_metadata(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: str | None,
+):
     """Test append mode preserves and adds metadata."""
     temp_path = tmp_path / 'test.mcap'
 
@@ -575,7 +577,7 @@ def test_append_mode_metadata(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="w",
-        chunk_size=chunk_size,
+        chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
@@ -585,7 +587,7 @@ def test_append_mode_metadata(tmp_path: Path, chunk_size, chunk_compression):
     with McapFileWriter.open(
         temp_path,
         mode="a",
-        chunk_size=chunk_size,
+        chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
         writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
