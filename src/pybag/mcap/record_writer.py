@@ -437,9 +437,9 @@ class McapRecordWriterFactory:
     @staticmethod
     def create_writer(
         writer: BaseWriter,
+        summary: McapSummary,
         *,
         mode: Literal['w', 'a'] = 'w',
-        summary: McapSummary | None = None,
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
         profile: str = "ros2",
@@ -456,20 +456,19 @@ class McapRecordWriterFactory:
         Returns:
             A BaseMcapRecordWriter instance (either chunked or non-chunked).
         """
-        if chunk_size is None:
-            logging.debug('Creating McapNonChunkedWriter')
-            summary = summary or McapSummaryFactory.create_summary(is_chunked=chunk_size is not None)
-            assert isinstance(summary, McapNonChunkedSummary)
+        # Choose writer based on summary type (not chunk_size)
+        # This ensures append mode respects the existing file's chunking mode
+        if isinstance(summary, McapNonChunkedSummary):
             return McapNonChunkedWriter(
                 writer,
                 mode=mode,
                 profile=profile,
                 summary=summary,
             )
-        else:
-            logging.debug('Creating McapChunkedWriter')
-            summary = summary or McapSummaryFactory.create_summary(is_chunked=chunk_size is not None)
-            assert isinstance(summary, McapChunkedSummary)
+        elif isinstance(summary, McapChunkedSummary):
+            # For chunked writer, use provided chunk_size or default
+            # In append mode, this may differ from the user's request but maintains file consistency
+            assert chunk_size is not None, "Chunk size cannot be None"
             return McapChunkedWriter(
                 writer,
                 mode=mode,
@@ -478,3 +477,5 @@ class McapRecordWriterFactory:
                 chunk_compression=chunk_compression,
                 profile=profile,
             )
+        else:
+            raise ValueError(f"Unknown summary type: {type(summary)}")

@@ -8,6 +8,7 @@ from typing import Literal
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
+from pybag.mcap.summary import McapSummaryFactory
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ def sort_mcap(
         # Write the sorted MCAP
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
+            McapSummaryFactory.create_summary(chunk_size=chunk_size),
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
             profile=reader.get_header().profile,

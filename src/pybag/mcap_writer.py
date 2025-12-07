@@ -15,7 +15,12 @@ from pybag.mcap.records import (
     MetadataRecord,
     SchemaRecord
 )
-from pybag.mcap.summary import McapSummary, McapSummaryFactory
+from pybag.mcap.summary import (
+    McapChunkedSummary,
+    McapNonChunkedSummary,
+    McapSummary,
+    McapSummaryFactory
+)
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message
 
@@ -33,12 +38,12 @@ class McapFileWriter:
     def __init__(
         self,
         writer: BaseWriter,
+        summary: McapSummary,
         *,
         mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["lz4", "zstd"] | None = None,
-        summary: McapSummary | None = None
     ) -> None:
         """Initialize a high-level MCAP file writer.
 
@@ -57,14 +62,16 @@ class McapFileWriter:
             raise ValueError(f"Unknown encoding type: {self._profile}")
         self._message_serializer: MessageSerializer = message_serializer
 
-        # Create empty summary if one is not provided
-        self._summary = summary or McapSummaryFactory.create_summary(is_chunked=chunk_size is not None)
+        self._summary = summary
+        if not chunk_size and isinstance(self._summary, McapChunkedSummary):
+            logging.warning(f'File is chunked so ignoring chunk_size: {chunk_size}')
+            chunk_size = 1024 * 1024  # 1MB
 
         # Create the low-level record writer via factory
         self._record_writer = McapRecordWriterFactory.create_writer(
             writer,
+            self._summary,
             mode=mode,
-            summary=self._summary,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
             profile=profile,
@@ -102,7 +109,6 @@ class McapFileWriter:
         Returns:
             A writer backed by a file on disk.
         """
-        logging.debug('Creating mcap file writer')
         return cls(
             FileWriter(file_path, mode='wb' if mode == 'w' else 'r+b'),
             mode=mode,
@@ -111,7 +117,7 @@ class McapFileWriter:
             chunk_compression=chunk_compression,
             summary=McapSummaryFactory.create_summary(
                 file=FileReader(file_path) if mode == 'a' else None,
-                is_chunked=chunk_size is not None
+                chunk_size=chunk_size,
             ),
         )
 

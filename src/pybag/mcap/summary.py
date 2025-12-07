@@ -1521,14 +1521,17 @@ class McapSummaryFactory:
     @staticmethod
     def create_summary(
         file: BaseReader | None = None,
+        chunk_size: int | None = None,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
-        *,
-        is_chunked: bool
     ) -> McapSummary:
-        # TODO: Do not rely on is_chunked
-        if is_chunked:
-            return McapChunkedSummary(file, enable_reconstruction=enable_reconstruction)
-        return McapNonChunkedSummary(file, enable_reconstruction=enable_reconstruction)
+        if file:  # Append mode
+            try:
+                return McapChunkedSummary(file, enable_reconstruction=enable_reconstruction)
+            except McapNoChunkIndexError:
+                return McapNonChunkedSummary(file, enable_reconstruction=enable_reconstruction)
+        elif chunk_size is None:
+            return McapNonChunkedSummary(enable_reconstruction=enable_reconstruction)
+        return McapChunkedSummary(enable_reconstruction=enable_reconstruction)
 
 
 def _write_summary_section(

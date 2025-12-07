@@ -421,7 +421,7 @@ def test_append_mode_basic(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
-    chunk_compression: str | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
 ):
     """Test basic append mode - append messages to existing file."""
     temp_path = tmp_path / 'test.mcap'
@@ -472,7 +472,7 @@ def test_append_mode_new_topic(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
-    chunk_compression: str | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
 ):
     """Test append mode with a new topic not in the original file."""
     temp_path = tmp_path / 'test.mcap'
@@ -513,7 +513,7 @@ def test_append_mode_attachments(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
-    chunk_compression: str | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
 ):
     """Test append mode preserves and adds attachments."""
     temp_path = tmp_path / 'test.mcap'
@@ -568,7 +568,7 @@ def test_append_mode_metadata(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
-    chunk_compression: str | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
 ):
     """Test append mode preserves and adds metadata."""
     temp_path = tmp_path / 'test.mcap'
