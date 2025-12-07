@@ -37,7 +37,17 @@ class MessageSerializer:
         message_type = type(message)
         if (serializer := self._compiled.get(message_type)) is None:
             schema, sub_schemas = self._schema_encoder.parse_schema(message_type)
-            serializer = compile_serializer(schema, sub_schemas)
+
+            # Try to use pre-compiled encoder first
+            from pybag import precompiled
+            precompiled_encoder = precompiled.get_encoder(schema.name)
+
+            if precompiled_encoder is not None:
+                serializer = precompiled_encoder
+            else:
+                # Fall back to runtime compilation
+                serializer = compile_serializer(schema, sub_schemas)
+
             self._compiled[message_type] = serializer
 
         encoder = self._message_encoder(little_endian=little_endian)
