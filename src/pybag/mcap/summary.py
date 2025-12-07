@@ -149,11 +149,13 @@ class McapChunkedSummary(McapSummary):
         *,
         enable_crc_check: bool = False,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        load_summary_eagerly: bool = True,
     ) -> None:
         logging.debug('Creating McapChunkedSummary')
         self._file = file
         self._enable_reconstruction = enable_reconstruction
         self._check_crc = enable_crc_check
+        self._load_summary_eagerly = load_summary_eagerly
 
         # Initialize cache variables
         self._summary_offset: dict[RecordId, Offset] = {}
@@ -206,8 +208,7 @@ class McapChunkedSummary(McapSummary):
             # TODO: What do we do if the summary is incomplete?
             logging.debug('Loading summary from summary section')
             self._load_summary()
-            if self._cached_statistics is None:
-                # TODO: Ability to turn this off? You generally want the statistics record?
+            if self._cached_statistics is None and self._load_summary_eagerly:
                 logging.warning('Statistics record not found in summary, generating')
                 self._cached_statistics = self.get_statistics()
 
@@ -1006,11 +1007,13 @@ class McapNonChunkedSummary(McapSummary):
         *,
         enable_crc_check: bool = False,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        load_summary_eagerly: bool = True,
     ) -> None:
         logging.debug('Creating McapNonChunkedSummary')
         self._file = file
         self._enable_reconstruction = enable_reconstruction
         self._check_crc = enable_crc_check
+        self._load_summary_eagerly = load_summary_eagerly
 
         # Initialize cache variables for lazy loading
         self._summary_offset: dict[RecordId, Offset] = {}
@@ -1036,7 +1039,6 @@ class McapNonChunkedSummary(McapSummary):
             return
 
         logging.debug(f'Tell: {self._file.tell()}')
-        logging.debug(f'Size: {len(self._file.read())}')
 
         _ = self._file.seek_from_end(FOOTER_SIZE + MAGIC_BYTES_SIZE)
         self._footer: FooterRecord = McapRecordParser.parse_footer(self._file)
@@ -1063,8 +1065,7 @@ class McapNonChunkedSummary(McapSummary):
             # TODO: What do we do if the summary is incomplete?
             logging.debug('Loading summary from summary section')
             self._load_summary()
-            if self._cached_statistics is None:
-                # TODO: Ability to turn this off? You generally want the statistics record?
+            if self._cached_statistics is None and self._load_summary_eagerly:
                 logging.warning('Statistics record not found in summary, generating')
                 self._cached_statistics = self.get_statistics()
 
@@ -1523,15 +1524,30 @@ class McapSummaryFactory:
         file: BaseReader | None = None,
         chunk_size: int | None = None,
         enable_reconstruction: Literal['never', 'missing', 'always'] = 'missing',
+        load_summary_eagerly: bool = True,
     ) -> McapSummary:
         if file:  # Append mode
             try:
-                return McapChunkedSummary(file, enable_reconstruction=enable_reconstruction)
+                return McapChunkedSummary(
+                    file,
+                    enable_reconstruction=enable_reconstruction,
+                    load_summary_eagerly=load_summary_eagerly,
+                )
             except McapNoChunkIndexError:
-                return McapNonChunkedSummary(file, enable_reconstruction=enable_reconstruction)
+                return McapNonChunkedSummary(
+                    file,
+                    enable_reconstruction=enable_reconstruction,
+                    load_summary_eagerly=load_summary_eagerly,
+                )
         elif chunk_size is None:
-            return McapNonChunkedSummary(enable_reconstruction=enable_reconstruction)
-        return McapChunkedSummary(enable_reconstruction=enable_reconstruction)
+            return McapNonChunkedSummary(
+                enable_reconstruction=enable_reconstruction,
+                load_summary_eagerly=load_summary_eagerly,
+            )
+        return McapChunkedSummary(
+            enable_reconstruction=enable_reconstruction,
+            load_summary_eagerly=load_summary_eagerly,
+        )
 
 
 def _write_summary_section(

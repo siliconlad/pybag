@@ -221,6 +221,7 @@ class McapChunkedReader(BaseMcapRecordReader):
             self._file,
             enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
+            load_summary_eagerly=False,
         )
 
         # Caches for message indexes
@@ -941,6 +942,7 @@ class McapNonChunkedReader(BaseMcapRecordReader):
             self._file,
             enable_crc_check=self._check_crc,
             enable_reconstruction=enable_summary_reconstruction,
+            load_summary_eagerly=False,
         )
         self._message_indexes = self._build_message_index()
 

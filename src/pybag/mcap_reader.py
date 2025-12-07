@@ -38,13 +38,27 @@ class McapFileReader:
         self._message_deserializer = MessageDeserializerFactory.from_profile(self._profile)
 
     @staticmethod
-    def from_file(file_path: Path | str, *, enable_crc_check: bool = False) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_file(file_path, enable_crc_check=enable_crc_check)
+    def from_file(
+        file_path: Path | str,
+        *,
+        enable_crc_check: bool = False,
+    ) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_file(
+            file_path,
+            enable_crc_check=enable_crc_check,
+        )
         return McapFileReader(reader)
 
     @staticmethod
-    def from_bytes(data: bytes, *, enable_crc_check: bool = False) -> 'McapFileReader':
-        reader = McapRecordReaderFactory.from_bytes(data, enable_crc_check=enable_crc_check)
+    def from_bytes(
+        data: bytes,
+        *,
+        enable_crc_check: bool = False,
+    ) -> 'McapFileReader':
+        reader = McapRecordReaderFactory.from_bytes(
+            data,
+            enable_crc_check=enable_crc_check,
+        )
         return McapFileReader(reader)
 
     @property
