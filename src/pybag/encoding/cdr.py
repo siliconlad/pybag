@@ -19,94 +19,77 @@ class CdrDecoder(MessageDecoder):
         # Skip first 4 bytes
         self._data = BytesReader(data[4:])
 
+        # Pre-compiled primitive struct parsers
+        self._primitive_parsers = {
+            'bool': struct.Struct('?'),
+            'int8': struct.Struct('<b' if self._is_little_endian else '>b'),
+            'uint8': struct.Struct('<B' if self._is_little_endian else '>B'),
+            'char': struct.Struct('<c' if self._is_little_endian else '>c'),
+            'int16': struct.Struct('<h' if self._is_little_endian else '>h'),
+            'uint16': struct.Struct('<H' if self._is_little_endian else '>H'),
+            'int32': struct.Struct('<i' if self._is_little_endian else '>i'),
+            'uint32': struct.Struct('<I' if self._is_little_endian else '>I'),
+            'int64': struct.Struct('<q' if self._is_little_endian else '>q'),
+            'uint64': struct.Struct('<Q' if self._is_little_endian else '>Q'),
+            'float32': struct.Struct('<f' if self._is_little_endian else '>f'),
+            'float64': struct.Struct('<d' if self._is_little_endian else '>d'),
+        }
+
     def parse(self, type_str: str) -> Any:
         return getattr(self, type_str)()
 
     # Primitive parsers -------------------------------------------------
 
     def bool(self) -> bool:
-        value = struct.unpack('?', self._data.align(1).read(1))[0]
-        return value
+        bool_data = self._data.align(1).read(1)
+        return self._primitive_parsers['bool'].unpack(bool_data)[0]
 
     def int8(self) -> int:
-        value = struct.unpack(
-            '<b' if self._is_little_endian else '>b',
-            self._data.align(1).read(1)
-        )[0]
-        return value
+        int8_data = self._data.align(1).read(1)
+        return self._primitive_parsers['int8'].unpack(int8_data)[0]
 
     def uint8(self) -> int:
-        value = struct.unpack(
-            '<B' if self._is_little_endian else '>B',
-            self._data.align(1).read(1)
-        )[0]
-        return value
+        uint8_data = self._data.align(1).read(1)
+        return self._primitive_parsers['uint8'].unpack(uint8_data)[0]
 
     def byte(self) -> bytes:
         return self._data.align(1).read(1)
 
     def char(self) -> str:
-        value = struct.unpack(
-            '<c' if self._is_little_endian else '>c',
-            self._data.align(1).read(1)
-        )[0]
-        return value.decode()
+        char_data = self._data.align(1).read(1)
+        return self._primitive_parsers['char'].unpack(char_data)[0].decode()
 
     def int16(self) -> int:
-        value = struct.unpack(
-            '<h' if self._is_little_endian else '>h',
-            self._data.align(2).read(2)
-        )[0]
-        return value
+        int16_data = self._data.align(2).read(2)
+        return self._primitive_parsers['int16'].unpack(int16_data)[0]
 
     def uint16(self) -> int:
-        value = struct.unpack(
-            '<H' if self._is_little_endian else '>H',
-            self._data.align(2).read(2)
-        )[0]
-        return value
+        uint16_data = self._data.align(2).read(2)
+        return self._primitive_parsers['uint16'].unpack(uint16_data)[0]
 
     def int32(self) -> int:
-        value = struct.unpack(
-            '<i' if self._is_little_endian else '>i',
-            self._data.align(4).read(4)
-        )[0]
-        return value
+        int32_data = self._data.align(4).read(4)
+        return self._primitive_parsers['int32'].unpack(int32_data)[0]
 
     def uint32(self) -> int:
-        value = struct.unpack(
-            '<I' if self._is_little_endian else '>I',
-            self._data.align(4).read(4)
-        )[0]
-        return value
+        uint32_data = self._data.align(4).read(4)
+        return self._primitive_parsers['uint32'].unpack(uint32_data)[0]
 
     def int64(self) -> int:
-        value = struct.unpack(
-            '<q' if self._is_little_endian else '>q',
-            self._data.align(8).read(8)
-        )[0]
-        return value
+        int64_data = self._data.align(8).read(8)
+        return self._primitive_parsers['int64'].unpack(int64_data)[0]
 
     def uint64(self) -> int:
-        value = struct.unpack(
-            '<Q' if self._is_little_endian else '>Q',
-            self._data.align(8).read(8)
-        )[0]
-        return value
+        uint64_data = self._data.align(8).read(8)
+        return self._primitive_parsers['uint64'].unpack(uint64_data)[0]
 
     def float32(self) -> float:
-        value = struct.unpack(
-            '<f' if self._is_little_endian else '>f',
-            self._data.align(4).read(4)
-        )[0]
-        return value
+        float32_data = self._data.align(4).read(4)
+        return self._primitive_parsers['float32'].unpack(float32_data)[0]
 
     def float64(self) -> float:
-        value = struct.unpack(
-            '<d' if self._is_little_endian else '>d',
-            self._data.align(8).read(8)
-        )[0]
-        return value
+        float64_data = self._data.align(8).read(8)
+        return self._primitive_parsers['float64'].unpack(float64_data)[0]
 
     def string(self) -> str:
         # Strings are null-terminated
