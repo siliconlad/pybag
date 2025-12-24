@@ -1,9 +1,10 @@
 import logging
 import struct
 from enum import IntEnum
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Protocol
 
 from pybag.io.raw_reader import BaseReader, BytesReader
+from pybag.io.raw_writer import BaseWriter
 from pybag.mcap.records import (
     AttachmentIndexRecord,
     AttachmentRecord,
@@ -29,6 +30,13 @@ logger = logging.getLogger(__name__)
 MAGIC_BYTES_SIZE = 8
 FOOTER_SIZE = 29  # Includes the 1 byte record type and 8 bytes record length
 DATA_END_SIZE = 13  # Includes the 1 byte record type and 8 bytes record length
+
+
+class _Readable(Protocol):
+    """Minimal readable interface used when parsing from writer-backed files."""
+
+    def read(self, size: int = -1) -> bytes:
+        ...
 
 class McapRecordType(IntEnum):
     HEADER = 1
@@ -101,52 +109,52 @@ class McapRecordParser:
     # MCAP Serialization Handlers
 
     @classmethod
-    def _parse_uint8(cls, file: BaseReader) -> tuple[int, int]:
+    def _parse_uint8(cls, file: _Readable) -> tuple[int, int]:
         return 1, struct.unpack('<B', file.read(1))[0]
 
 
     @classmethod
-    def _parse_uint16(cls, file: BaseReader) -> tuple[int, int]:
+    def _parse_uint16(cls, file: _Readable) -> tuple[int, int]:
         return 2, struct.unpack('<H', file.read(2))[0]
 
 
     @classmethod
-    def _parse_uint32(cls, file: BaseReader) -> tuple[int, int]:
+    def _parse_uint32(cls, file: _Readable) -> tuple[int, int]:
         return 4, struct.unpack('<I', file.read(4))[0]
 
 
     @classmethod
-    def _parse_uint64(cls, file: BaseReader) -> tuple[int, int]:
+    def _parse_uint64(cls, file: _Readable) -> tuple[int, int]:
         return 8, struct.unpack('<Q', file.read(8))[0]
 
 
     @classmethod
-    def _parse_string(cls, file: BaseReader) -> tuple[int, str]:
+    def _parse_string(cls, file: _Readable) -> tuple[int, str]:
         string_length_bytes, string_length = cls._parse_uint32(file)
         string = file.read(string_length)
         return string_length_bytes + string_length, string.decode()
 
 
     @classmethod
-    def _parse_timestamp(cls, file: BaseReader) -> tuple[int, int]:
+    def _parse_timestamp(cls, file: _Readable) -> tuple[int, int]:
         return cls._parse_uint64(file)
 
 
     @classmethod
-    def _parse_bytes(cls, file: BaseReader, size: int) -> tuple[int, bytes]:
+    def _parse_bytes(cls, file: _Readable, size: int) -> tuple[int, bytes]:
         bytes = file.read(size)
         return len(bytes), bytes
 
 
     @classmethod
-    def _parse_tuple(cls, file: BaseReader, first_type: str, second_type: str) -> tuple[int, tuple]:
+    def _parse_tuple(cls, file: _Readable, first_type: str, second_type: str) -> tuple[int, tuple]:
         first_value_length, first_value = getattr(cls, f'_parse_{first_type}')(file)
         second_value_length, second_value = getattr(cls, f'_parse_{second_type}')(file)
         return first_value_length + second_value_length, (first_value, second_value)
 
 
     @classmethod
-    def _parse_map(cls, file: BaseReader, key_type: str, value_type: str) -> tuple[int, dict]:
+    def _parse_map(cls, file: _Readable, key_type: str, value_type: str) -> tuple[int, dict]:
         map_length_bytes, map_length = cls._parse_uint32(file)
         original_length = map_length
 
@@ -167,8 +175,8 @@ class McapRecordParser:
     @classmethod
     def _parse_array(
         cls,
-        file: BaseReader,
-        array_type_parser: Callable[[BaseReader], tuple[int, Any]]
+        file: _Readable,
+        array_type_parser: Callable[[_Readable], tuple[int, Any]]
     ) -> tuple[int, list]:
         array_length_bytes, array_length = cls._parse_uint32(file)
         original_length = array_length
@@ -203,7 +211,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def parse_footer(cls, file: BaseReader) -> FooterRecord:
+    def parse_footer(cls, file: _Readable) -> FooterRecord:
         """Parse the footer record of an MCAP file."""
         if (record_type := file.read(1)) != b'\x02':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
@@ -382,7 +390,7 @@ class McapRecordParser:
 
 
     @classmethod
-    def parse_data_end(cls, file: BaseReader) -> DataEndRecord:
+    def parse_data_end(cls, file: _Readable) -> DataEndRecord:
         if (record_type := file.read(1)) != b'\x0f':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 

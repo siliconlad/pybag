@@ -12,6 +12,7 @@ from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import MessageRecord
+from pybag.mcap.summary import McapSummaryFactory
 
 logger = logging.getLogger(__name__)
 
@@ -77,9 +78,14 @@ def filter_mcap(
         for topic in topics_to_include:
             channel_ids_to_include.update(topic_to_channel_ids[topic])
 
+        # Read attachments (filtered by time) and metadata
+        all_attachments = reader.get_attachments(start_time=start_ns, end_time=end_ns)
+        all_metadata = reader.get_metadata()
+
         # Step 2: Write the filtered MCAP using factory
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
+            McapSummaryFactory.create_summary(chunk_size=chunk_size),
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
             profile=reader.get_header().profile
@@ -92,6 +98,11 @@ def filter_mcap(
             # If no topics match the filters, create an empty MCAP (no messages)
             if not channel_ids_to_include:
                 logger.warning("No topics match filter.")
+                # Still write attachments and metadata even if no messages match
+                for attachment in all_attachments:
+                    writer.write_attachment(attachment)
+                for metadata in all_metadata:
+                    writer.write_metadata(metadata)
                 return output_path
 
             for msg_record in reader.get_messages(
@@ -126,6 +137,14 @@ def filter_mcap(
                 )
                 sequence_counters[msg_record.channel_id] += 1
                 writer.write_message(new_record)
+
+            # Write attachments (already filtered by time)
+            for attachment in all_attachments:
+                writer.write_attachment(attachment)
+
+            # Write all metadata to preserve them
+            for metadata in all_metadata:
+                writer.write_metadata(metadata)
 
     return output_path
 
@@ -181,13 +200,18 @@ def add_parser(subparsers) -> None:
     parser.add_argument(
         "--chunk-size",
         type=int,
-        help=dedent("""Chunk size of the new filtered mcap in bytes.""")
+        help="Chunk size of the new filtered mcap in bytes."
     )
     parser.add_argument(
         "--chunk-compression",
         type=str,
         choices=['lz4', 'zstd'],
-        help=dedent("""Compression used for the chunk records.""")
+        help="Compression used for the chunk records."
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite output file if it exists."
     )
     parser.set_defaults(
         func=lambda args: filter_mcap(
@@ -199,5 +223,6 @@ def add_parser(subparsers) -> None:
             end_time=args.end_time,
             chunk_size=args.chunk_size,
             chunk_compression=args.chunk_compression,
+            overwrite=args.overwrite,
         )
     )

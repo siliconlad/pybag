@@ -705,3 +705,59 @@ def test_invalid_field_name_contains_special_characters():
     )
     with pytest.raises(Ros2MsgError):
         Ros2MsgSchemaDecoder().parse_schema(schema)
+
+
+def test_byte_constant_parsing():
+    """Parsing a schema with byte constants should not raise TypeError."""
+    diagnostic_status_schema = SchemaRecord(
+        id=1,
+        name='diagnostic_msgs/msg/DiagnosticStatus',
+        encoding='ros2msg',
+        data=b'byte OK=0\nbyte WARN=1\nbyte ERROR=2\nbyte STALE=3\nbyte level'
+    )
+
+    decoder = Ros2MsgSchemaDecoder()
+    schema, _ = decoder.parse_schema(diagnostic_status_schema)
+
+    # Verify the constants were parsed correctly
+    assert 'OK' in schema.fields
+    assert 'WARN' in schema.fields
+    assert 'ERROR' in schema.fields
+    assert 'STALE' in schema.fields
+
+
+def test_byte_field_with_default_parsing():
+    """Parsing a schema with byte field default should not raise TypeError."""
+    schema = SchemaRecord(
+        id=1,
+        name='test_msgs/msg/ByteTest',
+        encoding='ros2msg',
+        data=b'byte value 42\n'
+    )
+
+    decoder = Ros2MsgSchemaDecoder()
+    parsed_schema, _ = decoder.parse_schema(schema)
+
+    # Verify the default value was parsed correctly
+    assert 'value' in parsed_schema.fields
+    field = parsed_schema.fields['value']
+    assert isinstance(field, SchemaField)
+    assert field.default == 42
+
+
+def test_byte_array_default_parsing():
+    """Parsing a schema with byte array default should work."""
+    schema = SchemaRecord(
+        id=1,
+        name='test_msgs/msg/ByteArrayTest',
+        encoding='ros2msg',
+        data=b'byte[3] data [1, 2, 3]\n'
+    )
+
+    decoder = Ros2MsgSchemaDecoder()
+    parsed_schema, _ = decoder.parse_schema(schema)
+
+    assert 'data' in parsed_schema.fields
+    field = parsed_schema.fields['data']
+    assert isinstance(field, SchemaField)
+    assert field.default == [1, 2, 3]

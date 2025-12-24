@@ -415,7 +415,7 @@ def test_sensor_msgs_compressed_image():
     assert messages[0].data.header.stamp.nanosec == 456789
     assert messages[0].data.header.frame_id == "camera"
     assert messages[0].data.format == "jpeg"
-    assert messages[0].data.data == [255, 216, 255, 224]
+    assert messages[0].data.data == b'\xff\xd8\xff\xe0'
 
 
 def test_sensor_msgs_fluid_pressure():
@@ -610,7 +610,7 @@ def test_sensor_msgs_image():
     assert messages[0].data.encoding == "rgb8"
     assert messages[0].data.is_bigendian == 0
     assert messages[0].data.step == 1920
-    assert messages[0].data.data == [255, 0, 0]
+    assert messages[0].data.data == b'\xff\x00\x00'
 
 
 def test_sensor_msgs_imu():
@@ -1662,7 +1662,7 @@ def test_sensor_msgs_point_cloud2():
     assert messages[0].data.is_bigendian == False
     assert messages[0].data.point_step == 12
     assert messages[0].data.row_step == 24
-    assert messages[0].data.data == [0] * 24
+    assert messages[0].data.data == b'\x00' * 24
     assert messages[0].data.is_dense == True
 
 

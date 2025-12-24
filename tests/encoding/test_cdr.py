@@ -18,6 +18,7 @@ def test_encode_decode_all_primitive_types(little_endian: bool) -> None:
         ('float32', [-0.5, 0.5]),                    # Exact in float32
         ('float64', [0.0009765625, -0.0009765625]),  # Exact in float64
         ('string', ['', 'hello world']),
+        ('wstring', ['', 'Hello, World! 你好世界'])
     ]
 
     # Encode the data

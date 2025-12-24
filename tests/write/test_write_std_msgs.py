@@ -35,11 +35,11 @@ def test_bool_pybag() -> None:
 
 
 def test_byte_pybag() -> None:
-    msg = std_msgs.Byte(data=b'\x04')
+    msg = std_msgs.Byte(data=4)
     decoded_msgs = _roundtrip_write(msg)
     assert len(decoded_msgs) == 1
     assert decoded_msgs[0].__name__ == 'Byte'
-    assert decoded_msgs[0].data == 4  # b'\x04'
+    assert decoded_msgs[0].data == 4
 
 
 def test_char_pybag() -> None:

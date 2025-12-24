@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,7 +12,8 @@ import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
-from pybag.io.raw_reader import BytesReader, CrcReader
+from pybag.io.raw_reader import BytesReader, CrcReader, FileReader
+from pybag.mcap.crc import assert_data_crc
 from pybag.mcap.record_parser import McapRecordParser
 from pybag.mcap.record_reader import McapChunkedReader
 from pybag.mcap.records import RecordType
@@ -124,7 +126,7 @@ def test_add_channel_and_write_message() -> None:
     # Check the message
     data_message = McapRecordParser.parse_message(reader)
     assert data_message.channel_id == channel_id
-    assert data_message.sequence == 0
+    assert data_message.sequence == 1
     assert data_message.log_time == 1
     assert data_message.publish_time == 1
     message_serializer = MessageSerializerFactory.from_profile('ros2')
@@ -407,3 +409,234 @@ def test_metadata_roundtrip(chunk_size, chunk_compression):
 
     finally:
         temp_path.unlink()
+
+
+# =============================================================================
+# Append Mode Tests
+# =============================================================================
+
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_basic(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
+):
+    """Test basic append mode - append messages to existing file."""
+    temp_path = tmp_path / 'test.mcap'
+
+    # Write initial MCAP file
+    with McapFileWriter.open(
+        temp_path,
+        mode="w",
+        chunk_size=write_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
+        writer.write_message("/topic1", 2000, std_msgs.String(data="msg2"))
+
+    # Verify initial file
+    with McapFileReader.from_file(temp_path) as reader:
+        msgs = list(reader.messages("*"))
+        assert len(msgs) == 2
+        stats = reader._reader.get_statistics()
+        assert stats.message_count == 2
+
+    # Append to the file
+    with McapFileWriter.open(
+        temp_path,
+        mode="a",
+        chunk_size=append_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/topic1", 3000, std_msgs.String(data="msg3"))
+        writer.write_message("/topic1", 4000, std_msgs.String(data="msg4"))
+
+    # Verify appended file
+    with McapFileReader.from_file(temp_path) as reader:
+        msgs = list(reader.messages("*"))
+        assert [msg.sequence for msg in msgs] == [1, 2, 3, 4]
+        assert [msg.data.data for msg in msgs] == ['msg1', 'msg2', 'msg3', 'msg4']
+
+        stats = reader._reader.get_statistics()
+        assert stats.message_count == 4
+        assert stats.message_start_time == 1000
+        assert stats.message_end_time == 4000
+
+
+@pytest.mark.parametrize('chunk_size', [None, 1024])
+def test_append_mode_crc_preserved(
+    tmp_path: Path,
+    chunk_size: int | None,
+) -> None:
+    """Ensure appended files keep a valid data section CRC."""
+    temp_path = tmp_path / 'crc_append.mcap'
+
+    with McapFileWriter.open(
+        temp_path,
+        mode="w",
+        chunk_size=chunk_size,
+        chunk_compression=None
+    ) as writer:
+        writer.write_message("/topic", 1000, std_msgs.String(data="first"))
+
+    with McapFileWriter.open(
+        temp_path,
+        mode="a",
+        chunk_size=chunk_size,
+        chunk_compression=None
+    ) as writer:
+        writer.write_message("/topic", 2000, std_msgs.String(data="second"))
+
+    with FileReader(temp_path) as reader:
+        assert_data_crc(reader)
+
+
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_new_topic(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
+):
+    """Test append mode with a new topic not in the original file."""
+    temp_path = tmp_path / 'test.mcap'
+
+    # Write initial MCAP file with one topic
+    with McapFileWriter.open(
+        temp_path,
+        mode="w",
+        chunk_size=write_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
+
+    # Append with a different topic
+    with McapFileWriter.open(
+        temp_path,
+        mode="a",
+        chunk_size=append_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/topic2", 2000, std_msgs.Int32(data=42))
+
+    # Verify both topics exist
+    with McapFileReader.from_file(temp_path) as reader:
+        topics = reader.get_topics()
+        assert len(topics) == 2
+        assert "/topic1" in topics
+        assert "/topic2" in topics
+
+        msgs = list(reader.messages("*"))
+        assert len(msgs) == 2
+
+
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_attachments(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
+):
+    """Test append mode preserves and adds attachments."""
+    temp_path = tmp_path / 'test.mcap'
+
+    # Write initial file with attachment
+    with McapFileWriter.open(
+        temp_path,
+        mode="w",
+        chunk_size=write_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+        writer.write_attachment(
+            name="file1.txt",
+            data=b"original content",
+            media_type="text/plain",
+            log_time=1000,
+        )
+
+    # Append with another attachment
+    with McapFileWriter.open(
+        temp_path,
+        mode="a",
+        chunk_size=append_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+        writer.write_attachment(
+            name="file2.txt",
+            data=b"appended content",
+            media_type="text/plain",
+            log_time=2000,
+        )
+
+    # Verify all attachments are present
+    with McapFileReader.from_file(temp_path) as reader:
+        attachments = reader.get_attachments()
+        assert len(attachments) == 2
+
+        names = [a.name for a in attachments]
+        assert "file1.txt" in names
+        assert "file2.txt" in names
+
+        stats = reader._reader.get_statistics()
+        assert stats.attachment_count == 2
+
+
+@pytest.mark.parametrize('write_chunk_size', [None, 1024])
+@pytest.mark.parametrize('append_chunk_size', [None, 1024])
+@pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+def test_append_mode_metadata(
+    tmp_path: Path,
+    write_chunk_size: int | None,
+    append_chunk_size: int | None,
+    chunk_compression: Literal['lz4', 'zstd'] | None,
+):
+    """Test append mode preserves and adds metadata."""
+    temp_path = tmp_path / 'test.mcap'
+
+    # Write initial file with metadata
+    with McapFileWriter.open(
+        temp_path,
+        mode="w",
+        chunk_size=write_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+        writer.write_metadata(name="info1", metadata={"key": "value1"})
+
+    # Append with more metadata
+    with McapFileWriter.open(
+        temp_path,
+        mode="a",
+        chunk_size=append_chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
+        writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+        writer.write_metadata(name="info2", metadata={"key": "value2"})
+
+    # Verify all metadata is present
+    with McapFileReader.from_file(temp_path) as reader:
+        metadata = reader.get_metadata()
+        assert len(metadata) == 2
+
+        names = [m.name for m in metadata]
+        assert "info1" in names
+        assert "info2" in names
+
+        stats = reader._reader.get_statistics()
+        assert stats.metadata_count == 2
+
+
+def test_append_mode_file_not_exists(tmp_path: Path):
+    """Test that append mode fails on non-existent file."""
+    file_path = tmp_path / "nonexistent.mcap"
+    with pytest.raises(FileNotFoundError):
+        McapFileWriter.open(file_path, mode="a")

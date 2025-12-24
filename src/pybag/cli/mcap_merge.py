@@ -7,6 +7,7 @@ from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
+from pybag.mcap.summary import McapSummaryFactory
 
 
 def merge_mcap(
@@ -45,10 +46,15 @@ def merge_mcap(
 
     with McapRecordWriterFactory.create_writer(
         FileWriter(output),
+        McapSummaryFactory.create_summary(chunk_size=chunk_size),
         chunk_size=chunk_size,
         chunk_compression=chunk_compression,
         profile="ros2"  # TODO: Support other profiles
     ) as writer:
+        # Collect all attachments and metadata from all files
+        all_attachments = []
+        all_metadata = []
+
         # First pass: Write all schemas and channels from all files
         # This ensures channels without messages are preserved
         for file_index, path in enumerate(inputs):
@@ -101,6 +107,10 @@ def merge_mcap(
                         sequence_counters[next_channel_id] = 0
                         next_channel_id += 1
                     channel_id_map[channel_key] = channels[channel_content_key].id
+
+                # Collect attachments and metadata from this file
+                all_attachments.extend(reader.get_attachments())
+                all_metadata.extend(reader.get_metadata())
             # File is closed here by context manager
 
         # Second pass: Merge messages in log time order using heap-based merge
@@ -129,6 +139,14 @@ def merge_mcap(
             )
             writer.write_message(new_message)
             sequence_counters[new_channel_id] += 1
+
+        # Write all attachments to preserve them
+        for attachment in all_attachments:
+            writer.write_attachment(attachment)
+
+        # Write all metadata to preserve them
+        for metadata in all_metadata:
+            writer.write_metadata(metadata)
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> None:
