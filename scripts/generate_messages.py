@@ -143,59 +143,62 @@ def parse_github_url(url: str) -> tuple[str, str, str, str]:
     return match.groups()  # type: ignore[return-value]
 
 
-def fetch_github_directory(org: str, repo: str, branch: str, path: str) -> list[str]:
-    """Fetch directory listing from GitHub API.
-
-    Returns list of file names in the directory.
-    """
-    api_url = f"https://api.github.com/repos/{org}/{repo}/contents/{path}?ref={branch}"
-    print(f"  Fetching directory listing: {path}")
-
-    try:
-        req = urllib.request.Request(
-            api_url,
-            headers={"Accept": "application/vnd.github.v3+json", "User-Agent": "pybag"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as response:
-            import json
-            data = json.loads(response.read().decode())
-            return [item["name"] for item in data if item["type"] == "file"]
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return []
-        raise
-
-
-def fetch_raw_file(org: str, repo: str, branch: str, path: str) -> str:
-    """Fetch raw file content from GitHub."""
-    raw_url = f"https://raw.githubusercontent.com/{org}/{repo}/{branch}/{path}"
-
-    try:
-        req = urllib.request.Request(raw_url, headers={"User-Agent": "pybag"})
-        with urllib.request.urlopen(req, timeout=30) as response:
-            return response.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        raise RuntimeError(f"Failed to fetch {path}: {e}") from e
-
-
 def fetch_msg_files(
     org: str, repo: str, branch: str, package: str
 ) -> dict[str, str]:
-    """Fetch all .msg files for a package.
+    """Fetch all .msg files for a package using GitHub's tarball API.
+
+    Downloads the entire repository as a tarball in a single request,
+    then extracts only the .msg files for the specified package.
+    This avoids rate limiting issues from making many individual file requests.
 
     Returns dict mapping message name (e.g., 'Point') to file content.
     """
-    msg_path = f"{package}/msg"
-    files = fetch_github_directory(org, repo, branch, msg_path)
+    import io
+    import tarfile
 
+    # Download the tarball for the branch (single API call)
+    tarball_url = f"https://github.com/{org}/{repo}/archive/refs/heads/{branch}.tar.gz"
+    print(f"  Downloading tarball: {tarball_url}")
+
+    try:
+        req = urllib.request.Request(tarball_url, headers={"User-Agent": "pybag"})
+        with urllib.request.urlopen(req, timeout=120) as response:
+            tarball_data = response.read()
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Failed to download tarball: {e}") from e
+
+    # Extract .msg files from the tarball
     msg_files = {}
-    for filename in files:
-        if filename.endswith(".msg"):
-            msg_name = filename[:-4]  # Remove .msg extension
-            file_path = f"{msg_path}/{filename}"
-            print(f"  Fetching {filename}...")
-            content = fetch_raw_file(org, repo, branch, file_path)
-            msg_files[msg_name] = content
+    msg_path_prefix = f"{package}/msg/"
+
+    with tarfile.open(fileobj=io.BytesIO(tarball_data), mode="r:gz") as tar:
+        for member in tar.getmembers():
+            if not member.isfile():
+                continue
+
+            # Tarball has a root directory like "repo-branch/"
+            # We need to strip that and check if the path matches our package
+            parts = member.name.split("/", 1)
+            if len(parts) < 2:
+                continue
+
+            relative_path = parts[1]  # Path without the root directory
+
+            if relative_path.startswith(msg_path_prefix) and relative_path.endswith(".msg"):
+                filename = relative_path[len(msg_path_prefix):]
+                # Skip files in subdirectories
+                if "/" in filename:
+                    continue
+
+                msg_name = filename[:-4]  # Remove .msg extension
+                print(f"  Found {filename}")
+
+                # Extract and decode the file content
+                file_obj = tar.extractfile(member)
+                if file_obj is not None:
+                    content = file_obj.read().decode("utf-8")
+                    msg_files[msg_name] = content
 
     return msg_files
 
