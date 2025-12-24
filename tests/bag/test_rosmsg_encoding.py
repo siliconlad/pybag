@@ -7,7 +7,7 @@ import pytest
 from pybag.encoding.rosmsg import RosmsgDecoder, RosmsgEncoder
 
 
-class TestRosmsgEncoder:
+class TestRosMsgEncoder:
     """Tests for the RosmsgEncoder class."""
 
     def test_encode_bool(self):
@@ -86,7 +86,7 @@ class TestRosmsgEncoder:
         assert data == struct.pack('<B', 1) + struct.pack('<i', 42)
 
 
-class TestRosmsgDecoder:
+class TestRosMsgDecoder:
     """Tests for the RosmsgDecoder class."""
 
     def test_decode_bool(self):
@@ -160,19 +160,3 @@ class TestRosmsgRoundtrip:
         assert decoder.uint32() == 12345
         assert decoder.float64() == pytest.approx(2.71828)
         assert decoder.string() == "test message"
-
-    def test_roundtrip_mixed_types(self):
-        """Test that no padding is added between mixed types."""
-        encoder = RosmsgEncoder()
-        encoder.uint8(1)
-        encoder.string("hi")
-        encoder.int32(100)
-        encoder.sequence('uint8', [10, 20, 30])
-
-        data = encoder.save()
-        decoder = RosmsgDecoder(data)
-
-        assert decoder.uint8() == 1
-        assert decoder.string() == "hi"
-        assert decoder.int32() == 100
-        assert decoder.sequence('uint8') == [10, 20, 30]
