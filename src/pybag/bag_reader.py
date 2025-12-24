@@ -16,12 +16,12 @@ from pybag.bag.records import (
     ChunkRecord,
     ConnectionRecord,
     IndexDataRecord,
-    MessageDataRecord,
+    MessageDataRecord
 )
 from pybag.encoding.rosmsg import RosmsgDecoder
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
-from pybag.schema.ros1msg import Ros1MsgSchemaDecoder
 from pybag.schema.ros1_compiler import compile_ros1_schema
+from pybag.schema.ros1msg import Ros1MsgSchemaDecoder
 
 logger = logging.getLogger(__name__)
 

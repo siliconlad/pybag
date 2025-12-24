@@ -13,6 +13,7 @@ import re
 from dataclasses import fields, is_dataclass
 from typing import Annotated, Any, Literal, get_args, get_origin
 
+from pybag.bag.records import ConnectionRecord
 from pybag.io.raw_writer import BytesWriter
 from pybag.schema import (
     PRIMITIVE_TYPE_MAP,
@@ -28,9 +29,8 @@ from pybag.schema import (
     SchemaField,
     SchemaFieldType,
     Sequence,
-    String,
+    String
 )
-from pybag.bag.records import ConnectionRecord
 from pybag.types import Message
 
 logger = logging.getLogger(__name__)

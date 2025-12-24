@@ -4,13 +4,13 @@ import bz2
 import struct
 from typing import Literal
 
-from pybag.io.raw_writer import BaseWriter, BytesWriter
 from pybag.bag.records import (
     BagRecordType,
     ChunkInfoRecord,
     ConnectionRecord,
-    MessageDataRecord,
+    MessageDataRecord
 )
+from pybag.io.raw_writer import BaseWriter, BytesWriter
 
 # Try to import lz4 for LZ4 compression support
 try:

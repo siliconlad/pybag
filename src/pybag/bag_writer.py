@@ -9,12 +9,12 @@ from pybag.bag.record_writer import BagRecordWriter
 from pybag.bag.records import (
     ChunkInfoRecord,
     ConnectionRecord,
-    MessageDataRecord,
+    MessageDataRecord
 )
 from pybag.encoding.rosmsg import RosmsgEncoder
 from pybag.io.raw_writer import BaseWriter, BytesWriter, FileWriter
-from pybag.schema.ros1msg import Ros1MsgSchemaEncoder, compute_md5sum
 from pybag.schema.ros1_compiler import compile_ros1_serializer
+from pybag.schema.ros1msg import Ros1MsgSchemaEncoder, compute_md5sum
 from pybag.types import Message
 
 logger = logging.getLogger(__name__)

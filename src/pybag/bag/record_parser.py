@@ -5,7 +5,6 @@ import logging
 import struct
 from typing import Any
 
-from pybag.io.raw_reader import BaseReader, BytesReader
 from pybag.bag.records import (
     BagHeaderRecord,
     BagRecordType,
@@ -13,8 +12,9 @@ from pybag.bag.records import (
     ChunkRecord,
     ConnectionRecord,
     IndexDataRecord,
-    MessageDataRecord,
+    MessageDataRecord
 )
+from pybag.io.raw_reader import BaseReader, BytesReader
 
 logger = logging.getLogger(__name__)
 
