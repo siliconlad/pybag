@@ -3,7 +3,14 @@ import dataclasses
 import logging
 import re
 from dataclasses import fields, is_dataclass
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    get_args,
+    get_origin,
+    get_type_hints
+)
 
 from pybag.io.raw_writer import BytesWriter
 from pybag.mcap.records import SchemaRecord
@@ -308,26 +315,33 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         schema = Schema(class_name, {})
         sub_schemas: dict[str, Schema] = {}
 
+        # Use get_type_hints to resolve string annotations from PEP 563
+        # (from __future__ import annotations)
+        type_hints = get_type_hints(cls, include_extras=True)
+
         for field in fields(cls):
+            # Get the resolved type hint instead of the raw field.type
+            field_type_hint = type_hints.get(field.name, field.type)
+
             # Allow direct message types (with __msg_name__) without Annotated wrapper
-            if get_origin(field.type) is not Annotated:
-                if isinstance(field.type, Message):
+            if get_origin(field_type_hint) is not Annotated:
+                if isinstance(field_type_hint, type) and hasattr(field_type_hint, '__msg_name__'):
                     # This is a direct message type - treat it as Complex
-                    field_type = Complex(field.type.__msg_name__)
+                    field_type = Complex(field_type_hint.__msg_name__)
                     field_default = self._parse_default_value(field)
                     schema.fields[field.name] = SchemaField(field_type, field_default)
                     # Recursively parse the sub-message
-                    sub_schema, sub_sub_schemas = self._parse_message(field.type)
+                    sub_schema, sub_sub_schemas = self._parse_message(field_type_hint)
                     sub_schemas[sub_schema.name] = sub_schema
                     sub_schemas.update(sub_sub_schemas)
                     continue
                 else:
                     raise Ros2MsgError(f"Field '{field.name}' is not correctly annotated.")
 
-            field_type = self._parse_annotation(field.type)
+            field_type = self._parse_annotation(field_type_hint)
             field_default = self._parse_default_value(field)
 
-            if get_args(field.type)[-1][0] == 'constant':
+            if get_args(field_type_hint)[-1][0] == 'constant':
                 schema.fields[field.name] = SchemaConstant(field_type, field_default)
                 continue
             schema.fields[field.name] = SchemaField(field_type, field_default)
@@ -335,7 +349,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
             if isinstance(field_type, Sequence):
                 if isinstance(field_type.type, Complex):
                     # For Sequence[Complex[Class]], extract the Class from the annotation
-                    list_type = get_args(field.type)[0]  # list[Annotated[Class, ...]]
+                    list_type = get_args(field_type_hint)[0]  # list[Annotated[Class, ...]]
                     if get_origin(list_type) is list and get_args(list_type):
                         complex_annotation = get_args(list_type)[0]  # Annotated[Class, ...]
                         if get_origin(complex_annotation) is Annotated:
@@ -347,7 +361,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
             if isinstance(field_type, Array):
                 if isinstance(field_type.type, Complex):
                     # For Array[Complex[Class]], extract the Class from the annotation
-                    list_type = get_args(field.type)[0]  # list[Annotated[Class, ...]]
+                    list_type = get_args(field_type_hint)[0]  # list[Annotated[Class, ...]]
                     if get_origin(list_type) is list and get_args(list_type):
                         complex_annotation = get_args(list_type)[0]  # Annotated[Class, ...]
                         if get_origin(complex_annotation) is Annotated:
@@ -357,7 +371,7 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
                             sub_schemas.update(sub_sub_schemas)
 
             if isinstance(field_type, Complex):
-                complex_type = get_args(field.type)[0]
+                complex_type = get_args(field_type_hint)[0]
                 sub_schema, sub_sub_schemas = self._parse_message(complex_type)
                 sub_schemas[sub_schema.name] = sub_schema
                 sub_schemas.update(sub_sub_schemas)
@@ -409,19 +423,23 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         parsed_schema, sub_schemas = self._parse_message(schema)
 
         writer = BytesWriter()
+        # Output constants first, then regular fields (ROS2 convention)
         for field_name, field in parsed_schema.fields.items():
             if isinstance(field, SchemaConstant):
                 self._encode_constant(writer, field_name, field)
-            elif isinstance(field, SchemaField):
+        for field_name, field in parsed_schema.fields.items():
+            if isinstance(field, SchemaField):
                 self._encode_field(writer, field_name, field)
 
         for sub_schema in sub_schemas.values():
             writer.write(('=' * 80 + '\n').encode('utf-8'))
             writer.write(f'MSG: {sub_schema.name.replace("/msg/", "/")}\n'.encode('utf-8'))
+            # Output constants first, then regular fields (ROS2 convention)
             for field_name, field in sub_schema.fields.items():
                 if isinstance(field, SchemaConstant):
                     self._encode_constant(writer, field_name, field)
-                elif isinstance(field, SchemaField):
+            for field_name, field in sub_schema.fields.items():
+                if isinstance(field, SchemaField):
                     self._encode_field(writer, field_name, field)
 
         return writer.as_bytes()
