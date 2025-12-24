@@ -128,31 +128,31 @@ class RosmsgDecoder(MessageDecoder):
 
     # Container parsers --------------------------------------------------
 
-    def array(self, type_str: str, length: int) -> list:
+    def array(self, type: str, length: int) -> list:
         """Parse a fixed-size array.
 
         Args:
-            type_str: The type of array elements.
+            type: The type of array elements.
             length: The fixed array length.
 
         Returns:
             List of parsed values.
         """
-        return [getattr(self, type_str)() for _ in range(length)]
+        return [getattr(self, type)() for _ in range(length)]
 
-    def sequence(self, type_str: str) -> list:
+    def sequence(self, type: str) -> list:
         """Parse a variable-length sequence.
 
         Format: 4-byte count (uint32 LE) + elements
 
         Args:
-            type_str: The type of sequence elements.
+            type: The type of sequence elements.
 
         Returns:
             List of parsed values.
         """
         length = self.uint32()
-        return [getattr(self, type_str)() for _ in range(length)]
+        return [getattr(self, type)() for _ in range(length)]
 
 
 class RosmsgEncoder(MessageEncoder):
@@ -256,25 +256,25 @@ class RosmsgEncoder(MessageEncoder):
 
     # Container encoders -------------------------------------------------
 
-    def array(self, type_str: str, values: list[Any]) -> None:
+    def array(self, type: str, values: list[Any]) -> None:
         """Encode a fixed-size array.
 
         Args:
-            type_str: The type of array elements.
+            type: The type of array elements.
             values: The values to encode.
         """
         for v in values:
-            getattr(self, type_str)(v)
+            getattr(self, type)(v)
 
-    def sequence(self, type_str: str, values: list[Any]) -> None:
+    def sequence(self, type: str, values: list[Any]) -> None:
         """Encode a variable-length sequence.
 
         Format: 4-byte count (uint32 LE) + elements
 
         Args:
-            type_str: The type of sequence elements.
+            type: The type of sequence elements.
             values: The values to encode.
         """
         self.uint32(len(values))
         for v in values:
-            getattr(self, type_str)(v)
+            getattr(self, type)(v)

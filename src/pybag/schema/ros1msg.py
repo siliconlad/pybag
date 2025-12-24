@@ -155,6 +155,7 @@ class Ros1MsgSchemaDecoder(SchemaDecoder):
             default_value = self._parse_value(schema_type, raw_default)
 
         if is_constant:
+            assert default_value is not None  # Guaranteed by the check above
             return field_raw_name, SchemaConstant(schema_type, default_value)
         return field_raw_name, SchemaField(schema_type, default_value)
 
@@ -380,12 +381,12 @@ class Ros1MsgSchemaEncoder(SchemaEncoder):
         encoded_type = self._type_str(field.type)
         writer.write(f'{encoded_type} {field_name}\n'.encode('utf-8'))
 
-    def encode(self, message: Message | type[Message]) -> bytes:
+    def encode(self, schema: Message | type[Message]) -> bytes:
         """Encode a message type into ROS 1 message definition format."""
-        schema, sub_schemas = self._parse_message(message)
+        parsed_schema, sub_schemas = self._parse_message(schema)
 
         writer = BytesWriter()
-        for field_name, field in schema.fields.items():
+        for field_name, field in parsed_schema.fields.items():
             if isinstance(field, SchemaConstant):
                 self._encode_constant(writer, field_name, field)
             elif isinstance(field, SchemaField):
@@ -402,9 +403,9 @@ class Ros1MsgSchemaEncoder(SchemaEncoder):
 
         return writer.as_bytes()
 
-    def parse_schema(self, message: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
+    def parse_schema(self, schema: Message | type[Message]) -> tuple[Schema, dict[str, Schema]]:
         """Parse a message type into a Schema."""
-        return self._parse_message(message)
+        return self._parse_message(schema)
 
 
 def compute_md5sum(message_definition: str, msg_type: str) -> str:

@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 from types import TracebackType
-from typing import Literal
+from typing import Any, Callable, Literal
 
 from pybag.bag.record_writer import BagRecordWriter
 from pybag.bag.records import (
@@ -58,7 +58,7 @@ class BagFileWriter:
         self._topics: dict[str, int] = {}  # topic -> conn_id
         self._connections: dict[int, ConnectionRecord] = {}
         self._message_types: dict[type[Message], tuple[str, str]] = {}  # type -> (msg_def, md5sum)
-        self._serializers: dict[type[Message], callable] = {}
+        self._serializers: dict[type[Message], Callable[[Any, Any], None]] = {}
 
         # Current chunk state
         self._chunk_buffer = BytesWriter()
@@ -129,7 +129,7 @@ class BagFileWriter:
             self._message_types[message_type] = (msg_def, md5sum)
         return self._message_types[message_type]
 
-    def _get_serializer(self, message_type: type[Message]) -> callable:
+    def _get_serializer(self, message_type: type[Message]) -> Callable[[Any, Any], None]:
         """Get or create a serializer for a message type.
 
         Args:
