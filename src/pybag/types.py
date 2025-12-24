@@ -25,7 +25,7 @@ float32 = Annotated[float, ("float32",)]
 float64 = Annotated[float, ("float64",)]
 
 bool = Annotated[bool, ("bool",)]
-byte = Annotated[bytes, ("byte",)]
+byte = Annotated[int, ("byte",)]
 char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]

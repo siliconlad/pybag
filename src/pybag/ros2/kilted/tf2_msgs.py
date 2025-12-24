@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-import pybag.types as t
 import pybag.ros2.kilted.geometry_msgs as geometry_msgs
+import pybag.types as t
 
 
 @dataclass(kw_only=True)

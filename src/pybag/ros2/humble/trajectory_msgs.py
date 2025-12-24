@@ -8,10 +8,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-import pybag.types as t
 import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
 import pybag.ros2.humble.geometry_msgs as geometry_msgs
 import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.types as t
 
 
 @dataclass(kw_only=True)
