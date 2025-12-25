@@ -411,26 +411,151 @@ class Ros1MsgSchemaEncoder(SchemaEncoder):
 def compute_md5sum(message_definition: str, msg_type: str) -> str:
     """Compute the MD5 hash for a ROS 1 message definition.
 
-    The MD5 sum is computed from the "canonical" form of the message,
-    which removes comments and normalizes whitespace.
+    The MD5 sum is computed following the ROS 1 algorithm:
+    1. Remove comments and normalize whitespace
+    2. Constants appear first in original order as "type name=value"
+    3. For builtin types: "type name"
+    4. For complex types: the MD5 of the nested message replaces the type name
 
     Args:
-        message_definition: The full message definition text.
-        msg_type: The message type name.
+        message_definition: The full message definition text (may include
+            embedded sub-message definitions separated by 80 '=' characters).
+        msg_type: The message type name (e.g., 'std_msgs/Header').
 
     Returns:
         The 32-character hexadecimal MD5 hash.
     """
-    # Simplified MD5 computation - in practice this should match
-    # ROS 1's exact algorithm which is more complex
-    canonical = []
-    for line in message_definition.split('\n'):
+    # Parse sub-message definitions from the full message definition
+    sub_msg_defs = _parse_sub_message_definitions(message_definition)
+
+    # Get the main message definition (first part before any separator)
+    main_def = message_definition.split('=' * 80)[0].strip()
+
+    # Compute MD5 text for the main message
+    md5_text = _compute_md5_text(main_def, msg_type, sub_msg_defs)
+
+    return hashlib.md5(md5_text.encode('utf-8')).hexdigest()
+
+
+def _parse_sub_message_definitions(message_definition: str) -> dict[str, str]:
+    """Parse embedded sub-message definitions from a full message definition.
+
+    Sub-messages are separated by 80 '=' characters and start with 'MSG: type'.
+
+    Args:
+        message_definition: The full message definition text.
+
+    Returns:
+        Dictionary mapping message type to its definition text.
+    """
+    sub_msgs: dict[str, str] = {}
+
+    # Split on the 80 '=' separator
+    parts = message_definition.split('=' * 80)
+
+    for part in parts[1:]:  # Skip the first part (main message)
+        part = part.strip()
+        if not part:
+            continue
+
+        lines = part.split('\n')
+        first_line = lines[0].strip()
+
+        if first_line.startswith('MSG: '):
+            msg_type = first_line[5:].strip()
+            # The rest is the message definition
+            msg_def = '\n'.join(lines[1:]).strip()
+            sub_msgs[msg_type] = msg_def
+
+    return sub_msgs
+
+
+# ROS 1 builtin types (including time and duration which are special in ROS 1)
+_ROS1_BUILTIN_TYPES = {
+    'bool', 'byte', 'char',
+    'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'int64', 'uint64',
+    'float32', 'float64',
+    'string',
+    'time', 'duration',
+}
+
+
+def _is_builtin_type(type_name: str) -> bool:
+    """Check if a type is a ROS 1 builtin type."""
+    # Strip array notation
+    bare_type = re.sub(r'\[.*\]$', '', type_name)
+    return bare_type in _ROS1_BUILTIN_TYPES
+
+
+def _compute_md5_text(
+    msg_def: str,
+    msg_type: str,
+    sub_msg_defs: dict[str, str]
+) -> str:
+    """Compute the canonical MD5 text for a message definition.
+
+    Args:
+        msg_def: The message definition (just fields, no embedded types).
+        msg_type: The message type name.
+        sub_msg_defs: Dictionary of sub-message type -> definition.
+
+    Returns:
+        The canonical text to hash for MD5 computation.
+    """
+    package = msg_type.split('/')[0] if '/' in msg_type else ''
+
+    constants: list[str] = []
+    fields: list[str] = []
+
+    for line in msg_def.split('\n'):
         # Remove comments
         if '#' in line:
             line = line[:line.index('#')]
         line = line.strip()
-        if line:
-            canonical.append(line)
+        if not line:
+            continue
 
-    canonical_text = '\n'.join(canonical)
-    return hashlib.md5(canonical_text.encode('utf-8')).hexdigest()
+        # Parse the line to determine if it's a constant or field
+        # Constants have the form: TYPE NAME=VALUE
+        if '=' in line:
+            # It's a constant
+            constants.append(line)
+        else:
+            # It's a field: TYPE NAME
+            parts = line.split()
+            if len(parts) >= 2:
+                field_type = parts[0]
+                field_name = parts[1]
+
+                # Get the bare type (without array notation) for type checking
+                bare_type = re.sub(r'\[.*\]$', '', field_type)
+
+                if _is_builtin_type(field_type):
+                    # Builtin type: use as-is
+                    fields.append(f"{field_type} {field_name}")
+                else:
+                    # Complex type: compute its MD5 and use that instead
+                    # Resolve the type name (add package if not specified)
+                    if '/' not in bare_type:
+                        if bare_type == 'Header':
+                            full_type = 'std_msgs/Header'
+                        else:
+                            full_type = f"{package}/{bare_type}"
+                    else:
+                        full_type = bare_type
+
+                    # Get the sub-message definition
+                    sub_def = sub_msg_defs.get(full_type, '')
+                    if not sub_def and full_type == 'std_msgs/Header':
+                        # Built-in Header definition
+                        sub_def = "uint32 seq\ntime stamp\nstring frame_id"
+
+                    # Recursively compute MD5 for the sub-message
+                    sub_md5 = _compute_md5_text(sub_def, full_type, sub_msg_defs)
+                    sub_md5_hash = hashlib.md5(sub_md5.encode('utf-8')).hexdigest()
+
+                    fields.append(f"{sub_md5_hash} {field_name}")
+
+    # Combine: constants first, then fields
+    result_lines = constants + fields
+    return '\n'.join(result_lines)

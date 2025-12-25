@@ -68,9 +68,13 @@ class BagFileWriter:
         self._chunk_end_time_sec: int | None = None
         self._chunk_end_time_nsec: int | None = None
         self._chunk_message_counts: dict[int, int] = {}
+        # Index entries for current chunk: conn_id -> [(time_sec, time_nsec, offset)]
+        self._chunk_index_entries: dict[int, list[tuple[int, int, int]]] = {}
 
         # Chunk info records (for summary)
         self._chunk_infos: list[ChunkInfoRecord] = []
+        # Index data for all chunks: list of (conn_id, entries) per chunk
+        self._all_index_data: list[list[tuple[int, list[tuple[int, int, int]]]]] = []
 
         # Write initial file structure
         self._write_header()
@@ -216,6 +220,9 @@ class BagFileWriter:
         # Track message count per connection
         self._chunk_message_counts[conn_id] = self._chunk_message_counts.get(conn_id, 0) + 1
 
+        # Record the offset within the chunk buffer before writing
+        msg_offset = self._chunk_buffer.size()
+
         # Write message to chunk buffer
         msg_record = MessageDataRecord(
             conn=conn_id,
@@ -224,6 +231,11 @@ class BagFileWriter:
             data=data,
         )
         self._chunk_record_writer.write_message_data(msg_record)
+
+        # Track index entry for this message
+        if conn_id not in self._chunk_index_entries:
+            self._chunk_index_entries[conn_id] = []
+        self._chunk_index_entries[conn_id].append((time_sec, time_nsec, msg_offset))
 
         # Check if we should flush the chunk
         if self._chunk_buffer.size() >= self._chunk_size:
@@ -254,6 +266,12 @@ class BagFileWriter:
         )
         self._chunk_infos.append(chunk_info)
 
+        # Save index entries for this chunk
+        chunk_index_data: list[tuple[int, list[tuple[int, int, int]]]] = []
+        for conn_id, entries in self._chunk_index_entries.items():
+            chunk_index_data.append((conn_id, list(entries)))
+        self._all_index_data.append(chunk_index_data)
+
         # Reset chunk state
         self._chunk_buffer.clear()
         self._chunk_start_time_sec = None
@@ -261,14 +279,20 @@ class BagFileWriter:
         self._chunk_end_time_sec = None
         self._chunk_end_time_nsec = None
         self._chunk_message_counts.clear()
+        self._chunk_index_entries.clear()
 
     def close(self) -> None:
         """Finalize and close the bag file."""
         # Flush any remaining chunk data
         self._flush_chunk()
 
-        # Record the index position
+        # Record the index position (where index data, connections and chunk infos start)
         index_pos = self._record_writer.tell()
+
+        # Write INDEX_DATA records for each chunk
+        for chunk_index_data in self._all_index_data:
+            for conn_id, entries in chunk_index_data:
+                self._record_writer.write_index_data(conn_id, entries)
 
         # Write all connection records
         for conn in self._connections.values():
@@ -278,11 +302,13 @@ class BagFileWriter:
         for chunk_info in self._chunk_infos:
             self._record_writer.write_chunk_info(chunk_info)
 
-        # Update the bag header with correct values
-        # We need to seek back and rewrite it
-        # For simplicity, we'll just note that proper implementation would
-        # seek back to header_pos and rewrite with correct values
-        # This is a limitation of the simple writer approach
+        # Seek back to the header position and rewrite with correct values
+        self._writer.seek_from_start(self._header_pos)
+        self._record_writer.write_bag_header(
+            index_pos=index_pos,
+            conn_count=len(self._connections),
+            chunk_count=len(self._chunk_infos),
+        )
 
         self._record_writer.close()
 
