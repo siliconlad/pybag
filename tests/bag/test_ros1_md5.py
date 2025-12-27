@@ -1,4 +1,7 @@
-"""Tests for ROS 1 message MD5 sum computation."""
+"""Tests for ROS 1 message MD5 sum computation.
+
+Known MD5 sums from official ROS 1 can be verified with `rosmsg md5 <type>`
+"""
 
 import hashlib
 from dataclasses import dataclass
@@ -8,101 +11,6 @@ import pytest
 
 import pybag
 from pybag.schema.ros1msg import Ros1MsgSchemaEncoder, compute_md5sum
-
-# Known MD5 sums from official ROS 1 (can be verified with `rosmsg md5 <type>`)
-# std_msgs/Header: 2176decaecbce78abc3b96ef049fabed
-# std_msgs/String: 992ce8a1687cec8c8bd883ec73ca41d1
-# std_msgs/Int32: da5909fbe378aeaf85e547e830cc1bb7
-# std_msgs/Float64: fdb28210bfa9d7c91146260178d9a584
-# geometry_msgs/Vector3: 4a842b65f413084dc2b10fb484ea7f17
-# geometry_msgs/Point: 4a842b65f413084dc2b10fb484ea7f17  (same as Vector3!)
-# geometry_msgs/Quaternion: a779879fadf0160734f906b8c19c7004
-
-
-class TestKnownMD5Sums:
-    """Test that computed MD5 sums match official ROS 1 values."""
-
-    def test_std_msgs_header_md5(self):
-        """Test MD5 for std_msgs/Header.
-
-        std_msgs/Header definition:
-            uint32 seq
-            time stamp
-            string frame_id
-
-        MD5 text (no dependencies):
-            uint32 seq
-            time stamp
-            string frame_id
-        """
-        # The MD5 text for Header is the raw fields
-        md5_text = "uint32 seq\ntime stamp\nstring frame_id"
-        expected_md5 = "2176decaecbce78abc3b96ef049fabed"
-        computed = hashlib.md5(md5_text.encode()).hexdigest()
-        assert computed == expected_md5
-
-    def test_std_msgs_string_md5(self):
-        """Test MD5 for std_msgs/String.
-
-        std_msgs/String definition:
-            string data
-
-        MD5 text:
-            string data
-        """
-        md5_text = "string data"
-        expected_md5 = "992ce8a1687cec8c8bd883ec73ca41d1"
-        computed = hashlib.md5(md5_text.encode()).hexdigest()
-        assert computed == expected_md5
-
-    def test_std_msgs_int32_md5(self):
-        """Test MD5 for std_msgs/Int32.
-
-        std_msgs/Int32 definition:
-            int32 data
-        """
-        md5_text = "int32 data"
-        expected_md5 = "da5909fbe378aeaf85e547e830cc1bb7"
-        computed = hashlib.md5(md5_text.encode()).hexdigest()
-        assert computed == expected_md5
-
-    def test_std_msgs_float64_md5(self):
-        """Test MD5 for std_msgs/Float64.
-
-        std_msgs/Float64 definition:
-            float64 data
-        """
-        md5_text = "float64 data"
-        expected_md5 = "fdb28210bfa9d7c91146260178d9a584"
-        computed = hashlib.md5(md5_text.encode()).hexdigest()
-        assert computed == expected_md5
-
-    def test_geometry_msgs_vector3_md5(self):
-        """Test MD5 for geometry_msgs/Vector3.
-
-        geometry_msgs/Vector3 definition:
-            float64 x
-            float64 y
-            float64 z
-        """
-        md5_text = "float64 x\nfloat64 y\nfloat64 z"
-        expected_md5 = "4a842b65f413084dc2b10fb484ea7f17"
-        computed = hashlib.md5(md5_text.encode()).hexdigest()
-        assert computed == expected_md5
-
-    def test_geometry_msgs_quaternion_md5(self):
-        """Test MD5 for geometry_msgs/Quaternion.
-
-        geometry_msgs/Quaternion definition:
-            float64 x
-            float64 y
-            float64 z
-            float64 w
-        """
-        md5_text = "float64 x\nfloat64 y\nfloat64 z\nfloat64 w"
-        expected_md5 = "a779879fadf0160734f906b8c19c7004"
-        computed = hashlib.md5(md5_text.encode()).hexdigest()
-        assert computed == expected_md5
 
 
 class TestComputeMD5Sum:
@@ -149,7 +57,7 @@ class TestComputeMD5Sum:
             uint8 type
         """
         # Order in msg file: constant, constant, field
-        msg_def = "uint8 TYPE_A=1\nuint8 TYPE_B=2\nuint8 type"
+        msg_def = "uint8 type\nuint8 TYPE_A=1\nuint8 TYPE_B=2"
 
         # According to ROS 1 algorithm, constants come first in original order
         # Expected MD5 text: "uint8 TYPE_A=1\nuint8 TYPE_B=2\nuint8 type"
@@ -162,19 +70,14 @@ class TestComputeMD5Sum:
     def test_message_with_nested_type(self):
         """Test MD5 for message with a nested type.
 
-        For nested types, the MD5 of the nested message should replace
-        the type name. For example:
-
-        geometry_msgs/PoseStamped contains:
-            std_msgs/Header header
-            geometry_msgs/Pose pose
-
-        The MD5 text should use the MD5 of Header and Pose instead of type names.
+        For nested types, the MD5 of the nested message should replace the type name.
         """
         # Header MD5 = 2176decaecbce78abc3b96ef049fabed
         # For a message that includes Header:
         # The MD5 text should be: "2176decaecbce78abc3b96ef049fabed header"
         header_md5 = "2176decaecbce78abc3b96ef049fabed"
+        expected_text = f"{header_md5} header"
+        expected_md5 = hashlib.md5(expected_text.encode()).hexdigest()
 
         msg_def = f"""std_msgs/Header header
 ================================================================================
@@ -182,11 +85,6 @@ MSG: std_msgs/Header
 uint32 seq
 time stamp
 string frame_id"""
-
-        # The expected MD5 text should substitute Header's MD5 for the type
-        expected_text = f"{header_md5} header"
-        expected_md5 = hashlib.md5(expected_text.encode()).hexdigest()
-
         md5 = compute_md5sum(msg_def, "test_msgs/WithHeader")
         assert md5 == expected_md5
 

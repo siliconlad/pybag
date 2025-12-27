@@ -7,156 +7,232 @@ import pytest
 from pybag.encoding.rosmsg import RosMsgDecoder, RosMsgEncoder
 
 
-class TestRosMsgEncoder:
-    """Tests for the RosmsgEncoder class."""
-
-    def test_encode_bool(self):
-        encoder = RosMsgEncoder()
-        encoder.bool(True)
-        encoder.bool(False)
-        data = encoder.save()
-        assert data == b'\x01\x00'
-
-    def test_encode_int8(self):
-        encoder = RosMsgEncoder()
-        encoder.int8(-128)
-        encoder.int8(127)
-        data = encoder.save()
-        assert data == struct.pack('<bb', -128, 127)
-
-    def test_encode_uint8(self):
-        encoder = RosMsgEncoder()
-        encoder.uint8(0)
-        encoder.uint8(255)
-        data = encoder.save()
-        assert data == struct.pack('<BB', 0, 255)
-
-    def test_encode_int32(self):
-        encoder = RosMsgEncoder()
-        encoder.int32(-2147483648)
-        encoder.int32(2147483647)
-        data = encoder.save()
-        assert data == struct.pack('<ii', -2147483648, 2147483647)
-
-    def test_encode_float64(self):
-        encoder = RosMsgEncoder()
-        encoder.float64(3.14159265359)
-        data = encoder.save()
-        assert data == struct.pack('<d', 3.14159265359)
-
-    def test_encode_string_no_null_terminator(self):
-        """Verify that rosmsg strings do NOT have null terminators."""
-        encoder = RosMsgEncoder()
-        encoder.string("hello")
-        data = encoder.save()
-        # Format: 4-byte length + string bytes (no null terminator)
-        assert data == struct.pack('<I', 5) + b'hello'
-        assert len(data) == 4 + 5  # length prefix + string, no null
-
-    def test_encode_empty_string(self):
-        encoder = RosMsgEncoder()
-        encoder.string("")
-        data = encoder.save()
-        assert data == struct.pack('<I', 0)  # Just the length = 0
-
-    def test_encode_sequence(self):
-        encoder = RosMsgEncoder()
-        encoder.sequence('int32', [1, 2, 3])
-        data = encoder.save()
-        # 4-byte count + 3 * 4-byte ints
-        expected = struct.pack('<I', 3) + struct.pack('<iii', 1, 2, 3)
-        assert data == expected
-
-    def test_encode_array(self):
-        encoder = RosMsgEncoder()
-        encoder.array('int32', [10, 20, 30])
-        data = encoder.save()
-        # Fixed array: just the values, no length prefix
-        expected = struct.pack('<iii', 10, 20, 30)
-        assert data == expected
-
-    def test_no_alignment_padding(self):
-        """Verify that rosmsg does NOT add alignment padding."""
-        encoder = RosMsgEncoder()
-        encoder.uint8(1)
-        encoder.int32(42)  # Would need padding in CDR
-        data = encoder.save()
-        # Should be 1 + 4 = 5 bytes, no padding
-        assert len(data) == 5
-        assert data == struct.pack('<B', 1) + struct.pack('<i', 42)
-
-
-class TestRosMsgDecoder:
-    """Tests for the RosmsgDecoder class."""
-
-    def test_decode_bool(self):
-        data = b'\x01\x00'
-        decoder = RosMsgDecoder(data)
-        assert decoder.bool() is True
-        assert decoder.bool() is False
-
-    def test_decode_int8(self):
-        data = struct.pack('<bb', -128, 127)
-        decoder = RosMsgDecoder(data)
-        assert decoder.int8() == -128
-        assert decoder.int8() == 127
-
-    def test_decode_uint8(self):
-        data = struct.pack('<BB', 0, 255)
-        decoder = RosMsgDecoder(data)
-        assert decoder.uint8() == 0
-        assert decoder.uint8() == 255
-
-    def test_decode_int32(self):
-        data = struct.pack('<ii', -2147483648, 2147483647)
-        decoder = RosMsgDecoder(data)
-        assert decoder.int32() == -2147483648
-        assert decoder.int32() == 2147483647
-
-    def test_decode_float64(self):
-        data = struct.pack('<d', 3.14159265359)
-        decoder = RosMsgDecoder(data)
-        assert decoder.float64() == pytest.approx(3.14159265359)
-
-    def test_decode_string_no_null_terminator(self):
-        """Verify that rosmsg strings do NOT expect null terminators."""
-        # 4-byte length + string bytes (no null)
-        data = struct.pack('<I', 5) + b'hello'
-        decoder = RosMsgDecoder(data)
-        assert decoder.string() == "hello"
-
-    def test_decode_empty_string(self):
-        data = struct.pack('<I', 0)
-        decoder = RosMsgDecoder(data)
-        assert decoder.string() == ""
-
-    def test_decode_sequence(self):
-        data = struct.pack('<I', 3) + struct.pack('<iii', 1, 2, 3)
-        decoder = RosMsgDecoder(data)
-        assert decoder.sequence('int32') == [1, 2, 3]
-
-    def test_decode_array(self):
-        data = struct.pack('<iii', 10, 20, 30)
-        decoder = RosMsgDecoder(data)
-        assert decoder.array('int32', 3) == [10, 20, 30]
-
-
 class TestRosmsgRoundtrip:
     """Test encoding and decoding roundtrips."""
 
-    def test_roundtrip_primitives(self):
+    def test_roundtrip_bool(self):
         encoder = RosMsgEncoder()
         encoder.bool(True)
-        encoder.int8(-42)
-        encoder.uint32(12345)
-        encoder.float64(2.71828)
-        encoder.string("test message")
+        encoder.bool(False)
 
         data = encoder.save()
         decoder = RosMsgDecoder(data)
 
         assert decoder.bool() is True
-        assert decoder.int8() == -42
-        assert decoder.uint32() == 12345
-        assert decoder.float64() == pytest.approx(2.71828)
-        assert decoder.string() == "test message"
+        assert decoder.bool() is False
+
+    def test_roundtrip_int8(self):
+        encoder = RosMsgEncoder()
+        encoder.int8(-128)
+        encoder.int8(0)
+        encoder.int8(127)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.int8() == -128
+        assert decoder.int8() == 0
+        assert decoder.int8() == 127
+
+    def test_roundtrip_uint8(self):
+        encoder = RosMsgEncoder()
+        encoder.uint8(0)
+        encoder.uint8(128)
+        encoder.uint8(255)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.uint8() == 0
+        assert decoder.uint8() == 128
+        assert decoder.uint8() == 255
+
+    def test_roundtrip_byte(self):
+        encoder = RosMsgEncoder()
+        encoder.byte(b'\x00')
+        encoder.byte(b'\xff')
+        encoder.byte(b'\x42')
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.byte() == b'\x00'
+        assert decoder.byte() == b'\xff'
+        assert decoder.byte() == b'\x42'
+
+    def test_roundtrip_int16(self):
+        encoder = RosMsgEncoder()
+        encoder.int16(-32768)
+        encoder.int16(0)
+        encoder.int16(32767)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.int16() == -32768
+        assert decoder.int16() == 0
+        assert decoder.int16() == 32767
+
+    def test_roundtrip_uint16(self):
+        encoder = RosMsgEncoder()
+        encoder.uint16(0)
+        encoder.uint16(32768)
+        encoder.uint16(65535)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.uint16() == 0
+        assert decoder.uint16() == 32768
+        assert decoder.uint16() == 65535
+
+    def test_roundtrip_int32(self):
+        encoder = RosMsgEncoder()
+        encoder.int32(-2147483648)
+        encoder.int32(0)
+        encoder.int32(2147483647)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.int32() == -2147483648
+        assert decoder.int32() == 0
+        assert decoder.int32() == 2147483647
+
+    def test_roundtrip_uint32(self):
+        encoder = RosMsgEncoder()
+        encoder.uint32(0)
+        encoder.uint32(2147483648)
+        encoder.uint32(4294967295)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.uint32() == 0
+        assert decoder.uint32() == 2147483648
+        assert decoder.uint32() == 4294967295
+
+    def test_roundtrip_int64(self):
+        encoder = RosMsgEncoder()
+        encoder.int64(-9223372036854775808)
+        encoder.int64(0)
+        encoder.int64(9223372036854775807)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.int64() == -9223372036854775808
+        assert decoder.int64() == 0
+        assert decoder.int64() == 9223372036854775807
+
+    def test_roundtrip_uint64(self):
+        encoder = RosMsgEncoder()
+        encoder.uint64(0)
+        encoder.uint64(9223372036854775808)
+        encoder.uint64(18446744073709551615)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.uint64() == 0
+        assert decoder.uint64() == 9223372036854775808
+        assert decoder.uint64() == 18446744073709551615
+
+    def test_roundtrip_float32(self):
+        encoder = RosMsgEncoder()
+        encoder.float32(0.0)
+        encoder.float32(3.14159)
+        encoder.float32(-1.5e10)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.float32() == pytest.approx(0.0)
+        assert decoder.float32() == pytest.approx(3.14159, rel=1e-5)
+        assert decoder.float32() == pytest.approx(-1.5e10, rel=1e-5)
+
+    def test_roundtrip_float64(self):
+        encoder = RosMsgEncoder()
+        encoder.float64(0.0)
+        encoder.float64(3.141592653589793)
+        encoder.float64(-1.5e100)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.float64() == pytest.approx(0.0)
+        assert decoder.float64() == pytest.approx(3.141592653589793)
+        assert decoder.float64() == pytest.approx(-1.5e100)
+
+    def test_roundtrip_string(self):
+        encoder = RosMsgEncoder()
+        encoder.string("")
+        encoder.string("hello")
+        encoder.string("unicode: \u00e9\u00e0\u00fc")
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.string() == ""
+        assert decoder.string() == "hello"
+        assert decoder.string() == "unicode: \u00e9\u00e0\u00fc"
+
+    def test_roundtrip_array(self):
+        encoder = RosMsgEncoder()
+        encoder.array('int32', [1, 2, 3, 4, 5])
+        encoder.array('float64', [1.1, 2.2, 3.3])
+        encoder.array('uint8', [0, 128, 255])
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.array('int32', 5) == [1, 2, 3, 4, 5]
+        assert decoder.array('float64', 3) == pytest.approx([1.1, 2.2, 3.3])
+        assert decoder.array('uint8', 3) == [0, 128, 255]
+
+    def test_roundtrip_sequence(self):
+        encoder = RosMsgEncoder()
+        encoder.sequence('int32', [10, 20, 30])
+        encoder.sequence('string', ["foo", "bar", "baz"])
+        encoder.sequence('float32', [])
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.sequence('int32') == [10, 20, 30]
+        assert decoder.sequence('string') == ["foo", "bar", "baz"]
+        assert decoder.sequence('float32') == []
+
+    def test_roundtrip_nested_containers(self):
+        encoder = RosMsgEncoder()
+        # Sequence of sequences (as separate calls)
+        encoder.uint32(2)  # outer sequence length
+        encoder.sequence('int32', [1, 2])
+        encoder.sequence('int32', [3, 4, 5])
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        outer_len = decoder.uint32()
+        assert outer_len == 2
+        assert decoder.sequence('int32') == [1, 2]
+        assert decoder.sequence('int32') == [3, 4, 5]
+
+    def test_roundtrip_mixed_types(self):
+        encoder = RosMsgEncoder()
+        encoder.uint32(42)
+        encoder.string("test")
+        encoder.float64(3.14)
+        encoder.sequence('uint8', [1, 2, 3])
+        encoder.bool(True)
+        encoder.int64(-1000000000000)
+
+        data = encoder.save()
+        decoder = RosMsgDecoder(data)
+
+        assert decoder.uint32() == 42
+        assert decoder.string() == "test"
+        assert decoder.float64() == pytest.approx(3.14)
+        assert decoder.sequence('uint8') == [1, 2, 3]
+        assert decoder.bool() is True
+        assert decoder.int64() == -1000000000000

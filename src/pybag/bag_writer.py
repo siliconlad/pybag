@@ -256,7 +256,6 @@ class BagFileWriter:
         chunk_pos = self._record_writer.tell()
 
         # Write the chunk
-        # TODO: Chunk compression
         self._record_writer.write_chunk(chunk_data, self._compression)
 
         # Create chunk info

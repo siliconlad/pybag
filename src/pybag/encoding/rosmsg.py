@@ -81,7 +81,7 @@ class RosMsgDecoder(MessageDecoder):
 
     def char(self) -> str:
         """Parse a single character."""
-        return self._data.read(1).decode('latin-1')
+        raise Exception("char encoding is deprecated")
 
     def int16(self) -> int:
         """Parse a signed 16-bit integer (little-endian)."""
