@@ -125,7 +125,7 @@ class BagRecordParser:
 
         # Parse the data
         data_len_bytes = file.read(4)
-        if len(header_len_bytes) < 4:
+        if len(data_len_bytes) < 4:
             return None  # EOF
         data_len = struct.unpack('<i', data_len_bytes)[0]
         data = cls._parse_data(file, data_len)
