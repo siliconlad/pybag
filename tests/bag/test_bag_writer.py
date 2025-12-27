@@ -280,7 +280,7 @@ def test_pybag_write_rosbags_read_compressed(
     # Read with rosbags
     with RosbagsReader(bag_path) as reader:
         messages = list(reader.messages())
-        assert len(messages) == 10
+        assert len(messages) == 20
 
         for i, (conn, timestamp, rawdata) in enumerate(messages):
             msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
