@@ -1,10 +1,12 @@
 """Tests for BagFileWriter header and index handling."""
 
-import struct
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import pytest
+from rosbags.rosbag1 import Reader as RosbagsReader
+from rosbags.typesys import Stores, get_typestore
 
 import pybag
 from pybag.bag.record_parser import BagRecordParser
@@ -27,6 +29,33 @@ class OtherMessage:
     """Another test message type."""
     __msg_name__ = 'test_msgs/OtherMessage'
     data: pybag.float64
+
+
+@dataclass(kw_only=True)
+class StringMessage:
+    """A simple string message compatible with std_msgs/String."""
+    __msg_name__ = "std_msgs/String"
+    data: pybag.string
+
+
+@dataclass(kw_only=True)
+class Int32Message:
+    """A simple int32 message compatible with std_msgs/Int32."""
+    __msg_name__ = "std_msgs/Int32"
+    data: pybag.int32
+
+
+@dataclass(kw_only=True)
+class Float64Message:
+    """A simple float64 message compatible with std_msgs/Float64."""
+    __msg_name__ = "std_msgs/Float64"
+    data: pybag.float64
+
+
+@pytest.fixture
+def typestore():
+    """Get the ROS1 Noetic typestore from rosbags."""
+    return get_typestore(Stores.ROS1_NOETIC)
 
 
 class TestBagHeaderOffsets:
@@ -129,3 +158,130 @@ class TestIndexDataRecords:
             # Should have INDEX_DATA for both connections
             conn_ids = {r.conn for r in index_data_records}
             assert len(conn_ids) == 2, f"Expected 2 connections in index, got {len(conn_ids)}"
+
+
+###############################
+# Test rosbags compatibility  #
+###############################
+
+
+def test_pybag_write_rosbags_read_string(tmp_path: Path, typestore):
+    """Test that rosbags can read a String message written by pybag."""
+    bag_path = tmp_path / "test.bag"
+
+    # Write with pybag
+    with BagFileWriter.open(bag_path) as writer:
+        writer.write_message("/test", 1_000_000_000, StringMessage(data="hello"))
+        writer.write_message("/test", 2_000_000_000, StringMessage(data="world"))
+
+    # Read with rosbags
+    with RosbagsReader(bag_path) as reader:
+        messages = list(reader.messages())
+
+        assert len(messages) == 2
+
+        conn, timestamp, rawdata = messages[0]
+        msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+        assert conn.topic == "/test"
+        assert msg.data == "hello"
+
+        conn, timestamp, rawdata = messages[1]
+        msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+        assert conn.topic == "/test"
+        assert msg.data == "world"
+
+
+def test_pybag_write_rosbags_read_int32(tmp_path: Path, typestore):
+    """Test that rosbags can read an Int32 message written by pybag."""
+    bag_path = tmp_path / "test.bag"
+
+    # Write with pybag
+    with BagFileWriter.open(bag_path) as writer:
+        writer.write_message("/numbers", 1_000_000_000, Int32Message(data=42))
+        writer.write_message("/numbers", 2_000_000_000, Int32Message(data=-100))
+
+    # Read with rosbags
+    with RosbagsReader(bag_path) as reader:
+        messages = list(reader.messages())
+
+        assert len(messages) == 2
+
+        conn, timestamp, rawdata = messages[0]
+        msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+        assert conn.topic == "/numbers"
+        assert msg.data == 42
+
+        conn, timestamp, rawdata = messages[1]
+        msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+        assert msg.data == -100
+
+
+def test_pybag_write_rosbags_read_float64(tmp_path: Path, typestore):
+    """Test that rosbags can read a Float64 message written by pybag."""
+    bag_path = tmp_path / "test.bag"
+
+    # Write with pybag
+    with BagFileWriter.open(bag_path) as writer:
+        writer.write_message("/floats", 1_000_000_000, Float64Message(data=3.14159))
+        writer.write_message("/floats", 2_000_000_000, Float64Message(data=-2.71828))
+
+    # Read with rosbags
+    with RosbagsReader(bag_path) as reader:
+        messages = list(reader.messages())
+
+        assert len(messages) == 2
+
+        conn, timestamp, rawdata = messages[0]
+        msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+        assert conn.topic == "/floats"
+        assert msg.data == pytest.approx(3.14159)
+
+        conn, timestamp, rawdata = messages[1]
+        msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+        assert msg.data == pytest.approx(-2.71828)
+
+
+def test_pybag_write_rosbags_read_multiple_topics(tmp_path: Path, typestore):
+    """Test that rosbags can read multiple topics written by pybag."""
+    bag_path = tmp_path / "test.bag"
+
+    # Write with pybag
+    with BagFileWriter.open(bag_path) as writer:
+        writer.write_message("/strings", 1_000_000_000, StringMessage(data="hello"))
+        writer.write_message("/numbers", 2_000_000_000, Int32Message(data=42))
+        writer.write_message("/strings", 3_000_000_000, StringMessage(data="world"))
+
+    # Read with rosbags
+    with RosbagsReader(bag_path) as reader:
+        messages = list(reader.messages())
+
+        assert len(messages) == 3
+
+        # Check topics
+        topics = [conn.topic for conn, _, _ in messages]
+        assert "/strings" in topics
+        assert "/numbers" in topics
+
+
+@pytest.mark.parametrize("compression", ["none", "bz2"])
+def test_pybag_write_rosbags_read_compressed(
+    tmp_path: Path, typestore, compression: Literal["none", "bz2"]
+):
+    """Test that rosbags can read compressed bag files written by pybag."""
+    bag_path = tmp_path / "test.bag"
+
+    # Write with pybag using compression
+    with BagFileWriter.open(bag_path, compression=compression, chunk_size=100) as writer:
+        for i in range(20):
+            writer.write_message(
+                "/test", i * 1_000_000_000, StringMessage(data=f"msg_{i}")
+            )
+
+    # Read with rosbags
+    with RosbagsReader(bag_path) as reader:
+        messages = list(reader.messages())
+        assert len(messages) == 10
+
+        for i, (conn, timestamp, rawdata) in enumerate(messages):
+            msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+            assert msg.data == f"msg_{i}"
