@@ -4,6 +4,9 @@ import bz2
 import struct
 from typing import Literal
 
+# Number of nanoseconds in one second
+NSEC_PER_SEC = 1_000_000_000
+
 from pybag.bag.records import (
     BagHeaderRecord,
     BagRecordType,
@@ -45,6 +48,24 @@ class BagRecordWriter:
         """
         field_data = name.encode('ascii') + b'=' + value
         return struct.pack('<I', len(field_data)) + field_data
+
+    @staticmethod
+    def _encode_ros_time(nanoseconds: int) -> bytes:
+        """Encode a timestamp as ROS time format (sec, nsec).
+
+        ROS time is stored as two 32-bit unsigned integers:
+        - secs: seconds since epoch
+        - nsecs: nanoseconds within the second
+
+        Args:
+            nanoseconds: Timestamp in nanoseconds since epoch.
+
+        Returns:
+            8 bytes encoding the time as (secs, nsecs).
+        """
+        secs = nanoseconds // NSEC_PER_SEC
+        nsecs = nanoseconds % NSEC_PER_SEC
+        return struct.pack('<II', secs, nsecs)
 
     def _write_record(
         self,
@@ -122,7 +143,7 @@ class BagRecordWriter:
         """
         header_fields = [
             ('conn', struct.pack('<i', msg.conn)),
-            ('time', struct.pack('<q', msg.time)),
+            ('time', self._encode_ros_time(msg.time)),
         ]
         return self._write_record(BagRecordType.MSG_DATA, header_fields, msg.data)
 
@@ -183,8 +204,8 @@ class BagRecordWriter:
         header_fields = [
             ('ver', struct.pack('<i', chunk_info.ver)),
             ('chunk_pos', struct.pack('<q', chunk_info.chunk_pos)),
-            ('start_time', struct.pack('<q', chunk_info.start_time)),
-            ('end_time', struct.pack('<q', chunk_info.end_time)),
+            ('start_time', self._encode_ros_time(chunk_info.start_time)),
+            ('end_time', self._encode_ros_time(chunk_info.end_time)),
             ('count', struct.pack('<i', chunk_info.count)),
         ]
 

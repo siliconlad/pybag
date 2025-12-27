@@ -6,6 +6,9 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Callable, Literal
 
+# Number of nanoseconds in one second
+NSEC_PER_SEC = 1_000_000_000
+
 from pybag.bag.record_writer import BagRecordWriter
 from pybag.bag.records import (
     BagHeaderRecord,
@@ -261,28 +264,30 @@ class BagFileWriter:
         self._record_writer.write_chunk(chunk_data, self._compression)
 
         # Create chunk info
-        total_messages = sum(self._chunk_message_counts.values())
-
-        # Build connection counts data
+        # Build connection counts data: pairs of (conn_id, msg_count)
         conn_counts_buffer = BytesWriter()
         for conn_id, msg_count in self._chunk_message_counts.items():
             conn_counts_buffer.write(struct.pack('<II', conn_id, msg_count))
 
+        # count field is the number of connections in this chunk, not total messages
         chunk_info = ChunkInfoRecord(
             ver=1,
             chunk_pos=chunk_pos,
             start_time=self._chunk_start_time if self._chunk_start_time is not None else 0,
             end_time=self._chunk_end_time if self._chunk_end_time is not None else 0,
-            count=total_messages,
+            count=len(self._chunk_message_counts),
             data=conn_counts_buffer.as_bytes(),
         )
         self._chunk_infos.append(chunk_info)
 
         for conn_id, entries in self._chunk_index_entries.items():
-            # Build index data: (time, offset) for each entry
+            # Build index data: (time_sec, time_nsec, offset) for each entry
+            # ROS time format uses two uint32 values (secs, nsecs)
             index_data_buffer = BytesWriter()
-            for time, offset in entries:
-                index_data_buffer.write(struct.pack('<qi', time, offset))
+            for time_ns, offset in entries:
+                secs = time_ns // NSEC_PER_SEC
+                nsecs = time_ns % NSEC_PER_SEC
+                index_data_buffer.write(struct.pack('<IIi', secs, nsecs, offset))
             # Write the index records
             index_record = IndexDataRecord(
                 ver=1,

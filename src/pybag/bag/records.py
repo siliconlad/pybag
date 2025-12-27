@@ -4,6 +4,9 @@ import struct
 from dataclasses import dataclass
 from enum import IntEnum
 
+# Number of nanoseconds in one second
+NSEC_PER_SEC = 1_000_000_000
+
 
 class BagRecordType(IntEnum):
     """Operation codes for ROS 1 bag record types."""
@@ -148,8 +151,8 @@ class ChunkInfoRecord:
         chunk_pos: Offset in bytes of the chunk record.
         start_time: Start time of messages in chunk as nanoseconds since epoch.
         end_time: End time of messages in chunk as nanoseconds since epoch.
-        count: Number of messages in the chunk.
-        data: Raw connection counts data.
+        count: Number of connections in the chunk (length of connection_counts).
+        data: Raw connection counts data (pairs of conn_id, msg_count).
     """
     ver: int
     chunk_pos: int
@@ -214,12 +217,15 @@ class IndexDataRecord:
         """Parse and return index entries from the data field.
 
         Returns:
-            List of (time_sec, time_nsec, offset) tuples.
+            List of (timestamp_ns, offset) tuples.
+            Timestamp is in nanoseconds since epoch.
             Offset is relative to the start of the chunk data.
         """
         result: list[tuple[int, int]] = []
         for i in range(self.count):
             offset = i * 12
-            time, chunk_offset = struct.unpack_from('<qi', self.data, offset)
-            result.append((time, chunk_offset))
+            # ROS time format: two uint32 (secs, nsecs) + int32 offset
+            secs, nsecs, chunk_offset = struct.unpack_from('<IIi', self.data, offset)
+            timestamp_ns = secs * NSEC_PER_SEC + nsecs
+            result.append((timestamp_ns, chunk_offset))
         return result

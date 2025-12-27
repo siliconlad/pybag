@@ -5,6 +5,9 @@ import logging
 import struct
 from typing import Any
 
+# Number of nanoseconds in one second
+NSEC_PER_SEC = 1_000_000_000
+
 from pybag.bag.records import (
     BagHeaderRecord,
     BagRecordType,
@@ -26,6 +29,23 @@ class MalformedBag(Exception):
     """The ROS 1 bag file does not conform to the specification."""
     def __init__(self, error_message: str):
         super().__init__(error_message)
+
+
+def _decode_ros_time(data: bytes) -> int:
+    """Decode a ROS time value (sec, nsec) to nanoseconds.
+
+    ROS time is stored as two 32-bit unsigned integers:
+    - secs: seconds since epoch
+    - nsecs: nanoseconds within the second
+
+    Args:
+        data: 8 bytes encoding the time as (secs, nsecs).
+
+    Returns:
+        Timestamp in nanoseconds since epoch.
+    """
+    secs, nsecs = struct.unpack('<II', data)
+    return secs * NSEC_PER_SEC + nsecs
 
 
 class BagRecordParser:
@@ -202,7 +222,7 @@ class BagRecordParser:
     ) -> MessageDataRecord:
         """Parse a message data record."""
         conn = struct.unpack('<i', header['conn'])[0]
-        time = struct.unpack('<q', header['time'])[0]
+        time = _decode_ros_time(header['time'])
         return MessageDataRecord(conn, time, data)
 
     @classmethod
@@ -226,8 +246,8 @@ class BagRecordParser:
         """Parse a chunk info record."""
         ver = struct.unpack('<i', header['ver'])[0]
         chunk_pos = struct.unpack('<q', header['chunk_pos'])[0]
-        start_time = struct.unpack('<q', header['start_time'])[0]
-        end_time = struct.unpack('<q', header['end_time'])[0]
+        start_time = _decode_ros_time(header['start_time'])
+        end_time = _decode_ros_time(header['end_time'])
         count = struct.unpack('<i', header['count'])[0]
         return ChunkInfoRecord(ver, chunk_pos, start_time, end_time, count, data)
 
