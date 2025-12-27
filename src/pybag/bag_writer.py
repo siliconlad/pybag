@@ -1,6 +1,7 @@
 """High-level writer for ROS 1 bag files."""
 
 import logging
+import struct
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Callable, Literal
@@ -9,9 +10,10 @@ from pybag.bag.record_writer import BagRecordWriter
 from pybag.bag.records import (
     ChunkInfoRecord,
     ConnectionRecord,
+    IndexDataRecord,
     MessageDataRecord
 )
-from pybag.encoding.rosmsg import RosmsgEncoder
+from pybag.encoding.rosmsg import RosMsgEncoder
 from pybag.io.raw_writer import BaseWriter, BytesWriter, FileWriter
 from pybag.schema.ros1_compiler import compile_ros1_serializer
 from pybag.schema.ros1msg import Ros1MsgSchemaEncoder, compute_md5sum
@@ -19,6 +21,7 @@ from pybag.types import Message
 
 logger = logging.getLogger(__name__)
 
+# TODO: Chunk compression
 
 class BagFileWriter:
     """High-level writer for ROS 1 bag files.
@@ -35,7 +38,7 @@ class BagFileWriter:
         self,
         writer: BaseWriter,
         *,
-        compression: Literal['none', 'bz2', 'lz4'] = 'none',
+        compression: Literal['none', 'bz2'] = 'none',
         chunk_size: int = 1024 * 1024,  # 1MB default chunk size
     ):
         """Initialize the bag writer.
@@ -63,18 +66,14 @@ class BagFileWriter:
         # Current chunk state
         self._chunk_buffer = BytesWriter()
         self._chunk_record_writer = BagRecordWriter(self._chunk_buffer)
-        self._chunk_start_time_sec: int | None = None
-        self._chunk_start_time_nsec: int | None = None
-        self._chunk_end_time_sec: int | None = None
-        self._chunk_end_time_nsec: int | None = None
+        self._chunk_start_time: int | None = None
+        self._chunk_end_time: int | None = None
         self._chunk_message_counts: dict[int, int] = {}
         # Index entries for current chunk: conn_id -> [(time_sec, time_nsec, offset)]
-        self._chunk_index_entries: dict[int, list[tuple[int, int, int]]] = {}
+        self._chunk_index_entries: dict[int, list[tuple[int, int]]] = {}
 
         # Chunk info records (for summary)
         self._chunk_infos: list[ChunkInfoRecord] = []
-        # Index data for all chunks: list of (conn_id, entries) per chunk
-        self._all_index_data: list[list[tuple[int, list[tuple[int, int, int]]]]] = []
 
         # Write initial file structure
         self._write_header()
@@ -84,7 +83,7 @@ class BagFileWriter:
         cls,
         file_path: str | Path,
         *,
-        compression: Literal['none', 'bz2', 'lz4'] = 'none',
+        compression: Literal['none', 'bz2'] = 'none',
         chunk_size: int = 1024 * 1024,
     ) -> "BagFileWriter":
         """Create a writer for a file.
@@ -102,6 +101,15 @@ class BagFileWriter:
             compression=compression,
             chunk_size=chunk_size,
         )
+
+    @staticmethod
+    def _encode_header_field(name: str, value: bytes) -> bytes:
+        """Encode a single header field.
+
+        Format: field_len (4 bytes) | name=value
+        """
+        field_data = name.encode('ascii') + b'=' + value
+        return struct.pack('<i', len(field_data)) + field_data
 
     def _write_header(self) -> None:
         """Write the initial file header.
@@ -126,6 +134,7 @@ class BagFileWriter:
         Returns:
             Tuple of (message_definition, md5sum).
         """
+        # TODO: Link with pre-encoded message types for common ones?
         if message_type not in self._message_types:
             msg_def = self._schema_encoder.encode(message_type).decode('utf-8')
             msg_name = message_type.__msg_name__
@@ -157,6 +166,7 @@ class BagFileWriter:
         Returns:
             The connection ID.
         """
+        # TODO: Also check the message type of topic?
         if topic in self._topics:
             return self._topics[topic]
 
@@ -166,14 +176,21 @@ class BagFileWriter:
         msg_def, md5sum = self._get_message_info(message_type)
         msg_type = message_type.__msg_name__
 
+        # Build the connection data (connection header fields)
+        data_buffer = BytesWriter()
+        # Two topic fields exist (in the record and connection headers).
+        # This is because messages can be written to the bag file on a topic different
+        # from where they were originally published
+        data_buffer.write(self._encode_header_field('topic', topic.encode('utf-8')))
+        data_buffer.write(self._encode_header_field('type', msg_type.encode('utf-8')))
+        data_buffer.write(self._encode_header_field('md5sum', md5sum.encode('ascii')))
+        data_buffer.write(self._encode_header_field('message_definition', msg_def.encode('utf-8')))
+
         connection = ConnectionRecord(
             conn=conn_id,
             topic=topic,
-            msg_type=msg_type,
-            md5sum=md5sum,
-            message_definition=msg_def,
+            data=data_buffer.as_bytes(),
         )
-
         self._connections[conn_id] = connection
         self._topics[topic] = conn_id
 
@@ -200,22 +217,10 @@ class BagFileWriter:
         # Ensure connection exists
         conn_id = self.add_connection(topic, message_type)
 
-        # Serialize the message
-        serializer = self._get_serializer(message_type)
-        encoder = RosmsgEncoder()
-        serializer(encoder, message)
-        data = encoder.save()
-
-        # Convert timestamp
-        time_sec = timestamp // 1_000_000_000
-        time_nsec = timestamp % 1_000_000_000
-
         # Update chunk time bounds
-        if self._chunk_start_time_sec is None:
-            self._chunk_start_time_sec = time_sec
-            self._chunk_start_time_nsec = time_nsec
-        self._chunk_end_time_sec = time_sec
-        self._chunk_end_time_nsec = time_nsec
+        if self._chunk_start_time is None:
+            self._chunk_start_time = timestamp
+        self._chunk_end_time = timestamp if self._chunk_end_time is None else max(self._chunk_end_time, timestamp)
 
         # Track message count per connection
         self._chunk_message_counts[conn_id] = self._chunk_message_counts.get(conn_id, 0) + 1
@@ -223,19 +228,20 @@ class BagFileWriter:
         # Record the offset within the chunk buffer before writing
         msg_offset = self._chunk_buffer.size()
 
+        # Serialize the message
+        serializer = self._get_serializer(message_type)
+        encoder = RosMsgEncoder()
+        serializer(encoder, message)
+        data = encoder.save()
+
         # Write message to chunk buffer
-        msg_record = MessageDataRecord(
-            conn=conn_id,
-            time_sec=time_sec,
-            time_nsec=time_nsec,
-            data=data,
-        )
+        msg_record = MessageDataRecord(conn=conn_id, time=timestamp, data=data)
         self._chunk_record_writer.write_message_data(msg_record)
 
         # Track index entry for this message
         if conn_id not in self._chunk_index_entries:
             self._chunk_index_entries[conn_id] = []
-        self._chunk_index_entries[conn_id].append((time_sec, time_nsec, msg_offset))
+        self._chunk_index_entries[conn_id].append((timestamp, msg_offset))
 
         # Check if we should flush the chunk
         if self._chunk_buffer.size() >= self._chunk_size:
@@ -250,34 +256,45 @@ class BagFileWriter:
         chunk_pos = self._record_writer.tell()
 
         # Write the chunk
+        # TODO: Chunk compression
         self._record_writer.write_chunk(chunk_data, self._compression)
 
         # Create chunk info
         total_messages = sum(self._chunk_message_counts.values())
+
+        # Build connection counts data
+        conn_counts_buffer = BytesWriter()
+        for conn_id, msg_count in self._chunk_message_counts.items():
+            conn_counts_buffer.write(struct.pack('<II', conn_id, msg_count))
+
         chunk_info = ChunkInfoRecord(
             ver=1,
             chunk_pos=chunk_pos,
-            start_time_sec=self._chunk_start_time_sec or 0,
-            start_time_nsec=self._chunk_start_time_nsec or 0,
-            end_time_sec=self._chunk_end_time_sec or 0,
-            end_time_nsec=self._chunk_end_time_nsec or 0,
+            start_time=self._chunk_start_time if self._chunk_start_time is not None else 0,
+            end_time=self._chunk_end_time if self._chunk_end_time is not None else 0,
             count=total_messages,
-            connection_counts=dict(self._chunk_message_counts),
+            data=conn_counts_buffer.as_bytes(),
         )
         self._chunk_infos.append(chunk_info)
 
-        # Save index entries for this chunk
-        chunk_index_data: list[tuple[int, list[tuple[int, int, int]]]] = []
         for conn_id, entries in self._chunk_index_entries.items():
-            chunk_index_data.append((conn_id, list(entries)))
-        self._all_index_data.append(chunk_index_data)
+            # Build index data: (time, offset) for each entry
+            index_data_buffer = BytesWriter()
+            for time, offset in entries:
+                index_data_buffer.write(struct.pack('<qi', time, offset))
+            # Write the index records
+            index_record = IndexDataRecord(
+                ver=1,
+                conn=conn_id,
+                count=len(entries),
+                data=index_data_buffer.as_bytes(),
+            )
+            self._record_writer.write_index_data(index_record)
 
         # Reset chunk state
         self._chunk_buffer.clear()
-        self._chunk_start_time_sec = None
-        self._chunk_start_time_nsec = None
-        self._chunk_end_time_sec = None
-        self._chunk_end_time_nsec = None
+        self._chunk_start_time = None
+        self._chunk_end_time = None
         self._chunk_message_counts.clear()
         self._chunk_index_entries.clear()
 
@@ -288,11 +305,6 @@ class BagFileWriter:
 
         # Record the index position (where index data, connections and chunk infos start)
         index_pos = self._record_writer.tell()
-
-        # Write INDEX_DATA records for each chunk
-        for chunk_index_data in self._all_index_data:
-            for conn_id, entries in chunk_index_data:
-                self._record_writer.write_index_data(conn_id, entries)
 
         # Write all connection records
         for conn in self._connections.values():

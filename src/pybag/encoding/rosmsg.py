@@ -37,7 +37,7 @@ class _NoAlignBytesWriter(BytesWriter):
         pass
 
 
-class RosmsgDecoder(MessageDecoder):
+class RosMsgDecoder(MessageDecoder):
     """Decoder for ROS 1 message serialization format (rosmsg).
 
     Unlike CDR, rosmsg format:
@@ -155,7 +155,7 @@ class RosmsgDecoder(MessageDecoder):
         return [getattr(self, type)() for _ in range(length)]
 
 
-class RosmsgEncoder(MessageEncoder):
+class RosMsgEncoder(MessageEncoder):
     """Encoder for ROS 1 message serialization format (rosmsg).
 
     Unlike CDR, rosmsg format:
@@ -174,8 +174,6 @@ class RosmsgEncoder(MessageEncoder):
         self._payload = _NoAlignBytesWriter()
         # For compatibility with schema compiler (always little-endian)
         self._is_little_endian = True
-        # Alias for backward compatibility
-        self._buffer = self._payload
 
     @classmethod
     def encoding(cls) -> str:
@@ -194,55 +192,54 @@ class RosmsgEncoder(MessageEncoder):
 
     def bool(self, value: bool) -> None:
         """Encode a boolean (1 byte)."""
-        self._buffer.write(struct.pack('<?', value))
+        self._payload.write(struct.pack('<?', value))
 
     def int8(self, value: int) -> None:
         """Encode a signed 8-bit integer."""
-        self._buffer.write(struct.pack('<b', value))
+        self._payload.write(struct.pack('<b', value))
 
     def uint8(self, value: int) -> None:
         """Encode an unsigned 8-bit integer."""
-        self._buffer.write(struct.pack('<B', value))
+        self._payload.write(struct.pack('<B', value))
 
     def byte(self, value: bytes) -> None:
         """Encode a single byte."""
-        self._buffer.write(value[:1])
+        self._payload.write(value[:1])
 
     def char(self, value: str) -> None:
-        """Encode a single character."""
-        self._buffer.write(value[0].encode('latin-1'))
+        raise Exception("char encoding is deprecated")
 
     def int16(self, value: int) -> None:
         """Encode a signed 16-bit integer (little-endian)."""
-        self._buffer.write(struct.pack('<h', value))
+        self._payload.write(struct.pack('<h', value))
 
     def uint16(self, value: int) -> None:
         """Encode an unsigned 16-bit integer (little-endian)."""
-        self._buffer.write(struct.pack('<H', value))
+        self._payload.write(struct.pack('<H', value))
 
     def int32(self, value: int) -> None:
         """Encode a signed 32-bit integer (little-endian)."""
-        self._buffer.write(struct.pack('<i', value))
+        self._payload.write(struct.pack('<i', value))
 
     def uint32(self, value: int) -> None:
         """Encode an unsigned 32-bit integer (little-endian)."""
-        self._buffer.write(struct.pack('<I', value))
+        self._payload.write(struct.pack('<I', value))
 
     def int64(self, value: int) -> None:
         """Encode a signed 64-bit integer (little-endian)."""
-        self._buffer.write(struct.pack('<q', value))
+        self._payload.write(struct.pack('<q', value))
 
     def uint64(self, value: int) -> None:
         """Encode an unsigned 64-bit integer (little-endian)."""
-        self._buffer.write(struct.pack('<Q', value))
+        self._payload.write(struct.pack('<Q', value))
 
     def float32(self, value: float) -> None:
         """Encode a 32-bit float (IEEE 754, little-endian)."""
-        self._buffer.write(struct.pack('<f', value))
+        self._payload.write(struct.pack('<f', value))
 
     def float64(self, value: float) -> None:
         """Encode a 64-bit float (IEEE 754, little-endian)."""
-        self._buffer.write(struct.pack('<d', value))
+        self._payload.write(struct.pack('<d', value))
 
     def string(self, value: str) -> None:
         """Encode a string (length-prefixed, no null terminator).
@@ -252,7 +249,7 @@ class RosmsgEncoder(MessageEncoder):
         """
         encoded = value.encode('utf-8')
         self.uint32(len(encoded))
-        self._buffer.write(encoded)
+        self._payload.write(encoded)
 
     # Container encoders -------------------------------------------------
 

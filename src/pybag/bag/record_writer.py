@@ -76,6 +76,7 @@ class BagRecordWriter:
         result += self._writer.write(data)
         return result
 
+    # TODO: Make API consistent (i.e. take BadHeader object)
     def write_bag_header(
         self,
         index_pos: int,

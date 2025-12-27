@@ -182,8 +182,9 @@ class Ros1MsgSchemaDecoder(SchemaDecoder):
         if schema.conn in self._cache:
             return self._cache[schema.conn]
 
-        package_name = schema.msg_type.split('/')[0]
-        msg_def = schema.message_definition
+        conn_header = schema.connection_header
+        package_name = conn_header.type.split('/')[0]
+        msg_def = conn_header.message_definition
 
         # Remove comments and empty lines
         lines = [self._remove_inline_comment(line) for line in msg_def.split('\n')]
@@ -218,9 +219,9 @@ class Ros1MsgSchemaDecoder(SchemaDecoder):
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
         # Add any required built-in schemas
-        main_schema = Schema(schema.msg_type, msg_schema)
+        main_schema = Schema(conn_header.type, msg_schema)
         self._add_missing_builtin_schemas(
-            schema.message_definition.encode('utf-8'),
+            conn_header.message_definition.encode('utf-8'),
             sub_msg_schemas
         )
         result = main_schema, sub_msg_schemas

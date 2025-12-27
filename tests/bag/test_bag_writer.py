@@ -129,8 +129,7 @@ class TestBagHeaderOffsets:
     def test_index_pos_points_to_valid_index_record(self, tmp_path: Path):
         """Test that seeking to index_pos gives a valid index section record.
 
-        The index section starts with INDEX_DATA records, followed by
-        CONNECTION records, then CHUNK_INFO records.
+        The index section starts with CONNECTION records, followed by CHUNK_INFO records.
         """
         bag_path = tmp_path / 'test.bag'
 
@@ -149,14 +148,14 @@ class TestBagHeaderOffsets:
             assert index_result is not None
 
             op, _ = index_result
-            # First record in index section should be INDEX_DATA
-            assert op == BagRecordType.INDEX_DATA, f"Expected INDEX_DATA, got {op}"
+            # First record in index section should be CONNECTION
+            assert op == BagRecordType.CONNECTION, f"Expected CONNECTION, got {op}"
 
 
 class TestIndexDataRecords:
     """Tests that verify INDEX_DATA records are properly written."""
 
-    def test_index_section_contains_index_data_records(self, tmp_path: Path):
+    def test_contains_index_data_records(self, tmp_path: Path):
         """Test that the index section contains INDEX_DATA records.
 
         ROS 1 bag format requires INDEX_DATA records for random access
@@ -173,10 +172,6 @@ class TestIndexDataRecords:
             BagRecordParser.parse_version(reader)
             result = BagRecordParser.parse_record(reader)
             assert result is not None
-            _, header = result
-
-            # Seek to index section
-            reader.seek_from_start(header.index_pos)
 
             # Collect all record types in the index section
             record_types = []
@@ -205,9 +200,6 @@ class TestIndexDataRecords:
             BagRecordParser.parse_version(reader)
             result = BagRecordParser.parse_record(reader)
             assert result is not None
-            _, header = result
-
-            reader.seek_from_start(header.index_pos)
 
             index_data_records = []
             while True:
@@ -241,8 +233,6 @@ class TestIndexDataRecords:
             assert result is not None
             _, header = result
 
-            reader.seek_from_start(header.index_pos)
-
             index_data_records: list[IndexDataRecord] = []
             while True:
                 result = BagRecordParser.parse_record(reader)
@@ -270,8 +260,6 @@ class TestIndexDataRecords:
             assert result is not None
             _, header = result
 
-            reader.seek_from_start(header.index_pos)
-
             index_data_records: list[IndexDataRecord] = []
             while True:
                 result = BagRecordParser.parse_record(reader)
@@ -284,13 +272,12 @@ class TestIndexDataRecords:
             assert len(index_data_records) >= 1, "No INDEX_DATA records found"
 
             for idx_record in index_data_records:
-                # Each entry should have (time_sec, time_nsec, offset)
-                for time_sec, time_nsec, offset in idx_record.entries:
+                # Each entry should have (time, offset)
+                for time, offset in idx_record.entries:
                     # Offset should be non-negative (relative to chunk start)
                     assert offset >= 0, f"Invalid offset: {offset}"
                     # Time values should be reasonable
-                    assert time_sec >= 0, f"Invalid time_sec: {time_sec}"
-                    assert 0 <= time_nsec < 1_000_000_000, f"Invalid time_nsec: {time_nsec}"
+                    assert 1_000_000_000 <= time <= 2_000_000_000, f"Invalid time: {time}"
 
     def test_index_data_with_multiple_chunks(self, tmp_path: Path):
         """Test that INDEX_DATA records are written for each chunk."""
@@ -309,8 +296,6 @@ class TestIndexDataRecords:
 
             # Should have multiple chunks
             assert header.chunk_count > 1, f"Expected multiple chunks, got {header.chunk_count}"
-
-            reader.seek_from_start(header.index_pos)
 
             index_data_records: list[IndexDataRecord] = []
             while True:

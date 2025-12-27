@@ -15,16 +15,16 @@ from pybag.bag.records import (
     ChunkInfoRecord,
     ChunkRecord,
     ConnectionRecord,
-    IndexDataRecord,
     MessageDataRecord
 )
-from pybag.encoding.rosmsg import RosmsgDecoder
+from pybag.encoding.rosmsg import RosMsgDecoder
 from pybag.io.raw_reader import BaseReader, BytesReader, FileReader
 from pybag.schema.ros1_compiler import compile_ros1_schema
 from pybag.schema.ros1msg import Ros1MsgSchemaDecoder
 
 logger = logging.getLogger(__name__)
 
+# TODO: Do not load all messages at once
 
 @dataclass(slots=True)
 class DecodedMessage:
@@ -59,7 +59,6 @@ class BagFileReader:
         self._bag_header: BagHeaderRecord | None = None
         self._connections: dict[int, ConnectionRecord] = {}
         self._chunk_infos: list[ChunkInfoRecord] = []
-        self._message_count: int = 0
 
         # Schema decoder for message definitions
         self._schema_decoder = Ros1MsgSchemaDecoder()
@@ -99,12 +98,12 @@ class BagFileReader:
         # Parse version
         self._version = BagRecordParser.parse_version(self._reader)
         if self._version != '2.0':
-            raise MalformedBag(f'Unsupported bag version: {self._version}')
+            raise MalformedBag(f'Unsupported bag version: {self._version} (must be 2.0)')
 
         # Parse bag header
         result = BagRecordParser.parse_record(self._reader)
         if result is None or result[0] != BagRecordType.BAG_HEADER:
-            raise MalformedBag('Expected bag header record')
+            raise MalformedBag(f'Expected bag header record, got {result}')
         self._bag_header = result[1]
 
         # Seek to index section
@@ -122,7 +121,6 @@ class BagFileReader:
                 self._connections[record.conn] = record
             elif op == BagRecordType.CHUNK_INFO:
                 self._chunk_infos.append(record)
-                self._message_count += record.count
 
     @property
     def version(self) -> str:
@@ -160,16 +158,12 @@ class BagFileReader:
     @property
     def start_time(self) -> int:
         """Get the start time of the bag file in nanoseconds since epoch."""
-        if not self._chunk_infos:
-            return 0
-        return min(ci.start_time_ns for ci in self._chunk_infos)
+        return min([ci.start_time for ci in self._chunk_infos], default=0)
 
     @property
     def end_time(self) -> int:
         """Get the end time of the bag file in nanoseconds since epoch."""
-        if not self._chunk_infos:
-            return 0
-        return max(ci.end_time_ns for ci in self._chunk_infos)
+        return max([ci.end_time for ci in self._chunk_infos], default=0)
 
     def _expand_topics(self, topic: str | list[str]) -> list[str]:
         """Expand topic patterns to list of concrete topic names.
@@ -182,6 +176,7 @@ class BagFileReader:
         """
         available_topics = self.get_topics()
         topic_patterns = [topic] if isinstance(topic, str) else topic
+
         matched_topics = set()
         for pattern in topic_patterns:
             matches = fnmatch.filter(available_topics, pattern)
@@ -218,8 +213,7 @@ class BagFileReader:
             The deserialized message object.
         """
         deserializer = self._get_deserializer(conn.conn)
-        decoder = RosmsgDecoder(msg.data)
-        return deserializer(decoder)
+        return deserializer(RosMsgDecoder(msg.data))
 
     def messages(
         self,
@@ -256,21 +250,22 @@ class BagFileReader:
                 conn_ids_to_topics[conn.conn] = conn.topic
 
         if not conn_ids_to_topics:
+            logging.warning("No matching topics found")
             return
 
         # Sort chunk infos by start time if needed
         chunk_infos = self._chunk_infos
         if in_log_time_order:
-            chunk_infos = sorted(chunk_infos, key=lambda ci: ci.start_time_ns)
+            chunk_infos = sorted(chunk_infos, key=lambda ci: ci.start_time)
 
         # Collect messages (optionally sorted by time)
         all_messages: list[tuple[int, MessageDataRecord, ConnectionRecord]] = []
 
         for chunk_info in chunk_infos:
             # Skip chunks outside the time range
-            if start_time is not None and chunk_info.end_time_ns < start_time:
+            if start_time is not None and chunk_info.end_time < start_time:
                 continue
-            if end_time is not None and chunk_info.start_time_ns > end_time:
+            if end_time is not None and chunk_info.start_time > end_time:
                 continue
 
             # Check if this chunk has any relevant connections
@@ -285,7 +280,7 @@ class BagFileReader:
             self._reader.seek_from_start(chunk_info.chunk_pos)
             result = BagRecordParser.parse_record(self._reader)
             if result is None or result[0] != BagRecordType.CHUNK:
-                logger.warning(f'Expected chunk at position {chunk_info.chunk_pos}')
+                logger.warning(f'Expected chunk at position {chunk_info.chunk_pos}, got {result}')
                 continue
 
             chunk: ChunkRecord = result[1]
@@ -303,7 +298,7 @@ class BagFileReader:
                     continue
 
                 # Time filtering
-                log_time = msg.time_ns
+                log_time = msg.time
                 if start_time is not None and log_time < start_time:
                     continue
                 if end_time is not None and log_time > end_time:
@@ -319,10 +314,11 @@ class BagFileReader:
         # Yield decoded messages
         for log_time, msg, conn in all_messages:
             decoded_data = self._deserialize_message(msg, conn)
+            conn_header = conn.connection_header
             decoded = DecodedMessage(
                 connection_id=msg.conn,
                 topic=conn.topic,
-                msg_type=conn.msg_type,
+                msg_type=conn_header.type,
                 log_time=log_time,
                 data=decoded_data,
             )

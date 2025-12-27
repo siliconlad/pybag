@@ -11,6 +11,7 @@ from pybag.bag.records import (
     BagRecordType,
     ChunkInfoRecord,
     ChunkRecord,
+    ConnectionHeader,
     ConnectionRecord,
     IndexDataRecord,
     MessageDataRecord
@@ -22,6 +23,7 @@ __all__ = [
     'BagRecordType',
     'ChunkInfoRecord',
     'ChunkRecord',
+    'ConnectionHeader',
     'ConnectionRecord',
     'IndexDataRecord',
     'MessageDataRecord',
