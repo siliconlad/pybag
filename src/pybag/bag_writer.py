@@ -11,7 +11,8 @@ from pybag.bag.records import (
     ChunkInfoRecord,
     ConnectionRecord,
     IndexDataRecord,
-    MessageDataRecord
+    MessageDataRecord,
+    BagHeaderRecord
 )
 from pybag.encoding.rosmsg import RosMsgEncoder
 from pybag.io.raw_writer import BaseWriter, BytesWriter, FileWriter
@@ -21,7 +22,6 @@ from pybag.types import Message
 
 logger = logging.getLogger(__name__)
 
-# TODO: Chunk compression
 
 class BagFileWriter:
     """High-level writer for ROS 1 bag files.
@@ -120,9 +120,11 @@ class BagFileWriter:
         self._header_pos = self._record_writer.tell()
         # Write placeholder header with zeros (will be updated on close)
         self._record_writer.write_bag_header(
-            index_pos=0,
-            conn_count=0,
-            chunk_count=0,
+            BagHeaderRecord(
+                index_pos=0,
+                conn_count=0,
+                chunk_count=0,
+            ),
         )
 
     def _get_message_info(self, message_type: type[Message]) -> tuple[str, str]:
@@ -166,7 +168,7 @@ class BagFileWriter:
         Returns:
             The connection ID.
         """
-        # TODO: Also check the message type of topic?
+        # TODO: Also check the message type of topic (using hash)?
         if topic in self._topics:
             return self._topics[topic]
 
@@ -316,9 +318,11 @@ class BagFileWriter:
         # Seek back to the header position and rewrite with correct values
         self._writer.seek_from_start(self._header_pos)
         self._record_writer.write_bag_header(
-            index_pos=index_pos,
-            conn_count=len(self._connections),
-            chunk_count=len(self._chunk_infos),
+            BagHeaderRecord(
+                index_pos=index_pos,
+                conn_count=len(self._connections),
+                chunk_count=len(self._chunk_infos),
+            ),
         )
 
         self._record_writer.close()

@@ -30,7 +30,10 @@ class BagHeaderRecord:
     index_pos: int
     conn_count: int
     chunk_count: int
-    data: bytes
+    # The bag header record is padded out by filling data with ASCII space characters (0x20)
+    # so that additional information can be added after the bag file is recorded.
+    # Currently, this padding is such that the header is 4096 bytes long.
+    data: bytes = b' ' * 4096
 
 
 @dataclass(slots=True)

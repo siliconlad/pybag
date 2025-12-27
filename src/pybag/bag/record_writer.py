@@ -9,7 +9,8 @@ from pybag.bag.records import (
     ChunkInfoRecord,
     ConnectionRecord,
     IndexDataRecord,
-    MessageDataRecord
+    MessageDataRecord,
+    BagHeaderRecord
 )
 from pybag.io.raw_writer import BaseWriter
 
@@ -76,32 +77,24 @@ class BagRecordWriter:
         result += self._writer.write(data)
         return result
 
-    # TODO: Make API consistent (i.e. take BadHeader object)
     def write_bag_header(
         self,
-        index_pos: int,
-        conn_count: int,
-        chunk_count: int
+        bag_header: BagHeaderRecord,
     ) -> int:
         """Write a bag header record.
 
         Args:
-            index_pos: Offset to first index record.
-            conn_count: Number of connections.
-            chunk_count: Number of chunks.
+            bag_header: The bag header record to write
 
         Returns:
             Number of bytes written.
         """
         header_fields = [
-            ('index_pos', struct.pack('<q', index_pos)),
-            ('conn_count', struct.pack('<i', conn_count)),
-            ('chunk_count', struct.pack('<i', chunk_count)),
+            ('index_pos', struct.pack('<q', bag_header.index_pos)),
+            ('conn_count', struct.pack('<i', bag_header.conn_count)),
+            ('chunk_count', struct.pack('<i', bag_header.chunk_count)),
         ]
-        # The bag header record is padded out by filling data with ASCII space characters (0x20)
-        # so that additional information can be added after the bag file is recorded.
-        # Currently, this padding is such that the header is 4096 bytes long.
-        return self._write_record(BagRecordType.BAG_HEADER, header_fields, b' ' * 4096)
+        return self._write_record(BagRecordType.BAG_HEADER, header_fields, bag_header.data)
 
     def write_connection(self, conn: ConnectionRecord) -> int:
         """Write a connection record.
