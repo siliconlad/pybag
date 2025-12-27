@@ -8,6 +8,9 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 import pytest
+from rosbags.rosbag1 import Reader as RosbagsReader
+from rosbags.rosbag1 import Writer as RosbagsWriter
+from rosbags.typesys import Stores, get_typestore
 
 import pybag
 from pybag.bag_reader import BagFileReader
@@ -22,6 +25,11 @@ class SimpleMessage:
     value: pybag.int32
     name: pybag.string
 
+
+@pytest.fixture
+def typestore():
+    """Get the ROS1 Noetic typestore from rosbags."""
+    return get_typestore(Stores.ROS1_NOETIC)
 
 #################
 #  Basic Tests  #
@@ -580,3 +588,169 @@ def test_empty_topic_list():
         with BagFileReader.from_file(path) as reader:
             messages = list(reader.messages([]))
             assert len(messages) == 0
+
+
+###############################
+# Test rosbags compatibility  #
+###############################
+
+
+def test_rosbags_write_pybag_read_string(typestore):
+    """Test that pybag can read a String message written by rosbags."""
+    with TemporaryDirectory() as temp_dir:
+        bag_path = Path(temp_dir) / "test.bag"
+
+        # Write with rosbags (timestamps in seconds)
+        String = typestore.types["std_msgs/msg/String"]
+        with RosbagsWriter(bag_path) as writer:
+            conn = writer.add_connection("/test", String.__msgtype__, typestore=typestore)
+            writer.write(conn, 1, typestore.serialize_ros1(String(data="hello"), String.__msgtype__))
+            writer.write(conn, 2, typestore.serialize_ros1(String(data="world"), String.__msgtype__))
+
+        # Read with pybag
+        with BagFileReader.from_file(bag_path) as reader:
+            # Check start/end time
+            reader.start_time == 1
+            reader.end_time == 2
+
+            # Check messages
+            messages = list(reader.messages("/test"))
+            assert len(messages) == 2
+            assert messages[0].topic == "/test"
+            assert messages[0].data.data == "hello"
+            assert messages[1].topic == "/test"
+            assert messages[1].data.data == "world"
+
+
+def test_rosbags_write_pybag_read_int32(typestore):
+    """Test that pybag can read an Int32 message written by rosbags."""
+    with TemporaryDirectory() as temp_dir:
+        bag_path = Path(temp_dir) / "test.bag"
+
+        # Write with rosbags
+        Int32 = typestore.types["std_msgs/msg/Int32"]
+        with RosbagsWriter(bag_path) as writer:
+            conn = writer.add_connection("/numbers", Int32.__msgtype__, typestore=typestore)
+            writer.write(conn, 1, typestore.serialize_ros1(Int32(data=42), Int32.__msgtype__))
+            writer.write(conn, 2, typestore.serialize_ros1(Int32(data=-100), Int32.__msgtype__))
+
+        # Read with pybag
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/numbers"))
+
+            assert len(messages) == 2
+            assert messages[0].data.data == 42
+            assert messages[1].data.data == -100
+
+
+def test_rosbags_write_pybag_read_float64(typestore):
+    """Test that pybag can read a Float64 message written by rosbags."""
+    with TemporaryDirectory() as temp_dir:
+        bag_path = Path(temp_dir) / "test.bag"
+
+        # Write with rosbags
+        Float64 = typestore.types["std_msgs/msg/Float64"]
+        with RosbagsWriter(bag_path) as writer:
+            conn = writer.add_connection("/floats", Float64.__msgtype__, typestore=typestore)
+            writer.write(conn, 1, typestore.serialize_ros1(Float64(data=3.14159), Float64.__msgtype__))
+            writer.write(conn, 2, typestore.serialize_ros1(Float64(data=-2.71828), Float64.__msgtype__))
+
+        # Read with pybag
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/floats"))
+
+            assert len(messages) == 2
+            assert abs(messages[0].data.data - 3.14159) < 1e-10
+            assert abs(messages[1].data.data - (-2.71828)) < 1e-10
+
+
+def test_rosbags_write_pybag_read_multiple_topics(typestore):
+    """Test that pybag can read multiple topics written by rosbags."""
+    with TemporaryDirectory() as temp_dir:
+        bag_path = Path(temp_dir) / "test.bag"
+
+        # Write with rosbags
+        String = typestore.types["std_msgs/msg/String"]
+        Int32 = typestore.types["std_msgs/msg/Int32"]
+        with RosbagsWriter(bag_path) as writer:
+            str_conn = writer.add_connection("/strings", String.__msgtype__, typestore=typestore)
+            int_conn = writer.add_connection("/numbers", Int32.__msgtype__, typestore=typestore)
+
+            writer.write(str_conn, 1, typestore.serialize_ros1(String(data="hello"), String.__msgtype__))
+            writer.write(int_conn, 2, typestore.serialize_ros1(Int32(data=42), Int32.__msgtype__))
+            writer.write(str_conn, 3, typestore.serialize_ros1(String(data="world"), String.__msgtype__))
+
+        # Read with pybag
+        with BagFileReader.from_file(bag_path) as reader:
+            # Check topics
+            topics = reader.get_topics()
+            assert "/strings" in topics
+            assert "/numbers" in topics
+
+            # Read string messages
+            str_messages = list(reader.messages("/strings"))
+            assert len(str_messages) == 2
+            assert str_messages[0].data.data == "hello"
+            assert str_messages[1].data.data == "world"
+
+            # Read int messages
+            int_messages = list(reader.messages("/numbers"))
+            assert len(int_messages) == 1
+            assert int_messages[0].data.data == 42
+
+
+def test_rosbags_write_pybag_read_message_order(typestore):
+    """Test that pybag reads messages in correct timestamp order from rosbags bags."""
+    with TemporaryDirectory() as temp_dir:
+        bag_path = Path(temp_dir) / "test.bag"
+
+        # Write with rosbags in non-sequential order
+        String = typestore.types["std_msgs/msg/String"]
+        with RosbagsWriter(bag_path) as writer:
+            conn = writer.add_connection("/test", String.__msgtype__, typestore=typestore)
+            # Write out of order
+            writer.write(conn, 3, typestore.serialize_ros1(String(data="third"), String.__msgtype__))
+            writer.write(conn, 1, typestore.serialize_ros1(String(data="first"), String.__msgtype__))
+            writer.write(conn, 2, typestore.serialize_ros1(String(data="second"), String.__msgtype__))
+
+        # Read with pybag in log time order
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/test", in_log_time_order=True))
+            assert len(messages) == 3
+            assert messages[0].data.data == "first"
+            assert messages[1].data.data == "second"
+            assert messages[2].data.data == "third"
+
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/test", in_log_time_order=False))
+            assert len(messages) == 3
+            assert messages[0].data.data == "third"
+            assert messages[1].data.data == "first"
+            assert messages[2].data.data == "second"
+
+
+def test_rosbags_write_pybag_read_glob_pattern(typestore):
+    """Test that pybag glob patterns work on rosbags-written bags."""
+    with TemporaryDirectory() as temp_dir:
+        bag_path = Path(temp_dir) / "test.bag"
+
+        # Write with rosbags
+        String = typestore.types["std_msgs/msg/String"]
+        with RosbagsWriter(bag_path) as writer:
+            cam_conn = writer.add_connection("/sensor/camera", String.__msgtype__, typestore=typestore)
+            lidar_conn = writer.add_connection("/sensor/lidar", String.__msgtype__, typestore=typestore)
+            ctrl_conn = writer.add_connection("/control/speed", String.__msgtype__, typestore=typestore)
+
+            writer.write(cam_conn, 1, typestore.serialize_ros1(String(data="camera"), String.__msgtype__))
+            writer.write(lidar_conn, 2, typestore.serialize_ros1(String(data="lidar"), String.__msgtype__))
+            writer.write(ctrl_conn, 3, typestore.serialize_ros1(String(data="speed"), String.__msgtype__))
+
+        # Read with pybag using glob
+        with BagFileReader.from_file(bag_path) as reader:
+            sensor_messages = list(reader.messages("/sensor/*"))
+            assert len(sensor_messages) == 2
+            assert set(m.data.data for m in sensor_messages) == {"camera", "lidar"}
+
+            control_messages = list(reader.messages("/control/*"))
+            assert len(control_messages) == 1
+            assert control_messages[0].data.data == "speed"
