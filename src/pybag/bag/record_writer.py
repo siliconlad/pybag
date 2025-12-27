@@ -5,12 +5,12 @@ import struct
 from typing import Literal
 
 from pybag.bag.records import (
+    BagHeaderRecord,
     BagRecordType,
     ChunkInfoRecord,
     ConnectionRecord,
     IndexDataRecord,
-    MessageDataRecord,
-    BagHeaderRecord
+    MessageDataRecord
 )
 from pybag.io.raw_writer import BaseWriter
 

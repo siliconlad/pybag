@@ -8,11 +8,11 @@ from typing import Any, Callable, Literal
 
 from pybag.bag.record_writer import BagRecordWriter
 from pybag.bag.records import (
+    BagHeaderRecord,
     ChunkInfoRecord,
     ConnectionRecord,
     IndexDataRecord,
-    MessageDataRecord,
-    BagHeaderRecord
+    MessageDataRecord
 )
 from pybag.encoding.rosmsg import RosMsgEncoder
 from pybag.io.raw_writer import BaseWriter, BytesWriter, FileWriter
