@@ -1,8 +1,10 @@
+import struct
 import zlib
 from abc import ABC, abstractmethod
 from enum import IntEnum
 from io import BufferedReader
 from pathlib import Path
+from typing import Any
 
 
 class FilePosition(IntEnum):
@@ -143,6 +145,45 @@ class BytesReader(BaseReader):
         if remainder := self._position & (size - 1):
             self._position += size - remainder
         return self
+
+    def unpack_from(self, fmt: str | struct.Struct, size: int) -> tuple[Any, ...]:
+        """Unpack data directly from buffer without creating intermediate bytes.
+
+        This is faster than read() + struct.unpack() because it avoids creating
+        a bytes object. Uses struct.unpack_from() internally.
+
+        Args:
+            fmt: struct format string or pre-compiled Struct object
+            size: number of bytes to consume (must match fmt size)
+
+        Returns:
+            Tuple of unpacked values
+        """
+        if isinstance(fmt, struct.Struct):
+            result = fmt.unpack_from(self._view, self._position)
+        else:
+            result = struct.unpack_from(fmt, self._view, self._position)
+        self._position += size
+        return result
+
+    def unpack_one(self, fmt: str | struct.Struct, size: int) -> Any:
+        """Unpack a single value directly from buffer.
+
+        Convenience method for unpacking a single value without tuple indexing.
+
+        Args:
+            fmt: struct format string or pre-compiled Struct object
+            size: number of bytes to consume
+
+        Returns:
+            Single unpacked value
+        """
+        if isinstance(fmt, struct.Struct):
+            result = fmt.unpack_from(self._view, self._position)[0]
+        else:
+            result = struct.unpack_from(fmt, self._view, self._position)[0]
+        self._position += size
+        return result
 
     def size(self) -> int:
         return self._length
