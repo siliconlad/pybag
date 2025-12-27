@@ -9,7 +9,6 @@ import pytest
 import pybag
 from pybag.schema.ros1msg import Ros1MsgSchemaEncoder, compute_md5sum
 
-
 # Known MD5 sums from official ROS 1 (can be verified with `rosmsg md5 <type>`)
 # std_msgs/Header: 2176decaecbce78abc3b96ef049fabed
 # std_msgs/String: 992ce8a1687cec8c8bd883ec73ca41d1
