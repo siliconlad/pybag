@@ -266,20 +266,39 @@ class McapRecordParser:
         return ChannelRecord(id, channel_id, topic, message_encoding, metadata)
 
 
+    # Pre-compiled struct format for message header parsing
+    # Format: record_length (Q) + channel_id (H) + sequence (I) + log_time (Q) + publish_time (Q)
+    # Total header: 8 + 2 + 4 + 8 + 8 = 30 bytes (but we read record_length separately)
+    _MESSAGE_HEADER_FORMAT = struct.Struct('<HIQQ')
+    _MESSAGE_HEADER_SIZE = 22  # 2 + 4 + 8 + 8 bytes
+
     @classmethod
     def parse_message(cls, file: BaseReader) -> MessageRecord:
+        """Parse a message record using optimized single-unpack approach.
+
+        This method is optimized for performance since it's called for every
+        message in the file. It uses a single struct.unpack call instead of
+        multiple helper method calls.
+        """
         if (record_type := file.read(1)) != b'\x05':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _, record_length = cls._parse_uint64(file)
-        bytes_reader = BytesReader(file.read(record_length))
+        # Read record length (8 bytes) - inlined for performance
+        record_length = struct.unpack('<Q', file.read(8))[0]
 
-        _, channel_id = cls._parse_uint16(bytes_reader)
-        _, sequence = cls._parse_uint32(bytes_reader)
-        _, log_time = cls._parse_timestamp(bytes_reader)
-        _, publish_time = cls._parse_timestamp(bytes_reader)
-        # Other fields: 2 + 4 + 8 + 8 = 22 bytes
-        _, data = cls._parse_bytes(bytes_reader, record_length - 22)
+        # Read entire record data at once
+        record_data = file.read(record_length)
+
+        # Unpack all fixed fields in a single call (2 + 4 + 8 + 8 = 22 bytes)
+        channel_id, sequence, log_time, publish_time = cls._MESSAGE_HEADER_FORMAT.unpack(
+            record_data[:cls._MESSAGE_HEADER_SIZE]
+        )
+
+        # Slice remaining bytes as message data (zero-copy if record_data is memoryview)
+        data = record_data[cls._MESSAGE_HEADER_SIZE:]
+        # Ensure we return bytes, not memoryview (for compatibility)
+        if isinstance(data, memoryview):
+            data = bytes(data)
 
         return MessageRecord(channel_id, sequence, log_time, publish_time, data)
 

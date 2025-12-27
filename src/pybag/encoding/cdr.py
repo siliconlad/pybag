@@ -10,14 +10,71 @@ logger = logging.getLogger(__name__)
 
 
 class CdrDecoder(MessageDecoder):
-    def __init__(self, data: bytes):
+    """CDR (Common Data Representation) decoder for ROS2 messages.
+
+    This decoder supports object reuse via the reset() method to avoid
+    the overhead of creating new decoder instances for each message.
+    """
+
+    __slots__ = ('_is_little_endian', '_data', '_reusable_reader')
+
+    def __init__(self, data: bytes | None = None):
+        """Create a new CDR decoder.
+
+        Args:
+            data: Optional CDR-encoded message data. If None, the decoder
+                  must be initialized with reset() before use.
+        """
+        # Pre-create a reusable BytesReader to avoid allocation per message
+        self._reusable_reader: BytesReader | None = None
+        self._is_little_endian: bool = True
+        self._data: BytesReader
+
+        if data is not None:
+            self._init_from_data(data)
+
+    def _init_from_data(self, data: bytes) -> None:
+        """Initialize decoder state from CDR data."""
         assert len(data) >= 4, 'Data must be at least 4 bytes long (CDR header).'
 
         # Get endianness from second byte
         self._is_little_endian = bool(data[1])
 
-        # Skip first 4 bytes
-        self._data = BytesReader(data[4:])
+        # Skip first 4 bytes (CDR header)
+        # Reuse the BytesReader if possible
+        if self._reusable_reader is not None:
+            # Reset existing reader with new data
+            payload = data[4:]
+            self._reusable_reader._data = payload
+            self._reusable_reader._view = memoryview(payload)
+            self._reusable_reader._position = 0
+            self._reusable_reader._length = len(payload)
+            self._data = self._reusable_reader
+        else:
+            self._data = BytesReader(data[4:])
+            self._reusable_reader = self._data
+
+    def reset(self, data: bytes) -> 'CdrDecoder':
+        """Reset the decoder with new message data for reuse.
+
+        This method allows reusing a single decoder instance across multiple
+        messages, avoiding the overhead of creating new objects. This can
+        provide significant performance improvements when decoding many messages.
+
+        Args:
+            data: CDR-encoded message data (must include 4-byte CDR header)
+
+        Returns:
+            self, allowing for method chaining
+
+        Example:
+            decoder = CdrDecoder()
+            for msg in messages:
+                decoder.reset(msg.data)
+                decoded = compiled_decoder(decoder)
+        """
+        self._init_from_data(data)
+        return self
 
     def parse(self, type_str: str) -> Any:
         return getattr(self, type_str)()

@@ -83,20 +83,43 @@ class FileReader(BaseReader):
 
 
 class BytesReader(BaseReader):
-    def __init__(self, data: bytes):
+    """A reader for bytes data using memoryview for zero-copy slicing.
+
+    Using memoryview avoids creating new bytes objects on every read,
+    which significantly improves performance for high-frequency read operations.
+    """
+
+    __slots__ = ('_data', '_view', '_position', '_length')
+
+    def __init__(self, data: bytes | memoryview):
+        # Store original data to prevent garbage collection
         self._data = data
+        # Create memoryview for zero-copy slicing
+        self._view = memoryview(data) if not isinstance(data, memoryview) else data
         self._position = 0
+        self._length = len(data)
 
     def peek(self, size: int) -> bytes:
         # Returns empty bytes when end of data
-        return self._data[self._position:self._position + size]
+        return bytes(self._view[self._position:self._position + size])
 
     def read(self, size: int | None = None) -> bytes:
         if size is None:
-            result = self._data[self._position:]
-            self._position = len(self._data)
+            result = bytes(self._view[self._position:])
+            self._position = self._length
             return result
-        result = self._data[self._position:self._position + size]
+        # Use memoryview slice - this is zero-copy
+        result = bytes(self._view[self._position:self._position + size])
+        self._position += size
+        return result
+
+    def read_view(self, size: int) -> memoryview:
+        """Read bytes as a memoryview slice (zero-copy).
+
+        This is faster than read() when the caller can work with memoryview,
+        such as when passing directly to struct.unpack().
+        """
+        result = self._view[self._position:self._position + size]
         self._position += size
         return result
 
@@ -105,7 +128,7 @@ class BytesReader(BaseReader):
         return self._position
 
     def seek_from_end(self, offset: int) -> int:
-        self._position = len(self._data) - offset
+        self._position = self._length - offset
         return self._position
 
     def seek_from_current(self, offset: int) -> int:
@@ -122,7 +145,7 @@ class BytesReader(BaseReader):
         return self
 
     def size(self) -> int:
-        return len(self._data)
+        return self._length
 
     def close(self) -> None:
         pass
