@@ -8,16 +8,10 @@ from pybag.bag.records import (
     BagRecordType,
     ChunkInfoRecord,
     ConnectionRecord,
+    IndexDataRecord,
     MessageDataRecord
 )
-from pybag.io.raw_writer import BaseWriter, BytesWriter
-
-# Try to import lz4 for LZ4 compression support
-try:
-    import lz4.frame
-    HAS_LZ4 = True
-except ImportError:
-    HAS_LZ4 = False
+from pybag.io.raw_writer import BaseWriter
 
 # ROS 1 bag format version string
 BAG_VERSION = b'#ROSBAG V2.0\n'
@@ -76,9 +70,9 @@ class BagRecordWriter:
 
         # Write: header_len | header | data_len | data
         result = 0
-        result += self._writer.write(struct.pack('<I', len(header)))
+        result += self._writer.write(struct.pack('<i', len(header)))
         result += self._writer.write(header)
-        result += self._writer.write(struct.pack('<I', len(data)))
+        result += self._writer.write(struct.pack('<i', len(data)))
         result += self._writer.write(data)
         return result
 
@@ -99,12 +93,14 @@ class BagRecordWriter:
             Number of bytes written.
         """
         header_fields = [
-            ('index_pos', struct.pack('<Q', index_pos)),
-            ('conn_count', struct.pack('<I', conn_count)),
-            ('chunk_count', struct.pack('<I', chunk_count)),
+            ('index_pos', struct.pack('<q', index_pos)),
+            ('conn_count', struct.pack('<i', conn_count)),
+            ('chunk_count', struct.pack('<i', chunk_count)),
         ]
-        # Bag header has no data section (empty)
-        return self._write_record(BagRecordType.BAG_HEADER, header_fields, b'')
+        # The bag header record is padded out by filling data with ASCII space characters (0x20)
+        # so that additional information can be added after the bag file is recorded.
+        # Currently, this padding is such that the header is 4096 bytes long.
+        return self._write_record(BagRecordType.BAG_HEADER, header_fields, b' ' * 4096)
 
     def write_connection(self, conn: ConnectionRecord) -> int:
         """Write a connection record.
@@ -116,24 +112,10 @@ class BagRecordWriter:
             Number of bytes written.
         """
         header_fields = [
-            ('conn', struct.pack('<I', conn.conn)),
+            ('conn', struct.pack('<i', conn.conn)),
             ('topic', conn.topic.encode('utf-8')),
         ]
-
-        # Build the data section with connection details
-        data_buffer = BytesWriter()
-        data_buffer.write(self._encode_header_field('type', conn.msg_type.encode('utf-8')))
-        data_buffer.write(self._encode_header_field('md5sum', conn.md5sum.encode('ascii')))
-        data_buffer.write(self._encode_header_field(
-            'message_definition',
-            conn.message_definition.encode('utf-8')
-        ))
-        if conn.callerid is not None:
-            data_buffer.write(self._encode_header_field('callerid', conn.callerid.encode('utf-8')))
-        if conn.latching is not None:
-            data_buffer.write(self._encode_header_field('latching', conn.latching.encode('ascii')))
-
-        return self._write_record(BagRecordType.CONNECTION, header_fields, data_buffer.as_bytes())
+        return self._write_record(BagRecordType.CONNECTION, header_fields, conn.data)
 
     def write_message_data(self, msg: MessageDataRecord) -> int:
         """Write a message data record.
@@ -145,15 +127,15 @@ class BagRecordWriter:
             Number of bytes written.
         """
         header_fields = [
-            ('conn', struct.pack('<I', msg.conn)),
-            ('time', struct.pack('<II', msg.time_sec, msg.time_nsec)),
+            ('conn', struct.pack('<i', msg.conn)),
+            ('time', struct.pack('<q', msg.time)),
         ]
         return self._write_record(BagRecordType.MSG_DATA, header_fields, msg.data)
 
     def write_chunk(
         self,
         data: bytes,
-        compression: Literal['none', 'bz2', 'lz4'] = 'none'
+        compression: Literal['none', 'bz2'] = 'none'
     ) -> int:
         """Write a chunk record.
 
@@ -170,45 +152,30 @@ class BagRecordWriter:
             compressed_data = data
         elif compression == 'bz2':
             compressed_data = bz2.compress(data)
-        elif compression == 'lz4':
-            if not HAS_LZ4:
-                raise ValueError('lz4 compression not available. Install with: pip install lz4')
-            compressed_data = lz4.frame.compress(data)
         else:
             raise ValueError(f'Unknown compression type: {compression}')
 
         header_fields = [
             ('compression', compression.encode('ascii')),
-            ('size', struct.pack('<I', uncompressed_size)),
+            ('size', struct.pack('<i', uncompressed_size)),
         ]
         return self._write_record(BagRecordType.CHUNK, header_fields, compressed_data)
 
-    def write_index_data(
-        self,
-        conn: int,
-        entries: list[tuple[int, int, int]]
-    ) -> int:
+    def write_index_data(self, index: IndexDataRecord) -> int:
         """Write an index data record.
 
         Args:
-            conn: Connection ID.
-            entries: List of (time_sec, time_nsec, offset) tuples.
+            index: The index data record to write.
 
         Returns:
             Number of bytes written.
         """
         header_fields = [
-            ('ver', struct.pack('<I', 1)),  # Version 1
-            ('conn', struct.pack('<I', conn)),
-            ('count', struct.pack('<I', len(entries))),
+            ('ver', struct.pack('<i', index.ver)),
+            ('conn', struct.pack('<i', index.conn)),
+            ('count', struct.pack('<i', index.count)),
         ]
-
-        # Build index data: (time_sec, time_nsec, offset) for each entry
-        data_buffer = BytesWriter()
-        for time_sec, time_nsec, offset in entries:
-            data_buffer.write(struct.pack('<III', time_sec, time_nsec, offset))
-
-        return self._write_record(BagRecordType.INDEX_DATA, header_fields, data_buffer.as_bytes())
+        return self._write_record(BagRecordType.INDEX_DATA, header_fields, index.data)
 
     def write_chunk_info(self, chunk_info: ChunkInfoRecord) -> int:
         """Write a chunk info record.
@@ -220,19 +187,14 @@ class BagRecordWriter:
             Number of bytes written.
         """
         header_fields = [
-            ('ver', struct.pack('<I', chunk_info.ver)),
-            ('chunk_pos', struct.pack('<Q', chunk_info.chunk_pos)),
-            ('start_time', struct.pack('<II', chunk_info.start_time_sec, chunk_info.start_time_nsec)),
-            ('end_time', struct.pack('<II', chunk_info.end_time_sec, chunk_info.end_time_nsec)),
-            ('count', struct.pack('<I', chunk_info.count)),
+            ('ver', struct.pack('<i', chunk_info.ver)),
+            ('chunk_pos', struct.pack('<q', chunk_info.chunk_pos)),
+            ('start_time', struct.pack('<q', chunk_info.start_time)),
+            ('end_time', struct.pack('<q', chunk_info.end_time)),
+            ('count', struct.pack('<i', chunk_info.count)),
         ]
 
-        # Build connection counts data
-        data_buffer = BytesWriter()
-        for conn_id, msg_count in chunk_info.connection_counts.items():
-            data_buffer.write(struct.pack('<II', conn_id, msg_count))
-
-        return self._write_record(BagRecordType.CHUNK_INFO, header_fields, data_buffer.as_bytes())
+        return self._write_record(BagRecordType.CHUNK_INFO, header_fields, chunk_info.data)
 
     def tell(self) -> int:
         """Get the current position in the output stream.

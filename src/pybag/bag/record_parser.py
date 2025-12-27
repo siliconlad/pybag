@@ -21,13 +21,6 @@ logger = logging.getLogger(__name__)
 # ROS 1 bag format version string
 BAG_VERSION = b'#ROSBAG V2.0\n'
 
-# Try to import lz4 for LZ4 compression support
-try:
-    import lz4.frame
-    HAS_LZ4 = True
-except ImportError:
-    HAS_LZ4 = False
-
 
 class MalformedBag(Exception):
     """The ROS 1 bag file does not conform to the specification."""
@@ -51,7 +44,6 @@ class BagRecordParser:
         version_line = file.read(len(BAG_VERSION))
         if not version_line.startswith(b'#ROSBAG V'):
             raise MalformedBag(f'Invalid bag file version: {version_line!r}')
-        # Extract version number (e.g., "2.0")
         version = version_line[9:-1].decode('ascii')  # Skip "#ROSBAG V" and newline
         return version
 
@@ -68,7 +60,7 @@ class BagRecordParser:
         Returns:
             Tuple of (new_offset, field_name, field_value).
         """
-        field_len = struct.unpack_from('<I', data, offset)[0]
+        field_len = struct.unpack_from('<i', data, offset)[0]
         offset += 4
         field_data = data[offset:offset + field_len]
         offset += field_len
@@ -83,7 +75,7 @@ class BagRecordParser:
         return offset, name, value
 
     @classmethod
-    def _parse_header(cls, file: BaseReader) -> dict[str, bytes]:
+    def _parse_header(cls, file: BaseReader, header_len: int) -> dict[str, bytes]:
         """Parse a record header.
 
         Format: header_len (4 bytes) | header_data
@@ -91,11 +83,10 @@ class BagRecordParser:
         Returns:
             Dictionary mapping field names to raw byte values.
         """
-        header_len = struct.unpack('<I', file.read(4))[0]
         header_data = file.read(header_len)
 
-        fields: dict[str, bytes] = {}
         offset = 0
+        fields: dict[str, bytes] = {}
         while offset < len(header_data):
             offset, name, value = cls._parse_header_field(header_data, offset)
             fields[name] = value
@@ -103,7 +94,7 @@ class BagRecordParser:
         return fields
 
     @classmethod
-    def _parse_data(cls, file: BaseReader) -> bytes:
+    def _parse_data(cls, file: BaseReader, data_len: int) -> bytes:
         """Parse record data.
 
         Format: data_len (4 bytes) | data
@@ -111,7 +102,6 @@ class BagRecordParser:
         Returns:
             The raw data bytes.
         """
-        data_len = struct.unpack('<I', file.read(4))[0]
         return file.read(data_len)
 
     @classmethod
@@ -125,20 +115,22 @@ class BagRecordParser:
         header_len_bytes = file.read(4)
         if len(header_len_bytes) < 4:
             return None  # EOF
-
-        # Seek back and parse full record
-        file.seek_from_current(-4)
-
-        header = cls._parse_header(file)
-        data = cls._parse_data(file)
+        header_len = struct.unpack('<i', header_len_bytes)[0]
+        header = cls._parse_header(file, header_len)
 
         # Get the operation type
         if 'op' not in header:
             raise MalformedBag('Record header missing op field')
-
         op = struct.unpack('<B', header['op'])[0]
-        record = cls._parse_record_by_type(op, header, data)
-        return op, record
+
+        # Parse the data
+        data_len_bytes = file.read(4)
+        if len(header_len_bytes) < 4:
+            return None  # EOF
+        data_len = struct.unpack('<i', data_len_bytes)[0]
+        data = cls._parse_data(file, data_len)
+
+        return op, cls._parse_record_by_type(op, header, data)
 
     @classmethod
     def _parse_record_by_type(
@@ -171,10 +163,10 @@ class BagRecordParser:
         data: bytes
     ) -> BagHeaderRecord:
         """Parse a bag header record."""
-        index_pos = struct.unpack('<Q', header['index_pos'])[0]
-        conn_count = struct.unpack('<I', header['conn_count'])[0]
-        chunk_count = struct.unpack('<I', header['chunk_count'])[0]
-        return BagHeaderRecord(index_pos, conn_count, chunk_count)
+        index_pos = struct.unpack('<q', header['index_pos'])[0]
+        conn_count = struct.unpack('<i', header['conn_count'])[0]
+        chunk_count = struct.unpack('<i', header['chunk_count'])[0]
+        return BagHeaderRecord(index_pos, conn_count, chunk_count, data)
 
     @classmethod
     def _parse_chunk(
@@ -184,7 +176,7 @@ class BagRecordParser:
     ) -> ChunkRecord:
         """Parse a chunk record."""
         compression = header['compression'].decode('ascii')
-        size = struct.unpack('<I', header['size'])[0]
+        size = struct.unpack('<i', header['size'])[0]
         return ChunkRecord(compression, size, data)
 
     @classmethod
@@ -198,37 +190,9 @@ class BagRecordParser:
         The connection header contains basic info, and the data section
         contains the full connection header from the original publisher.
         """
-        conn = struct.unpack('<I', header['conn'])[0]
+        conn = struct.unpack('<i', header['conn'])[0]
         topic = header['topic'].decode('utf-8')
-
-        # Parse the data section which contains the message type info
-        data_fields: dict[str, bytes] = {}
-        offset = 0
-        while offset < len(data):
-            offset, name, value = cls._parse_header_field(data, offset)
-            data_fields[name] = value
-
-        msg_type = data_fields['type'].decode('utf-8')
-        md5sum = data_fields['md5sum'].decode('ascii')
-        message_definition = data_fields.get('message_definition', b'').decode('utf-8')
-
-        callerid = None
-        if 'callerid' in data_fields:
-            callerid = data_fields['callerid'].decode('utf-8')
-
-        latching = None
-        if 'latching' in data_fields:
-            latching = data_fields['latching'].decode('ascii')
-
-        return ConnectionRecord(
-            conn=conn,
-            topic=topic,
-            msg_type=msg_type,
-            md5sum=md5sum,
-            message_definition=message_definition,
-            callerid=callerid,
-            latching=latching,
-        )
+        return ConnectionRecord(conn, topic, data)
 
     @classmethod
     def _parse_message_data(
@@ -237,9 +201,9 @@ class BagRecordParser:
         data: bytes
     ) -> MessageDataRecord:
         """Parse a message data record."""
-        conn = struct.unpack('<I', header['conn'])[0]
-        time_sec, time_nsec = struct.unpack('<II', header['time'])
-        return MessageDataRecord(conn, time_sec, time_nsec, data)
+        conn = struct.unpack('<i', header['conn'])[0]
+        time = struct.unpack('<q', header['time'])[0]
+        return MessageDataRecord(conn, time, data)
 
     @classmethod
     def _parse_index_data(
@@ -248,19 +212,10 @@ class BagRecordParser:
         data: bytes
     ) -> IndexDataRecord:
         """Parse an index data record."""
-        ver = struct.unpack('<I', header['ver'])[0]
-        conn = struct.unpack('<I', header['conn'])[0]
-        count = struct.unpack('<I', header['count'])[0]
-
-        # Parse index entries: (time_sec, time_nsec, offset)
-        # Each entry is 12 bytes: 4 + 4 + 4
-        entries: list[tuple[int, int, int]] = []
-        for i in range(count):
-            offset = i * 12
-            time_sec, time_nsec, chunk_offset = struct.unpack_from('<III', data, offset)
-            entries.append((time_sec, time_nsec, chunk_offset))
-
-        return IndexDataRecord(ver, conn, count, entries)
+        ver = struct.unpack('<i', header['ver'])[0]
+        conn = struct.unpack('<i', header['conn'])[0]
+        count = struct.unpack('<i', header['count'])[0]
+        return IndexDataRecord(ver, conn, count, data)
 
     @classmethod
     def _parse_chunk_info(
@@ -269,31 +224,12 @@ class BagRecordParser:
         data: bytes
     ) -> ChunkInfoRecord:
         """Parse a chunk info record."""
-        ver = struct.unpack('<I', header['ver'])[0]
-        chunk_pos = struct.unpack('<Q', header['chunk_pos'])[0]
-        start_time_sec, start_time_nsec = struct.unpack('<II', header['start_time'])
-        end_time_sec, end_time_nsec = struct.unpack('<II', header['end_time'])
-        count = struct.unpack('<I', header['count'])[0]
-
-        # Parse connection counts from data section
-        # Format: conn_id (4 bytes) + count (4 bytes) for each connection
-        connection_counts: dict[int, int] = {}
-        num_entries = len(data) // 8
-        for i in range(num_entries):
-            offset = i * 8
-            conn_id, msg_count = struct.unpack_from('<II', data, offset)
-            connection_counts[conn_id] = msg_count
-
-        return ChunkInfoRecord(
-            ver=ver,
-            chunk_pos=chunk_pos,
-            start_time_sec=start_time_sec,
-            start_time_nsec=start_time_nsec,
-            end_time_sec=end_time_sec,
-            end_time_nsec=end_time_nsec,
-            count=count,
-            connection_counts=connection_counts,
-        )
+        ver = struct.unpack('<i', header['ver'])[0]
+        chunk_pos = struct.unpack('<q', header['chunk_pos'])[0]
+        start_time = struct.unpack('<q', header['start_time'])[0]
+        end_time = struct.unpack('<q', header['end_time'])[0]
+        count = struct.unpack('<i', header['count'])[0]
+        return ChunkInfoRecord(ver, chunk_pos, start_time, end_time, count, data)
 
     @classmethod
     def decompress_chunk(cls, chunk: ChunkRecord) -> bytes:
@@ -312,10 +248,6 @@ class BagRecordParser:
             return chunk.data
         elif chunk.compression == 'bz2':
             return bz2.decompress(chunk.data)
-        elif chunk.compression == 'lz4':
-            if not HAS_LZ4:
-                raise MalformedBag('lz4 compression not available. Install with: pip install lz4')
-            return lz4.frame.decompress(chunk.data)
         else:
             raise MalformedBag(f'Unknown compression type: {chunk.compression}')
 
