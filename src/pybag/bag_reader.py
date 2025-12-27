@@ -365,6 +365,8 @@ class BagFileReader:
         start_time: int | None,
         end_time: int | None,
         chunk_idx: int = 0,
+        *,
+        in_log_time_order: bool = True,
     ) -> Iterator[tuple[int, int, int, int]]:
         """Create an iterator that yields message references for a chunk.
 
@@ -398,7 +400,10 @@ class BagFileReader:
                 message_refs.append((timestamp, offset, conn_id))
 
         # Sort by timestamp, then offset for determinism
-        message_refs.sort(key=lambda x: (x[0], x[1]))
+        if in_log_time_order:
+            message_refs.sort(key=lambda x: (x[0], x[1]))
+        else:
+            message_refs.sort(key=lambda x: x[1])
 
         # Yield the references
         for timestamp, offset, conn_id in message_refs:
@@ -457,12 +462,22 @@ class BagFileReader:
             )
         elif in_log_time_order and not has_overlapping_chunks:
             yield from self._get_messages_sequential(
-                relevant_chunks, conn_ids, start_time, end_time, filter
+                relevant_chunks,
+                conn_ids,
+                start_time,
+                end_time,
+                msg_filter=filter,
+                in_log_time_order=in_log_time_order,
             )
         else:
             chunks_by_pos = sorted(relevant_chunks, key=lambda ci: ci.chunk_pos)
             yield from self._get_messages_sequential(
-                chunks_by_pos, conn_ids, start_time, end_time, filter
+                chunks_by_pos,
+                conn_ids,
+                start_time,
+                end_time,
+                msg_filter=filter,
+                in_log_time_order=in_log_time_order,
             )
 
     def _has_overlapping_chunks(self, chunks: list[ChunkInfoRecord]) -> bool:
@@ -482,6 +497,8 @@ class BagFileReader:
         start_time: int | None,
         end_time: int | None,
         msg_filter: Callable[[DecodedMessage], bool] | None,
+        *,
+        in_log_time_order: bool = True,
     ) -> Generator[DecodedMessage, None, None]:
         """Get messages from non-overlapping chunks sequentially.
 
@@ -500,7 +517,7 @@ class BagFileReader:
             reader = BytesReader(chunk_data)
 
             for timestamp, _, offset, conn_id in self._chunk_message_iterator(
-                chunk_info, conn_ids, start_time, end_time
+                chunk_info, conn_ids, start_time, end_time, in_log_time_order=in_log_time_order
             ):
                 reader.seek_from_start(offset)
                 record_result = BagRecordParser.parse_record(reader)
