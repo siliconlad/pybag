@@ -27,7 +27,7 @@ class GridCells:
 class MapMetaData:
     __msg_name__ = 'nav_msgs/MapMetaData'
 
-    map_load_time: t.time
+    map_load_time: t.ros1.time
     resolution: t.float32
     width: t.uint32
     height: t.uint32

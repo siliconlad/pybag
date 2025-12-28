@@ -9,6 +9,7 @@ from rosbags.rosbag1 import Reader as RosbagsReader
 from rosbags.typesys import Stores, get_typestore
 
 import pybag
+import pybag.types as t
 from pybag.bag.record_parser import BagRecordParser
 from pybag.bag.records import BagRecordType, IndexDataRecord
 from pybag.bag_reader import BagFileReader
@@ -20,36 +21,36 @@ from pybag.io.raw_reader import FileReader
 class SimpleMessage:
     """A simple test message."""
     __msg_name__ = 'test_msgs/SimpleMessage'
-    value: pybag.int32
-    name: pybag.string
+    value: t.int32
+    name: t.string
 
 
 @dataclass(kw_only=True)
 class OtherMessage:
     """Another test message type."""
     __msg_name__ = 'test_msgs/OtherMessage'
-    data: pybag.float64
+    data: t.float64
 
 
 @dataclass(kw_only=True)
 class StringMessage:
     """A simple string message compatible with std_msgs/String."""
     __msg_name__ = "std_msgs/String"
-    data: pybag.string
+    data: t.string
 
 
 @dataclass(kw_only=True)
 class Int32Message:
     """A simple int32 message compatible with std_msgs/Int32."""
     __msg_name__ = "std_msgs/Int32"
-    data: pybag.int32
+    data: t.int32
 
 
 @dataclass(kw_only=True)
 class Float64Message:
     """A simple float64 message compatible with std_msgs/Float64."""
     __msg_name__ = "std_msgs/Float64"
-    data: pybag.float64
+    data: t.float64
 
 
 @pytest.fixture

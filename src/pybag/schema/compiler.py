@@ -90,7 +90,7 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
         'float64': t.float64,
         'bool': t.bool,
         'byte': t.byte,
-        'char': t.char,
+        'char': t.ros2.char,
         'string': t.string,
         'wstring': t.wstring,
     }

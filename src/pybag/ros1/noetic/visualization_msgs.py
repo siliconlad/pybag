@@ -34,7 +34,7 @@ class ImageMarker:
     outline_color: std_msgs.ColorRGBA
     filled: t.uint8
     fill_color: std_msgs.ColorRGBA
-    lifetime: t.duration
+    lifetime: t.ros1.duration
     points: t.Array[geometry_msgs.Point]
     outline_colors: t.Array[std_msgs.ColorRGBA]
 
@@ -97,7 +97,7 @@ class Marker:
     pose: geometry_msgs.Pose
     scale: geometry_msgs.Vector3
     color: std_msgs.ColorRGBA
-    lifetime: t.duration
+    lifetime: t.ros1.duration
     frame_locked: t.bool
     points: t.Array[geometry_msgs.Point]
     colors: t.Array[std_msgs.ColorRGBA]

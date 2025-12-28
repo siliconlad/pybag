@@ -391,6 +391,9 @@ class Ros1CodeGenerator:
     def type_annotation(self, type_obj: Any) -> str:
         """Generate type annotation string for a field type."""
         if isinstance(type_obj, Primitive):
+            # ROS 1 specific types go under ros1 namespace
+            if type_obj.type in ("time", "duration", "char"):
+                return f"t.ros1.{type_obj.type}"
             return f"t.{type_obj.type}"
 
         if isinstance(type_obj, String):

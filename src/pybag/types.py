@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import (
     Annotated,
     Any,
@@ -26,14 +28,79 @@ float64 = Annotated[float, ("float64",)]
 
 bool = Annotated[bool, ("bool",)]
 byte = Annotated[int, ("byte",)]
-char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
-# ROS1 primitive types for time and duration
-# These are represented as (sec: uint32, nsec: uint32) tuples
-time = Annotated[tuple[int, int], ("time",)]
-duration = Annotated[tuple[int, int], ("duration",)]
+
+# ROS 1 time and duration types
+# Two-integer timestamp that is expressed as:
+# * secs: seconds since epoch
+# * nsecs: nanoseconds since secs
+@dataclass(frozen=True, slots=True)
+class Time:
+    """ROS 1 time representation with secs and nsecs attributes.
+
+    This is a ROS 1 specific type. For ROS 2, use builtin_interfaces/Time instead.
+    """
+    secs: int
+    nsecs: int
+
+    def to_ns(self) -> int:
+        """Convert to nanoseconds since epoch."""
+        return self.secs * 1_000_000_000 + self.nsecs
+
+    def to_sec(self) -> float:
+        """Convert to seconds since epoch."""
+        return self.secs + self.nsecs / 1_000_000_000
+
+    @classmethod
+    def from_ns(cls, nsec: int) -> 'Time':
+        """Create Time from nanoseconds since epoch."""
+        return cls(secs=nsec // 1_000_000_000, nsecs=nsec % 1_000_000_000)
+
+
+@dataclass(frozen=True, slots=True)
+class Duration:
+    """ROS 1 duration representation with secs and nsecs attributes.
+
+    This is a ROS 1 specific type. For ROS 2, use builtin_interfaces/Duration instead.
+    """
+    secs: int
+    nsecs: int
+
+    def to_ns(self) -> int:
+        """Convert to nanoseconds."""
+        return self.secs * 1_000_000_000 + self.nsecs
+
+    def to_sec(self) -> float:
+        """Convert to seconds since epoch."""
+        return self.secs + self.nsecs / 1_000_000_000
+
+    @classmethod
+    def from_ns(cls, nsec: int) -> 'Duration':
+        """Create Duration from nanoseconds."""
+        return cls(secs=nsec // 1_000_000_000, nsecs=nsec % 1_000_000_000)
+
+
+# ROS 1 namespace for ROS 1 specific types
+# Usage: pybag.ros1.Time, pybag.ros1.Duration or t.ros1.Time, t.ros1.Duration
+ros1 = SimpleNamespace(
+    Time=Time,
+    Duration=Duration,
+    # Type annotations for time and duration fields (ROS 1 only)
+    time = Annotated[Time, ("time",)],
+    duration = Annotated[Duration, ("duration",)],
+    # ROS 1 char is uint8
+    char = Annotated[int, ("char",)]
+)
+
+# ROS 2 namespace for ROS 2 specific types
+# Usage: t.ros2.char
+ros2 = SimpleNamespace(
+    # ROS 2 char is a single character (string)
+    char = Annotated[str, ("char",)]
+)
+
 
 T = TypeVar("T")
 
@@ -117,11 +184,12 @@ __all__ = [
     "float64",
     "bool",
     "byte",
-    "char",
     "string",
     "wstring",
-    "time",
-    "duration",
+    "ros1",
+    "ros2",
+    "Time",
+    "Duration",
     "Message",
     "Array",
     "Complex",

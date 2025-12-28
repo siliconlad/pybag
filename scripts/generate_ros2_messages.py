@@ -450,6 +450,9 @@ class CodeGenerator:
     def type_annotation(self, type_obj: Any) -> str:
         """Generate type annotation string for a field type."""
         if isinstance(type_obj, Primitive):
+            # ROS 2 char goes under ros2 namespace
+            if type_obj.type == "char":
+                return "t.ros2.char"
             return f"t.{type_obj.type}"
 
         if isinstance(type_obj, String):
