@@ -1,6 +1,7 @@
 """Tests for the MCAP reader."""
 import logging
 import random
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -12,9 +13,12 @@ from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.store import Typestore
 
+import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag.mcap_reader import McapFileReader, McapMultipleFileReader
 from pybag.mcap_writer import McapFileWriter
+from pybag.schema.ros2msg import Ros2MsgError
+from pybag.types import Duration, Time
 
 
 def _find_mcap_file(temp_dir: str) -> Path:
@@ -796,3 +800,42 @@ def test_reverse_iteration_multiple_files(enable_crc_check: bool):
         reverse_messages = list(reader.messages("/chatter", in_reverse=True))
         assert [m.data.data for m in reverse_messages] == ["!!", "again", "world", "hello"]
         assert [m.log_time for m in reverse_messages] == [4, 3, 2, 1]
+
+
+#########################################
+#  ROS 1 Types with ROS 2 Profile Tests #
+#########################################
+
+
+@dataclass(kw_only=True)
+class Ros1TimeMessage:
+    """A message with ROS 1 time type (not valid for ROS 2 profile)."""
+    __msg_name__ = 'test_msgs/Ros1TimeMessage'
+    stamp: pybag.time
+
+
+@dataclass(kw_only=True)
+class Ros1DurationMessage:
+    """A message with ROS 1 duration type (not valid for ROS 2 profile)."""
+    __msg_name__ = 'test_msgs/Ros1DurationMessage'
+    elapsed: pybag.duration
+
+
+def test_mcap_writer_ros2_profile_rejects_ros1_time_type():
+    """Test that MCAP writer with ros2 profile rejects ROS 1 time type."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "ros1_time.mcap"
+        with pytest.raises(Ros2MsgError, match="Unknown field type.*time"):
+            with McapFileWriter.open(path, profile="ros2") as writer:
+                msg = Ros1TimeMessage(stamp=Time(secs=1234567890, nsecs=123456789))
+                writer.write_message("/time", 1000, msg)
+
+
+def test_mcap_writer_ros2_profile_rejects_ros1_duration_type():
+    """Test that MCAP writer with ros2 profile rejects ROS 1 duration type."""
+    with TemporaryDirectory() as temp_dir:
+        path = Path(temp_dir) / "ros1_duration.mcap"
+        with pytest.raises(Ros2MsgError, match="Unknown field type.*duration"):
+            with McapFileWriter.open(path, profile="ros2") as writer:
+                msg = Ros1DurationMessage(elapsed=Duration(secs=100, nsecs=500000000))
+                writer.write_message("/duration", 1000, msg)

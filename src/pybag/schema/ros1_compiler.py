@@ -27,6 +27,7 @@ from pybag.schema import (
     Sequence,
     String
 )
+from pybag.types import Duration, Time
 
 # Map primitive ROS1 types to struct format characters
 _STRUCT_FORMAT = {
@@ -221,12 +222,18 @@ def compile_ros1_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Calla
 
             field_type = entry.type
 
-            # Handle time and duration (ROS 1 primitives)
-            if isinstance(field_type, Primitive) and field_type.type in ('time', 'duration'):
+            # Handle time and duration (ROS 1 primitives) - create Time/Duration objects
+            if isinstance(field_type, Primitive) and field_type.type == 'time':
                 flush()
-                lines.append(f"{_TAB}_sec = struct.unpack('<I', _data.read(4))[0]")
-                lines.append(f"{_TAB}_nsec = struct.unpack('<I', _data.read(4))[0]")
-                lines.append(f"{_TAB}_fields[{field_name!r}] = (_sec, _nsec)")
+                lines.append(f"{_TAB}_secs = struct.unpack('<I', _data.read(4))[0]")
+                lines.append(f"{_TAB}_nsecs = struct.unpack('<I', _data.read(4))[0]")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = _Time(secs=_secs, nsecs=_nsecs)")
+                continue
+            if isinstance(field_type, Primitive) and field_type.type == 'duration':
+                flush()
+                lines.append(f"{_TAB}_secs = struct.unpack('<I', _data.read(4))[0]")
+                lines.append(f"{_TAB}_nsecs = struct.unpack('<I', _data.read(4))[0]")
+                lines.append(f"{_TAB}_fields[{field_name!r}] = _Duration(secs=_secs, nsecs=_nsecs)")
                 continue
 
             if isinstance(field_type, Primitive) and field_type.type in _STRUCT_FORMAT:
@@ -314,7 +321,12 @@ def compile_ros1_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Calla
     build(schema)
     code = "import struct\n" + "\n\n".join(function_defs)
 
-    namespace: dict[str, object] = {"struct": struct, "_dataclass_types": dataclass_types}
+    namespace: dict[str, object] = {
+        "struct": struct,
+        "_dataclass_types": dataclass_types,
+        "_Time": Time,
+        "_Duration": Duration,
+    }
     exec(code, namespace)
     return namespace[f"decode_{_sanitize(schema.name)}"]  # type: ignore
 
@@ -386,12 +398,12 @@ def compile_ros1_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> C
         def emit(field_type: SchemaFieldType, value_expr: str, indent: int) -> list[str]:
             pad = _TAB * indent
 
-            # Handle time and duration (ROS 1 primitives)
+            # Handle time and duration (ROS 1 primitives) - use secs/nsecs attributes
             if isinstance(field_type, Primitive) and field_type.type in ('time', 'duration'):
                 value_var = new_var("value")
                 return [
                     f"{pad}{value_var} = {value_expr}",
-                    f"{pad}_payload.write(struct_pack('<II', {value_var}[0], {value_var}[1]))",
+                    f"{pad}_payload.write(struct_pack('<II', {value_var}.secs, {value_var}.nsecs))",
                 ]
 
             if isinstance(field_type, Primitive):

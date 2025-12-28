@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import (
     Annotated,
     Any,
@@ -30,10 +31,54 @@ char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
-# ROS1 primitive types for time and duration
-# These are represented as (sec: uint32, nsec: uint32) tuples
-time = Annotated[tuple[int, int], ("time",)]
-duration = Annotated[tuple[int, int], ("duration",)]
+
+# ROS 1 time and duration types
+# Two-integer timestamp that is expressed as:
+# * secs: seconds since epoch
+# * nsecs: nanoseconds since secs
+@dataclass(frozen=True, slots=True)
+class Time:
+    """ROS 1 time representation with secs and nsecs attributes."""
+    secs: int
+    nsecs: int
+
+    def to_ns(self) -> int:
+        """Convert to nanoseconds since epoch."""
+        return self.secs * 1_000_000_000 + self.nsecs
+
+    def to_sec(self) -> float:
+        """Convert to seconds since epoch."""
+        return self.secs + self.nsecs / 1_000_000_000
+
+    @classmethod
+    def from_ns(cls, nsec: int) -> 'Time':
+        """Create Time from nanoseconds since epoch."""
+        return cls(secs=nsec // 1_000_000_000, nsecs=nsec % 1_000_000_000)
+
+
+@dataclass(frozen=True, slots=True)
+class Duration:
+    """ROS 1 duration representation with secs and nsecs attributes."""
+    secs: int
+    nsecs: int
+
+    def to_ns(self) -> int:
+        """Convert to nanoseconds."""
+        return self.secs * 1_000_000_000 + self.nsecs
+
+    def to_sec(self) -> float:
+        """Convert to seconds since epoch."""
+        return self.secs + self.nsecs / 1_000_000_000
+
+    @classmethod
+    def from_ns(cls, nsec: int) -> 'Duration':
+        """Create Duration from nanoseconds."""
+        return cls(secs=nsec // 1_000_000_000, nsecs=nsec % 1_000_000_000)
+
+
+# Type annotations for time and duration fields
+time = Annotated[Time, ("time",)]
+duration = Annotated[Duration, ("duration",)]
 
 T = TypeVar("T")
 
