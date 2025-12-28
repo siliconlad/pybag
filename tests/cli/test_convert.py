@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import pybag
+import pybag.types as t
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
 from pybag.cli.mcap_convert import convert
@@ -19,15 +19,28 @@ from pybag.mcap_writer import McapFileWriter
 class SimpleInt:
     """A simple int32 message compatible with both ROS1 and ROS2."""
     __msg_name__ = 'test_msgs/SimpleInt'
-    data: pybag.int32
+    data: t.int32
 
 
 @dataclass(kw_only=True)
 class SimpleString:
     """A simple string message compatible with both ROS1 and ROS2."""
     __msg_name__ = 'test_msgs/SimpleString'
-    data: pybag.string
+    data: t.string
 
+
+@dataclass(kw_only=True)
+class CharMessageRos1:
+    """Message with ROS1 char field (uint8)."""
+    __msg_name__ = 'test_msgs/CharMessage'
+    value: t.ros1.char
+
+
+@dataclass(kw_only=True)
+class CharMessageRos2:
+    """Message with ROS2 char field (string)."""
+    __msg_name__ = 'test_msgs/CharMessage'
+    value: t.ros2.char
 
 # --- bag to mcap conversion tests ---
 
@@ -338,3 +351,69 @@ def test_convert_roundtrip_mcap_bag_mcap(tmp_path: Path) -> None:
             for o, f in zip(orig_msgs, final_msgs, strict=True):
                 assert o.log_time == f.log_time
                 assert o.data.data == f.data.data
+
+
+# --- Char type conversion tests ---
+# Note: char conversion works automatically via the serialization layer.
+
+
+def test_convert_bag_to_mcap_with_char(tmp_path: Path) -> None:
+    """Test bag to mcap conversion preserves char field values."""
+    bag_path = tmp_path / "input.bag"
+    mcap_path = tmp_path / "output.mcap"
+
+    # Create bag with ROS1 char message (uint8)
+    with BagFileWriter.open(bag_path) as writer:
+        msg = CharMessageRos1(value=65)  # ASCII 'A'
+        writer.write_message("/char", int(1e9), msg)
+
+    # Convert to mcap
+    convert(bag_path, mcap_path)
+
+    # Verify the char value is preserved (as string in ROS2)
+    with McapFileReader.from_file(mcap_path) as reader:
+        messages = list(reader.messages("/char"))
+        assert len(messages) == 1
+        assert messages[0].data.value == 'A'
+
+
+def test_convert_mcap_to_bag_with_char(tmp_path: Path) -> None:
+    """Test mcap to bag conversion preserves char field values."""
+    mcap_path = tmp_path / "input.mcap"
+    bag_path = tmp_path / "output.bag"
+
+    # Create mcap with ROS2 char message (string)
+    with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
+        msg = CharMessageRos2(value='A')
+        writer.write_message("/char", int(1e9), msg)
+
+    # Convert to bag
+    convert(mcap_path, bag_path)
+
+    # Verify the char value is preserved (as uint8 in ROS1)
+    with BagFileReader.from_file(bag_path) as reader:
+        messages = list(reader.messages("/char"))
+        assert len(messages) == 1
+        assert messages[0].data.value == 65  # ASCII 'A'
+
+
+def test_convert_roundtrip_char_bag_mcap_bag(tmp_path: Path) -> None:
+    """Test that char values are preserved through bag -> mcap -> bag roundtrip."""
+    original_bag = tmp_path / "original.bag"
+    mcap_path = tmp_path / "intermediate.mcap"
+    final_bag = tmp_path / "final.bag"
+
+    # Create original bag with char message
+    with BagFileWriter.open(original_bag) as writer:
+        msg = CharMessageRos1(value=90)  # ASCII 'Z'
+        writer.write_message("/char", int(1e9), msg)
+
+    # Convert bag -> mcap -> bag
+    convert(original_bag, mcap_path)
+    convert(mcap_path, final_bag)
+
+    # Verify the char value is preserved
+    with BagFileReader.from_file(final_bag) as reader:
+        messages = list(reader.messages("/char"))
+        assert len(messages) == 1
+        assert messages[0].data.value == 90
