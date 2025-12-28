@@ -231,8 +231,8 @@ def compile_ros1_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Calla
                 continue
             if isinstance(field_type, Primitive) and field_type.type == 'duration':
                 flush()
-                lines.append(f"{_TAB}_secs = struct.unpack('<I', _data.read(4))[0]")
-                lines.append(f"{_TAB}_nsecs = struct.unpack('<I', _data.read(4))[0]")
+                lines.append(f"{_TAB}_secs = struct.unpack('<i', _data.read(4))[0]")
+                lines.append(f"{_TAB}_nsecs = struct.unpack('<i', _data.read(4))[0]")
                 lines.append(f"{_TAB}_fields[{field_name!r}] = _Duration(secs=_secs, nsecs=_nsecs)")
                 continue
 
@@ -399,11 +399,17 @@ def compile_ros1_serializer(schema: Schema, sub_schemas: dict[str, Schema]) -> C
             pad = _TAB * indent
 
             # Handle time and duration (ROS 1 primitives) - use secs/nsecs attributes
-            if isinstance(field_type, Primitive) and field_type.type in ('time', 'duration'):
+            if isinstance(field_type, Primitive) and field_type.type == 'time':
                 value_var = new_var("value")
                 return [
                     f"{pad}{value_var} = {value_expr}",
                     f"{pad}_payload.write(struct_pack('<II', {value_var}.secs, {value_var}.nsecs))",
+                ]
+            elif isinstance(field_type, Primitive) and field_type.type == 'duration':
+                value_var = new_var("value")
+                return [
+                    f"{pad}{value_var} = {value_expr}",
+                    f"{pad}_payload.write(struct_pack('<ii', {value_var}.secs, {value_var}.nsecs))",
                 ]
 
             if isinstance(field_type, Primitive):

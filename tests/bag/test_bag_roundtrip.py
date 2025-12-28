@@ -259,15 +259,15 @@ def test_write_and_read_time_message(tmp_path: Path):
 def test_write_and_read_duration_message(tmp_path: Path):
     """Test writing and reading a message with ROS 1 duration type."""
     with BagFileWriter.open(tmp_path / 'test.bag') as writer:
-        msg = DurationMessage(elapsed=t.ros1.Duration(secs=100, nsecs=500000000))
+        msg = DurationMessage(elapsed=t.ros1.Duration(secs=-100, nsecs=500000000))
         writer.write_message("/duration", 1000, msg)
 
     with BagFileReader.from_file(tmp_path / 'test.bag') as reader:
         messages = list(reader.messages("/duration"))
         assert len(messages) == 1
 
-        assert messages[0].data.elapsed == t.ros1.Duration(secs=100, nsecs=500000000)
-        assert messages[0].data.elapsed.secs == 100
+        assert messages[0].data.elapsed == t.ros1.Duration(secs=-100, nsecs=500000000)
+        assert messages[0].data.elapsed.secs == -100
         assert messages[0].data.elapsed.nsecs == 500000000
 
 
