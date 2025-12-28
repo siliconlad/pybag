@@ -26,7 +26,7 @@ class MessageDecoder(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
-    def char(self) -> str:
+    def char(self) -> str | int:  # ros1: int, ros2: str
         ...  # pragma: no cover
 
     @abstractmethod
@@ -110,7 +110,7 @@ class MessageEncoder(ABC):
         ...  # pragma: no cover
 
     @abstractmethod
-    def char(self, value: str) -> None:
+    def char(self, value: Any) -> None:  # ros1: int, ros2: str
         ...  # pragma: no cover
 
     @abstractmethod
