@@ -12,6 +12,8 @@ from pybag.cli.mcap_convert import convert
 from pybag.cli.main import main as cli_main
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
+from pybag.ros2.humble.builtin_interfaces import Duration as Ros2Duration
+from pybag.ros2.humble.builtin_interfaces import Time as Ros2Time
 
 
 # Define ROS1-compatible test messages (works with both bag and mcap)
@@ -41,6 +43,36 @@ class CharMessageRos2:
     """Message with ROS2 char field (string)."""
     __msg_name__ = 'test_msgs/CharMessage'
     value: t.ros2.char
+
+
+@dataclass(kw_only=True)
+class TimeMessageRos1:
+    """Message with ROS1 time field."""
+    __msg_name__ = 'test_msgs/TimeMessage'
+    stamp: t.ros1.time
+
+
+@dataclass(kw_only=True)
+class DurationMessageRos1:
+    """Message with ROS1 duration field."""
+    __msg_name__ = 'test_msgs/DurationMessage'
+    elapsed: t.ros1.duration
+
+
+@dataclass(kw_only=True)
+class TimeMessageRos2:
+    """Message with ROS2 Time field."""
+    __msg_name__ = 'test_msgs/TimeMessage'
+    stamp: Ros2Time
+
+
+@dataclass(kw_only=True)
+class DurationMessageRos2:
+    """Message with ROS2 Duration field."""
+    __msg_name__ = 'test_msgs/DurationMessage'
+    elapsed: Ros2Duration
+
+
 
 # --- bag to mcap conversion tests ---
 
@@ -353,8 +385,95 @@ def test_convert_roundtrip_mcap_bag_mcap(tmp_path: Path) -> None:
                 assert o.data.data == f.data.data
 
 
-# --- Char type conversion tests ---
-# Note: char conversion works automatically via the serialization layer.
+# --- Time/Duration/Char type conversion tests ---
+
+
+def test_convert_bag_to_mcap_with_time(tmp_path: Path) -> None:
+    """Test bag to mcap conversion preserves time field values."""
+    bag_path = tmp_path / "input.bag"
+    mcap_path = tmp_path / "output.mcap"
+
+    # Create bag with ROS1 time message
+    with BagFileWriter.open(bag_path) as writer:
+        msg = TimeMessageRos1(stamp=t.ros1.Time(secs=1234567890, nsecs=123456789))
+        writer.write_message("/time", int(1e9), msg)
+
+    # Convert to mcap
+    convert(bag_path, mcap_path)
+
+    # Verify the time value is preserved (as ROS2 Time)
+    with McapFileReader.from_file(mcap_path) as reader:
+        messages = list(reader.messages("/time"))
+        assert len(messages) == 1
+        stamp = messages[0].data.stamp
+        assert stamp.sec == 1234567890
+        assert stamp.nanosec == 123456789
+
+
+def test_convert_mcap_to_bag_with_time(tmp_path: Path) -> None:
+    """Test mcap to bag conversion preserves time field values."""
+    mcap_path = tmp_path / "input.mcap"
+    bag_path = tmp_path / "output.bag"
+
+    # Create mcap with ROS2 Time message
+    with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
+        msg = TimeMessageRos2(stamp=Ros2Time(sec=1234567890, nanosec=123456789))
+        writer.write_message("/time", int(1e9), msg)
+
+    # Convert to bag
+    convert(mcap_path, bag_path)
+
+    # Verify the time value is preserved (as ROS1 Time)
+    with BagFileReader.from_file(bag_path) as reader:
+        messages = list(reader.messages("/time"))
+        assert len(messages) == 1
+        stamp = messages[0].data.stamp
+        assert stamp.secs == 1234567890
+        assert stamp.nsecs == 123456789
+
+
+def test_convert_bag_to_mcap_with_duration(tmp_path: Path) -> None:
+    """Test bag to mcap conversion preserves duration field values."""
+    bag_path = tmp_path / "input.bag"
+    mcap_path = tmp_path / "output.mcap"
+
+    # Create bag with ROS1 duration message
+    with BagFileWriter.open(bag_path) as writer:
+        msg = DurationMessageRos1(elapsed=t.ros1.Duration(secs=60, nsecs=500000000))
+        writer.write_message("/duration", int(1e9), msg)
+
+    # Convert to mcap
+    convert(bag_path, mcap_path)
+
+    # Verify the duration value is preserved (as ROS2 Duration)
+    with McapFileReader.from_file(mcap_path) as reader:
+        messages = list(reader.messages("/duration"))
+        assert len(messages) == 1
+        elapsed = messages[0].data.elapsed
+        assert elapsed.sec == 60
+        assert elapsed.nanosec == 500000000
+
+
+def test_convert_mcap_to_bag_with_duration(tmp_path: Path) -> None:
+    """Test mcap to bag conversion preserves duration field values."""
+    mcap_path = tmp_path / "input.mcap"
+    bag_path = tmp_path / "output.bag"
+
+    # Create mcap with ROS2 Duration message
+    with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
+        msg = DurationMessageRos2(elapsed=Ros2Duration(sec=60, nanosec=500000000))
+        writer.write_message("/duration", int(1e9), msg)
+
+    # Convert to bag
+    convert(mcap_path, bag_path)
+
+    # Verify the duration value is preserved (as ROS1 Duration)
+    with BagFileReader.from_file(bag_path) as reader:
+        messages = list(reader.messages("/duration"))
+        assert len(messages) == 1
+        elapsed = messages[0].data.elapsed
+        assert elapsed.secs == 60
+        assert elapsed.nsecs == 500000000
 
 
 def test_convert_bag_to_mcap_with_char(tmp_path: Path) -> None:
