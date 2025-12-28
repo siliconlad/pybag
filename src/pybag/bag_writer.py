@@ -42,7 +42,7 @@ class BagFileWriter:
         writer: BaseWriter,
         *,
         compression: Literal['none', 'bz2'] = 'none',
-        chunk_size: int = 1024 * 1024,  # 1MB default chunk size
+        chunk_size: int | None = None,
     ):
         """Initialize the bag writer.
 
@@ -53,7 +53,7 @@ class BagFileWriter:
         """
         self._writer = writer
         self._compression = compression
-        self._chunk_size = chunk_size
+        self._chunk_size = chunk_size or (1024 * 1024)  # 1MB
         self._record_writer = BagRecordWriter(writer)
 
         # Schema encoder
@@ -87,7 +87,7 @@ class BagFileWriter:
         file_path: str | Path,
         *,
         compression: Literal['none', 'bz2'] = 'none',
-        chunk_size: int = 1024 * 1024,
+        chunk_size: int | None = None,
     ) -> "BagFileWriter":
         """Create a writer for a file.
 

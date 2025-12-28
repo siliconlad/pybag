@@ -247,7 +247,7 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         *,
         mode: Literal['w', 'a'] = 'w',
         chunk_size: int,
-        chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_compression: Literal["none", "lz4", "zstd"] | None = "none",
         profile: str = "ros2",
     ) -> None:
         """Initialize a chunked MCAP writer.
@@ -264,7 +264,7 @@ class McapChunkedWriter(BaseMcapRecordWriter):
         self._summary = summary
         self._profile = profile
         self._chunk_size = chunk_size
-        self._chunk_compression = chunk_compression or ""
+        self._chunk_compression = "" if chunk_compression in ("none", None)  else chunk_compression
         self._compress_chunk = self._create_chunk_compressor()
 
         # Current chunk buffering
@@ -446,7 +446,7 @@ class McapRecordWriterFactory:
         *,
         mode: Literal['w', 'a'] = 'w',
         chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_compression: Literal["none", "lz4", "zstd"] | None = "none",
         profile: str = "ros2",
     ) -> BaseMcapRecordWriter:
         """Create an appropriate MCAP record writer based on configuration.

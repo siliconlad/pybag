@@ -43,7 +43,7 @@ class McapFileWriter:
         mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_compression: Literal["none", "lz4", "zstd"] | None = "none",
     ) -> None:
         """Initialize a high-level MCAP file writer.
 
@@ -93,7 +93,7 @@ class McapFileWriter:
         mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
+        chunk_compression: Literal["none", "lz4", "zstd"] | None = "lz4",
     ) -> "McapFileWriter":
         """Create a writer backed by a file on disk.
 
