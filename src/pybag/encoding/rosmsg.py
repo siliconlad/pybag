@@ -139,12 +139,12 @@ class RosMsgDecoder(MessageDecoder):
         return ros1.Time(secs=secs, nsecs=nsecs)
 
     def duration(self) -> ros1.Duration:
-        """Parse a ROS 1 duration (secs: uint32, nsecs: uint32).
+        """Parse a ROS 1 duration (secs: int32, nsecs: int32).
 
         Returns:
             Duration object with secs and nsecs attributes.
         """
-        secs, nsecs = struct.unpack('<II', self._data.read(8))
+        secs, nsecs = struct.unpack('<ii', self._data.read(8))
         return ros1.Duration(secs=secs, nsecs=nsecs)
 
     # Container parsers --------------------------------------------------
@@ -284,12 +284,12 @@ class RosMsgEncoder(MessageEncoder):
         self._payload.write(struct.pack('<II', value.secs, value.nsecs))
 
     def duration(self, value: ros1.Duration) -> None:
-        """Encode a ROS 1 duration (secs: uint32, nsecs: uint32).
+        """Encode a ROS 1 duration (secs: int32, nsecs: int32).
 
         Args:
             value: Duration object with secs and nsecs attributes.
         """
-        self._payload.write(struct.pack('<II', value.secs, value.nsecs))
+        self._payload.write(struct.pack('<ii', value.secs, value.nsecs))
 
     # Container encoders -------------------------------------------------
 
