@@ -30,7 +30,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 # All primitive types (ROS1 includes time and duration as primitives)
 _PRIMITIVE_TYPES = {
     "int8", "int16", "int32", "int64",

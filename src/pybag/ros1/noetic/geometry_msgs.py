@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-import pybag.types as t
 import pybag.ros1.noetic.std_msgs as std_msgs
+import pybag.types as t
 
 
 @dataclass(kw_only=True)
