@@ -13,6 +13,7 @@ from rosbags.rosbag1 import Writer as RosbagsWriter
 from rosbags.typesys import Stores, get_typestore
 
 import pybag
+import pybag.types as t
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
 
@@ -22,8 +23,8 @@ class SimpleMessage:
     """A simple test message."""
 
     __msg_name__ = "test_msgs/SimpleMessage"
-    value: pybag.int32
-    name: pybag.string
+    value: t.int32
+    name: t.string
 
 
 @pytest.fixture

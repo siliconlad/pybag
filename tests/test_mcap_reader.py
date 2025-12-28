@@ -13,8 +13,8 @@ from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.store import Typestore
 
-import pybag.types as t
 import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.types as t
 from pybag.mcap_reader import McapFileReader, McapMultipleFileReader
 from pybag.mcap_writer import McapFileWriter
 from pybag.schema.ros2msg import Ros2MsgError

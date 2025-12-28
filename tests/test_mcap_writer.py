@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+import pybag.types as t
 from mcap.reader import make_reader
 from mcap_ros2.decoder import DecoderFactory
 
-import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
@@ -25,18 +25,18 @@ from pybag.serialize import MessageSerializerFactory
 @dataclass
 class SubMessage:
     __msg_name__ = 'tests/msgs/SubMessage'
-    value: pybag.int32
+    value: t.int32
 
 
 @dataclass
 class ExampleMessage:
     __msg_name__ = 'tests/msgs/ExampleMessage'
-    integer: pybag.int32
-    text: pybag.string
-    fixed: pybag.Array[pybag.int32, Literal[3]]
-    dynamic: pybag.Array[pybag.int32]
+    integer: t.int32
+    text: t.string
+    fixed: t.Array[t.int32, Literal[3]]
+    dynamic: t.Array[t.int32]
     sub: SubMessage
-    sub_array: pybag.Array[SubMessage, Literal[3]]
+    sub_array: t.Array[SubMessage, Literal[3]]
 
 
 @pytest.mark.parametrize("little_endian", [True, False])
@@ -90,7 +90,7 @@ def test_add_channel_and_write_message() -> None:
     @dataclass
     class Example:
         __msg_name__ = "tests/msgs/Example"
-        value: pybag.int32
+        value: t.int32
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
