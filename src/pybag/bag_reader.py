@@ -479,9 +479,11 @@ class BagFileReader:
 
     def _has_overlapping_chunks(self, chunks: list[ChunkInfoRecord]) -> bool:
         """Check if chunks have overlapping time ranges."""
+
         if len(chunks) <= 1:
             return False
 
+        chunks = sorted(chunks, key=lambda ci: ci.start_time)
         for i in range(len(chunks) - 1):
             if chunks[i].end_time >= chunks[i + 1].start_time:
                 return True
