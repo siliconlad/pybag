@@ -93,7 +93,7 @@ def compile_ros1_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Calla
         'float64': t.float64,
         'bool': t.bool,
         'byte': t.byte,
-        'char': t.char,
+        'char': t.ros1.char,
         'string': t.string,
     }
 

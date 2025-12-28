@@ -28,7 +28,6 @@ float64 = Annotated[float, ("float64",)]
 
 bool = Annotated[bool, ("bool",)]
 byte = Annotated[int, ("byte",)]
-char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
@@ -93,6 +92,13 @@ ros1 = SimpleNamespace(
     duration = Annotated[Duration, ("duration",)],
     # ROS 1 char is uint8
     char = Annotated[int, ("char",)]
+)
+
+# ROS 2 namespace for ROS 2 specific types
+# Usage: t.ros2.char
+ros2 = SimpleNamespace(
+    # ROS 2 char is a single character (string)
+    char = Annotated[str, ("char",)]
 )
 
 
@@ -178,10 +184,10 @@ __all__ = [
     "float64",
     "bool",
     "byte",
-    "char",
     "string",
     "wstring",
     "ros1",
+    "ros2",
     "Time",
     "Duration",
     "Message",
