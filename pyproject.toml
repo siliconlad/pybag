@@ -37,5 +37,11 @@ log_cli_level = "DEBUG"
 addopts = "--cov=pybag --benchmark-sort=mean"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+omit = [
+    "src/pybag/ros1/*",
+    "src/pybag/ros2/*",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pybag"]
