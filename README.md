@@ -17,6 +17,8 @@ uv tool install pybag-sdk
 
 ## Quick Start
 
+### CLI
+
 ```bash
 # Get file information
 pybag info data.mcap
@@ -26,6 +28,26 @@ pybag filter data.mcap -o output.mcap --include-topic /camera
 
 # Merge multiple files
 pybag merge input1.mcap input2.mcap -o output.mcap
+```
+
+### Unified Reader
+
+The `Reader` class provides a common interface for reading both MCAP and ROS 1 bag files.
+
+The file format is automatically detected from the file extension.
+
+```python
+from pybag import Reader
+
+# Works with both .mcap and .bag files
+with Reader.from_file("data.mcap") as reader:
+    for msg in reader.messages("/camera"):
+        print(msg.log_time, msg.data)
+
+# Same API for ROS 1 bag files
+with Reader.from_file("data.bag") as reader:
+    for msg in reader.messages("/sensor/*"):  # glob patterns supported
+        print(msg.topic, msg.msg_type, msg.data)
 ```
 
 ### Reading MCAP Files
