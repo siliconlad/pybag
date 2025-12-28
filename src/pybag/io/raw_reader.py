@@ -166,18 +166,22 @@ class BytesReader(BaseReader):
         self._position += size
         return result
 
-    def unpack_one(self, fmt: str | struct.Struct, size: int) -> Any:
+    def unpack_one(self, fmt: str | struct.Struct, size: int, align: int = 0) -> Any:
         """Unpack a single value directly from buffer.
 
         Convenience method for unpacking a single value without tuple indexing.
+        Optionally aligns position before unpacking to avoid a separate align() call.
 
         Args:
             fmt: struct format string or pre-compiled Struct object
             size: number of bytes to consume
+            align: alignment boundary (must be power of 2), 0 to skip alignment
 
         Returns:
             Single unpacked value
         """
+        if align and (remainder := self._position & (align - 1)):
+            self._position += align - remainder
         if isinstance(fmt, struct.Struct):
             result = fmt.unpack_from(self._view, self._position)[0]
         else:

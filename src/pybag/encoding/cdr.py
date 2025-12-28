@@ -83,54 +83,54 @@ class CdrDecoder(MessageDecoder):
     # These use unpack_from() to avoid creating intermediate bytes objects
 
     def bool(self) -> bool:
-        return self._data.align(1).unpack_one('?', 1)
+        return self._data.unpack_one('?', 1, align=1)
 
     def int8(self) -> int:
         fmt = '<b' if self._is_little_endian else '>b'
-        return self._data.align(1).unpack_one(fmt, 1)
+        return self._data.unpack_one(fmt, 1, align=1)
 
     def uint8(self) -> int:
         fmt = '<B' if self._is_little_endian else '>B'
-        return self._data.align(1).unpack_one(fmt, 1)
+        return self._data.unpack_one(fmt, 1, align=1)
 
     def byte(self) -> bytes:
         return self._data.align(1).read(1)
 
     def char(self) -> str:
         fmt = '<c' if self._is_little_endian else '>c'
-        return self._data.align(1).unpack_one(fmt, 1).decode()
+        return self._data.unpack_one(fmt, 1, align=1).decode()
 
     def int16(self) -> int:
         fmt = '<h' if self._is_little_endian else '>h'
-        return self._data.align(2).unpack_one(fmt, 2)
+        return self._data.unpack_one(fmt, 2, align=2)
 
     def uint16(self) -> int:
         fmt = '<H' if self._is_little_endian else '>H'
-        return self._data.align(2).unpack_one(fmt, 2)
+        return self._data.unpack_one(fmt, 2, align=2)
 
     def int32(self) -> int:
         fmt = '<i' if self._is_little_endian else '>i'
-        return self._data.align(4).unpack_one(fmt, 4)
+        return self._data.unpack_one(fmt, 4, align=4)
 
     def uint32(self) -> int:
         fmt = '<I' if self._is_little_endian else '>I'
-        return self._data.align(4).unpack_one(fmt, 4)
+        return self._data.unpack_one(fmt, 4, align=4)
 
     def int64(self) -> int:
         fmt = '<q' if self._is_little_endian else '>q'
-        return self._data.align(8).unpack_one(fmt, 8)
+        return self._data.unpack_one(fmt, 8, align=8)
 
     def uint64(self) -> int:
         fmt = '<Q' if self._is_little_endian else '>Q'
-        return self._data.align(8).unpack_one(fmt, 8)
+        return self._data.unpack_one(fmt, 8, align=8)
 
     def float32(self) -> float:
         fmt = '<f' if self._is_little_endian else '>f'
-        return self._data.align(4).unpack_one(fmt, 4)
+        return self._data.unpack_one(fmt, 4, align=4)
 
     def float64(self) -> float:
         fmt = '<d' if self._is_little_endian else '>d'
-        return self._data.align(8).unpack_one(fmt, 8)
+        return self._data.unpack_one(fmt, 8, align=8)
 
     def string(self) -> str:
         # Strings are null-terminated
