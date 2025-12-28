@@ -367,6 +367,7 @@ class BagFileReader:
         chunk_idx: int = 0,
         *,
         in_log_time_order: bool = True,
+        in_reverse: bool = False,
     ) -> Iterator[tuple[int, int, int, int]]:
         """Create an iterator that yields message references for a chunk.
 
@@ -405,6 +406,9 @@ class BagFileReader:
         else:
             message_refs.sort(key=lambda x: x[1])
 
+        if in_reverse:
+            message_refs.reverse()
+
         # Yield the references
         for timestamp, offset, conn_id in message_refs:
             yield timestamp, chunk_idx, offset, conn_id
@@ -417,6 +421,7 @@ class BagFileReader:
         filter: Callable[[DecodedMessage], bool] | None = None,
         *,
         in_log_time_order: bool = True,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """Iterate over messages in the bag file.
 
@@ -432,6 +437,9 @@ class BagFileReader:
             end_time: End time to filter by (nanoseconds). If None, read to end.
             filter: Callable to filter messages. If None, all messages are returned.
             in_log_time_order: Return messages in log time order if True.
+            in_reverse: Return messages in reverse order if True. When combined with
+                in_log_time_order=True, returns messages in reverse chronological order.
+                When in_log_time_order=False, returns messages in reverse file order.
 
         Yields:
             DecodedMessage objects from matching topics.
@@ -458,26 +466,33 @@ class BagFileReader:
         has_overlapping_chunks = self._has_overlapping_chunks(relevant_chunks)
         if in_log_time_order and has_overlapping_chunks:
             yield from self._get_messages_with_overlaps(
-                relevant_chunks, conn_ids, start_time, end_time, filter
+                relevant_chunks, conn_ids, start_time, end_time, filter,
+                in_reverse=in_reverse,
             )
         elif in_log_time_order and not has_overlapping_chunks:
+            # For reverse order, process chunks from last to first
+            chunks_to_process = list(reversed(relevant_chunks)) if in_reverse else relevant_chunks
             yield from self._get_messages_sequential(
-                relevant_chunks,
+                chunks_to_process,
                 conn_ids,
                 start_time,
                 end_time,
                 msg_filter=filter,
                 in_log_time_order=in_log_time_order,
+                in_reverse=in_reverse,
             )
         else:
             chunks_by_pos = sorted(relevant_chunks, key=lambda ci: ci.chunk_pos)
+            # For reverse order, process chunks from last to first
+            chunks_to_process = list(reversed(chunks_by_pos)) if in_reverse else chunks_by_pos
             yield from self._get_messages_sequential(
-                chunks_by_pos,
+                chunks_to_process,
                 conn_ids,
                 start_time,
                 end_time,
                 msg_filter=filter,
                 in_log_time_order=in_log_time_order,
+                in_reverse=in_reverse,
             )
 
     def _has_overlapping_chunks(self, chunks: list[ChunkInfoRecord]) -> bool:
@@ -499,25 +514,30 @@ class BagFileReader:
         msg_filter: Callable[[DecodedMessage], bool] | None,
         *,
         in_log_time_order: bool = True,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """Get messages from non-overlapping chunks sequentially.
 
         Args:
-            chunks: List of chunk info records (sorted by start_time).
+            chunks: List of chunk info records.
             conn_ids: Set of connection IDs to include.
             start_time: Start time filter.
             end_time: End time filter.
             msg_filter: Optional message filter.
+            in_log_time_order: Whether to sort messages within each chunk by timestamp.
+            in_reverse: Whether to yield messages in reverse chronological order.
 
         Yields:
-            DecodedMessage objects in log time order.
+            DecodedMessage objects in appropriate order.
         """
         for chunk_info in chunks:
             chunk_data = self._decompress_chunk_cached(chunk_info.chunk_pos)
             reader = BytesReader(chunk_data)
 
             for timestamp, _, offset, conn_id in self._chunk_message_iterator(
-                chunk_info, conn_ids, start_time, end_time, in_log_time_order=in_log_time_order
+                chunk_info, conn_ids, start_time, end_time,
+                in_log_time_order=in_log_time_order,
+                in_reverse=in_reverse,
             ):
                 reader.seek_from_start(offset)
                 record_result = BagRecordParser.parse_record(reader)
@@ -548,6 +568,8 @@ class BagFileReader:
         start_time: int | None,
         end_time: int | None,
         msg_filter: Callable[[DecodedMessage], bool] | None,
+        *,
+        in_reverse: bool = False,
     ) -> Generator[DecodedMessage, None, None]:
         """Get messages from overlapping chunks using heap-based merge.
 
@@ -557,16 +579,19 @@ class BagFileReader:
             start_time: Start time filter.
             end_time: End time filter.
             msg_filter: Optional message filter.
+            in_reverse: Whether to yield messages in reverse chronological order.
 
         Yields:
-            DecodedMessage objects in log time order.
+            DecodedMessage objects in appropriate order.
         """
         logger.warning("Detected time-overlapping chunks. Reading performance is affected!")
 
         # Create iterators for all chunks
         chunk_iterators = [
             self._chunk_message_iterator(
-                chunk_info, conn_ids, start_time, end_time, chunk_idx=i
+                chunk_info, conn_ids, start_time, end_time,
+                chunk_idx=i,
+                in_reverse=in_reverse,
             ) for i, chunk_info in enumerate(chunks)
         ]
 
