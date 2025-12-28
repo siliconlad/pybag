@@ -383,7 +383,7 @@ def test_reverse_ordered_messages(chunk_size: int, in_log_time_order: bool, in_r
             logging.info(f"pybag: {[msg.data.name for msg in messages]}")
 
             expected_log_times = list(range(8)) if in_log_time_order else list(reversed(range(8)))
-            expected_log_times = list(reversed(expected_log_times)) if in_reverse else expected_log_times
+            expected_log_times = expected_log_times[::-1] if in_reverse else expected_log_times
             assert [msg.log_time for msg in messages] == expected_log_times
             assert [msg.data.name for msg in messages] == [f"msg_{t}" for t in expected_log_times]
 
@@ -458,8 +458,8 @@ def test_duplicate_timestamps(chunk_size: int, in_log_time_order: bool, in_rever
 
             # All messages should have the same timestamp
             assert [msg.log_time for msg in messages] == [timestamp] * 3
-            # All messages should be returned (order may vary with overlapping chunks)
-            assert set(msg.data.name for msg in messages) == {"msg_0", "msg_1", "msg_2"}
+            expected_data = ["msg_2", "msg_1", "msg_0"] if in_reverse else ["msg_0", "msg_1", "msg_2"]
+            assert [msg.data.name for msg in messages] == expected_data
 
 
 ########################
