@@ -1118,6 +1118,29 @@ def generate_package(
         return 1
 
 
+def create_init_files(distro: str, output_dir: Path | None) -> None:
+    """Create __init__.py files for the ros2 package structure."""
+    if output_dir is None:
+        script_dir = Path(__file__).parent.parent
+        ros2_dir = script_dir / "src" / "pybag" / "ros2"
+        distro_dir = ros2_dir / distro
+    else:
+        ros2_dir = output_dir.parent
+        distro_dir = output_dir
+
+    # Create ros2/__init__.py
+    ros2_init = ros2_dir / "__init__.py"
+    if not ros2_init.exists():
+        ros2_init.write_text('"""ROS2 message definitions."""\n')
+        print(f"Created {ros2_init}")
+
+    # Create ros2/{distro}/__init__.py
+    distro_init = distro_dir / "__init__.py"
+    if not distro_init.exists():
+        distro_init.write_text(f'"""ROS2 {distro} message definitions."""\n')
+        print(f"Created {distro_init}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate Python message modules from ROS2 .msg files on GitHub",
@@ -1173,7 +1196,11 @@ Examples:
 
     if args.url:
         # Generate a single package from the provided URL
-        return generate_package(args.url, args.distro, args.output_dir, generate_codecs)
+        result = generate_package(args.url, args.distro, args.output_dir, generate_codecs)
+        if result == 0:
+            # Ensure __init__.py files exist for the package to be importable
+            create_init_files(args.distro, args.output_dir)
+        return result
     else:
         # Generate all default packages
         print(f"Generating all default ROS2 message packages for distro: {args.distro}")
@@ -1192,6 +1219,11 @@ Examples:
                 failed.append(url)
 
             print()
+
+        # Create __init__.py files
+        print("Creating __init__.py files...")
+        create_init_files(args.distro, args.output_dir)
+        print()
 
         print("=" * 60)
         if failed:

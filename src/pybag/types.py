@@ -30,6 +30,11 @@ char = Annotated[str, ("char",)]
 string = Annotated[str, ("string",)]
 wstring = Annotated[str, ("wstring",)]
 
+# ROS1 primitive types for time and duration
+# These are represented as (sec: uint32, nsec: uint32) tuples
+time = Annotated[tuple[int, int], ("time",)]
+duration = Annotated[tuple[int, int], ("duration",)]
+
 T = TypeVar("T")
 
 
@@ -115,6 +120,8 @@ __all__ = [
     "char",
     "string",
     "wstring",
+    "time",
+    "duration",
     "Message",
     "Array",
     "Complex",
