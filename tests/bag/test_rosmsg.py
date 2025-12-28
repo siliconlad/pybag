@@ -40,6 +40,7 @@ class TestRosmsgRoundtrip:
         encoder.duration(ros1.Duration(secs=0, nsecs=0))
         encoder.duration(ros1.Duration(secs=100, nsecs=500000000))
         encoder.duration(ros1.Duration(secs=3600, nsecs=0))  # 1 hour
+        encoder.duration(ros1.Duration(secs=-5, nsecs=-3))  # negative
 
         data = encoder.save()
         decoder = RosMsgDecoder(data)
@@ -47,6 +48,7 @@ class TestRosmsgRoundtrip:
         assert decoder.duration() == ros1.Duration(secs=0, nsecs=0)
         assert decoder.duration() == ros1.Duration(secs=100, nsecs=500000000)
         assert decoder.duration() == ros1.Duration(secs=3600, nsecs=0)
+        assert decoder.duration() == ros1.Duration(secs=-5, nsecs=-3)
 
     def test_roundtrip_bool(self):
         encoder = RosMsgEncoder()
