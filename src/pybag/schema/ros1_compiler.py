@@ -27,7 +27,7 @@ from pybag.schema import (
     Sequence,
     String
 )
-from pybag.types import Duration, Time
+from pybag.types import ros1
 
 # Map primitive ROS1 types to struct format characters
 _STRUCT_FORMAT = {
@@ -324,8 +324,8 @@ def compile_ros1_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Calla
     namespace: dict[str, object] = {
         "struct": struct,
         "_dataclass_types": dataclass_types,
-        "_Time": Time,
-        "_Duration": Duration,
+        "_Time": ros1.Time,
+        "_Duration": ros1.Duration,
     }
     exec(code, namespace)
     return namespace[f"decode_{_sanitize(schema.name)}"]  # type: ignore

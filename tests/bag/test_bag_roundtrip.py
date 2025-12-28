@@ -7,56 +7,55 @@ from typing import Literal
 
 import pytest
 
-import pybag
+import pybag.types as t
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
-from pybag.types import Duration, Time
 
 
 @dataclass(kw_only=True)
 class SimpleMessage:
     """A simple test message."""
     __msg_name__ = 'test_msgs/SimpleMessage'
-    value: pybag.int32
-    name: pybag.string
+    value: t.int32
+    name: t.string
 
 
 @dataclass(kw_only=True)
 class PointMessage:
     """A point message with floating point values."""
     __msg_name__ = 'test_msgs/PointMessage'
-    x: pybag.float64
-    y: pybag.float64
-    z: pybag.float64
+    x: t.float64
+    y: t.float64
+    z: t.float64
 
 
 @dataclass(kw_only=True)
 class ArrayMessage:
     """A message with arrays."""
     __msg_name__ = 'test_msgs/ArrayMessage'
-    fixed_array: pybag.Array[pybag.int32, Literal[3]]
-    dynamic_array: pybag.Array[pybag.float64]
+    fixed_array: t.Array[t.int32, Literal[3]]
+    dynamic_array: t.Array[t.float64]
 
 
 @dataclass(kw_only=True)
 class TimeMessage:
     """A message with ROS 1 time type."""
     __msg_name__ = 'test_msgs/TimeMessage'
-    stamp: pybag.time
+    stamp: t.ros1.time
 
 
 @dataclass(kw_only=True)
 class DurationMessage:
     """A message with ROS 1 duration type."""
     __msg_name__ = 'test_msgs/DurationMessage'
-    elapsed: pybag.duration
+    elapsed: t.ros1.duration
 
 
 @dataclass(kw_only=True)
 class CharMessage:
     """A message with char type."""
     __msg_name__ = 'test_msgs/CharMessage'
-    character: pybag.char
+    character: t.ros1.char
 
 
 def test_write_and_read_simple_message(tmp_path: Path):
@@ -245,14 +244,14 @@ def test_compression_roundtrip(tmp_path: Path, compression):
 def test_write_and_read_time_message(tmp_path: Path):
     """Test writing and reading a message with ROS 1 time type."""
     with BagFileWriter.open(tmp_path / 'test.bag') as writer:
-        msg = TimeMessage(stamp=Time(secs=1234567890, nsecs=123456789))
+        msg = TimeMessage(stamp=t.ros1.Time(secs=1234567890, nsecs=123456789))
         writer.write_message("/time", 1000, msg)
 
     with BagFileReader.from_file(tmp_path / 'test.bag') as reader:
         messages = list(reader.messages("/time"))
         assert len(messages) == 1
 
-        assert messages[0].data.stamp == Time(secs=1234567890, nsecs=123456789)
+        assert messages[0].data.stamp == t.ros1.Time(secs=1234567890, nsecs=123456789)
         assert messages[0].data.stamp.secs == 1234567890
         assert messages[0].data.stamp.nsecs == 123456789
 
@@ -260,14 +259,14 @@ def test_write_and_read_time_message(tmp_path: Path):
 def test_write_and_read_duration_message(tmp_path: Path):
     """Test writing and reading a message with ROS 1 duration type."""
     with BagFileWriter.open(tmp_path / 'test.bag') as writer:
-        msg = DurationMessage(elapsed=Duration(secs=100, nsecs=500000000))
+        msg = DurationMessage(elapsed=t.ros1.Duration(secs=100, nsecs=500000000))
         writer.write_message("/duration", 1000, msg)
 
     with BagFileReader.from_file(tmp_path / 'test.bag') as reader:
         messages = list(reader.messages("/duration"))
         assert len(messages) == 1
 
-        assert messages[0].data.elapsed == Duration(secs=100, nsecs=500000000)
+        assert messages[0].data.elapsed == t.ros1.Duration(secs=100, nsecs=500000000)
         assert messages[0].data.elapsed.secs == 100
         assert messages[0].data.elapsed.nsecs == 500000000
 

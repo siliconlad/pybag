@@ -5,7 +5,7 @@ import struct
 import pytest
 
 from pybag.encoding.rosmsg import RosMsgDecoder, RosMsgEncoder
-from pybag.types import Duration, Time
+from pybag.types import ros1
 
 
 class TestRosmsgRoundtrip:
@@ -24,29 +24,29 @@ class TestRosmsgRoundtrip:
 
     def test_roundtrip_time(self):
         encoder = RosMsgEncoder()
-        encoder.time(Time(secs=0, nsecs=0))
-        encoder.time(Time(secs=1234567890, nsecs=123456789))
-        encoder.time(Time(secs=4294967295, nsecs=999999999))  # max uint32 sec
+        encoder.time(ros1.Time(secs=0, nsecs=0))
+        encoder.time(ros1.Time(secs=1234567890, nsecs=123456789))
+        encoder.time(ros1.Time(secs=4294967295, nsecs=999999999))  # max uint32 sec
 
         data = encoder.save()
         decoder = RosMsgDecoder(data)
 
-        assert decoder.time() == Time(secs=0, nsecs=0)
-        assert decoder.time() == Time(secs=1234567890, nsecs=123456789)
-        assert decoder.time() == Time(secs=4294967295, nsecs=999999999)
+        assert decoder.time() == ros1.Time(secs=0, nsecs=0)
+        assert decoder.time() == ros1.Time(secs=1234567890, nsecs=123456789)
+        assert decoder.time() == ros1.Time(secs=4294967295, nsecs=999999999)
 
     def test_roundtrip_duration(self):
         encoder = RosMsgEncoder()
-        encoder.duration(Duration(secs=0, nsecs=0))
-        encoder.duration(Duration(secs=100, nsecs=500000000))
-        encoder.duration(Duration(secs=3600, nsecs=0))  # 1 hour
+        encoder.duration(ros1.Duration(secs=0, nsecs=0))
+        encoder.duration(ros1.Duration(secs=100, nsecs=500000000))
+        encoder.duration(ros1.Duration(secs=3600, nsecs=0))  # 1 hour
 
         data = encoder.save()
         decoder = RosMsgDecoder(data)
 
-        assert decoder.duration() == Duration(secs=0, nsecs=0)
-        assert decoder.duration() == Duration(secs=100, nsecs=500000000)
-        assert decoder.duration() == Duration(secs=3600, nsecs=0)
+        assert decoder.duration() == ros1.Duration(secs=0, nsecs=0)
+        assert decoder.duration() == ros1.Duration(secs=100, nsecs=500000000)
+        assert decoder.duration() == ros1.Duration(secs=3600, nsecs=0)
 
     def test_roundtrip_bool(self):
         encoder = RosMsgEncoder()

@@ -17,7 +17,7 @@ from typing import Any
 from pybag.encoding import MessageDecoder, MessageEncoder
 from pybag.io.raw_reader import BytesReader
 from pybag.io.raw_writer import BytesWriter
-from pybag.types import Duration, Time
+from pybag.types import ros1
 
 logger = logging.getLogger(__name__)
 
@@ -129,23 +129,23 @@ class RosMsgDecoder(MessageDecoder):
 
     # ROS 1 specific types -----------------------------------------------
 
-    def time(self) -> Time:
+    def time(self) -> ros1.Time:
         """Parse a ROS 1 time (secs: uint32, nsecs: uint32).
 
         Returns:
             Time object with secs and nsecs attributes.
         """
         secs, nsecs = struct.unpack('<II', self._data.read(8))
-        return Time(secs=secs, nsecs=nsecs)
+        return ros1.Time(secs=secs, nsecs=nsecs)
 
-    def duration(self) -> Duration:
+    def duration(self) -> ros1.Duration:
         """Parse a ROS 1 duration (secs: uint32, nsecs: uint32).
 
         Returns:
             Duration object with secs and nsecs attributes.
         """
         secs, nsecs = struct.unpack('<II', self._data.read(8))
-        return Duration(secs=secs, nsecs=nsecs)
+        return ros1.Duration(secs=secs, nsecs=nsecs)
 
     # Container parsers --------------------------------------------------
 
@@ -275,7 +275,7 @@ class RosMsgEncoder(MessageEncoder):
 
     # ROS 1 specific types -----------------------------------------------
 
-    def time(self, value: Time) -> None:
+    def time(self, value: ros1.Time) -> None:
         """Encode a ROS 1 time (secs: uint32, nsecs: uint32).
 
         Args:
@@ -283,7 +283,7 @@ class RosMsgEncoder(MessageEncoder):
         """
         self._payload.write(struct.pack('<II', value.secs, value.nsecs))
 
-    def duration(self, value: Duration) -> None:
+    def duration(self, value: ros1.Duration) -> None:
         """Encode a ROS 1 duration (secs: uint32, nsecs: uint32).
 
         Args:
