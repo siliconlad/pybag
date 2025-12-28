@@ -8,6 +8,32 @@ from pybag.io.raw_writer import BytesWriter
 
 logger = logging.getLogger(__name__)
 
+# Pre-compiled struct formats for primitive types (little-endian and big-endian)
+# Using pre-compiled Struct objects avoids format string parsing on each unpack
+_BOOL = struct.Struct('?')
+_INT8_LE = struct.Struct('<b')
+_INT8_BE = struct.Struct('>b')
+_UINT8_LE = struct.Struct('<B')
+_UINT8_BE = struct.Struct('>B')
+_CHAR_LE = struct.Struct('<c')
+_CHAR_BE = struct.Struct('>c')
+_INT16_LE = struct.Struct('<h')
+_INT16_BE = struct.Struct('>h')
+_UINT16_LE = struct.Struct('<H')
+_UINT16_BE = struct.Struct('>H')
+_INT32_LE = struct.Struct('<i')
+_INT32_BE = struct.Struct('>i')
+_UINT32_LE = struct.Struct('<I')
+_UINT32_BE = struct.Struct('>I')
+_INT64_LE = struct.Struct('<q')
+_INT64_BE = struct.Struct('>q')
+_UINT64_LE = struct.Struct('<Q')
+_UINT64_BE = struct.Struct('>Q')
+_FLOAT32_LE = struct.Struct('<f')
+_FLOAT32_BE = struct.Struct('>f')
+_FLOAT64_LE = struct.Struct('<d')
+_FLOAT64_BE = struct.Struct('>d')
+
 
 class CdrDecoder(MessageDecoder):
     """CDR (Common Data Representation) decoder for ROS2 messages.
@@ -125,22 +151,32 @@ class CdrDecoder(MessageDecoder):
         return self._data.unpack_one(fmt, 8, align=8)
 
     def float32(self) -> float:
-        fmt = '<f' if self._is_little_endian else '>f'
-        return self._data.unpack_one(fmt, 4, align=4)
+        fmt = _FLOAT32_LE if self._is_little_endian else _FLOAT32_BE
+        return self._data.unpack_one(fmt, 4, 4)
 
     def float64(self) -> float:
-        fmt = '<d' if self._is_little_endian else '>d'
-        return self._data.unpack_one(fmt, 8, align=8)
+        fmt = _FLOAT64_LE if self._is_little_endian else _FLOAT64_BE
+        return self._data.unpack_one(fmt, 8, 8)
 
     def string(self) -> str:
-        # Strings are null-terminated
-        length = self.uint32()
+        # Strings are length-prefixed and null-terminated
+        # Inline uint32 read with alignment to avoid method call overhead
+        data = self._data
+        pos = data._position
+        # Align to 4-byte boundary
+        if remainder := pos & 3:
+            pos += 4 - remainder
+        # Read length directly using pre-compiled struct
+        fmt = _UINT32_LE if self._is_little_endian else _UINT32_BE
+        length = fmt.unpack_from(data._view, pos)[0]
+        pos += 4
         if length <= 1:
-            self._data._position += length  # skip without allocating
+            data._position = pos + length
             return ''
-        # Read string bytes (still need to allocate for decode)
-        result = self._data.read(length - 1).decode()
-        self._data._position += 1  # skip null terminator
+        # Read string bytes directly from memoryview and decode
+        end = pos + length - 1
+        result = data._view[pos:end].tobytes().decode()
+        data._position = end + 1  # skip past string + null terminator
         return result
 
     def wstring(self) -> str:
