@@ -9,8 +9,8 @@ from typing import Any, Callable, Literal
 from pybag.bag_reader import BagFileReader
 from pybag.bag_reader import DecodedMessage as BagDecodedMessage
 from pybag.mcap.records import AttachmentRecord, MetadataRecord
-from pybag.mcap_reader import McapFileReader
 from pybag.mcap_reader import DecodedMessage as McapDecodedMessage
+from pybag.mcap_reader import McapFileReader
 
 
 @dataclass(slots=True)
