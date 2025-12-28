@@ -76,13 +76,13 @@ with BagFileWriter.open("output.bag") as writer:
 
 ```python
 from dataclasses import dataclass
-import pybag
+import pybag.types as t
 
 @dataclass
 class SensorData:
     __msg_name__ = 'custom/msg/SensorData'
-    temperature: pybag.float32
-    humidity: pybag.float32
+    temperature: t.float32
+    humidity: t.float32
 
 with McapFileWriter.open("sensors.mcap") as writer:
     writer.write_message("/sensor", 1000, SensorData(25.5, 60.0))
