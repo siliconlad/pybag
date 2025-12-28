@@ -514,8 +514,7 @@ class BagFileReader:
         Yields:
             DecodedMessage objects in appropriate order.
         """
-        if in_log_time_order:
-            chunks = sorted(chunks, key=lambda ci: ci.start_time)
+        chunks = sorted(chunks, key=lambda ci: ci.start_time if in_log_time_order else ci.chunk_pos)
         chunks = list(reversed(chunks)) if in_reverse else chunks
 
         for chunk_info in chunks:
