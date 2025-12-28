@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class DecodedMessage():
+    topic: str
+    msg_type: str
     channel_id: int
     sequence: int
     log_time: int
@@ -182,13 +184,15 @@ class McapFileReader:
             in_log_time_order=in_log_time_order,
             in_reverse=in_reverse,
         ):
-            _, schema = channel_infos[msg.channel_id]
+            channel_record, schema = channel_infos[msg.channel_id]
             decoded = DecodedMessage(
-                msg.channel_id,
-                msg.sequence,
-                msg.log_time,
-                msg.publish_time,
-                message_deserializer.deserialize_message(msg, schema),
+                topic=channel_record.topic,
+                msg_type=schema.name,
+                channel_id=msg.channel_id,
+                sequence=msg.sequence,
+                log_time=msg.log_time,
+                publish_time=msg.publish_time,
+                data=message_deserializer.deserialize_message(msg, schema),
             )
             if filter is None or filter(decoded):
                 yield decoded

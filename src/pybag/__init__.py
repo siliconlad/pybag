@@ -1,5 +1,8 @@
 from importlib.metadata import version
 
+__version__ = version("pybag-sdk")
+
+from .reader import DecodedMessage, Reader
 from .types import (
     Array,
     Complex,
@@ -19,5 +22,3 @@ from .types import (
     uint64,
     wstring
 )
-
-__version__ = version("pybag-sdk")
