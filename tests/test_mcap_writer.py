@@ -5,11 +5,11 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-import pybag.types as t
 from mcap.reader import make_reader
 from mcap_ros2.decoder import DecoderFactory
 
 import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.types as t
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader, FileReader

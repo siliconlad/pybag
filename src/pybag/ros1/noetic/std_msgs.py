@@ -29,7 +29,7 @@ class Byte:
 class Char:
     __msg_name__ = 'std_msgs/Char'
 
-    data: t.char
+    data: t.ros1.char
 
 
 @dataclass(kw_only=True)
@@ -46,7 +46,7 @@ class ColorRGBA:
 class Duration:
     __msg_name__ = 'std_msgs/Duration'
 
-    data: t.duration
+    data: t.ros1.duration
 
 
 @dataclass(kw_only=True)
@@ -75,7 +75,7 @@ class Header:
     __msg_name__ = 'std_msgs/Header'
 
     seq: t.uint32
-    stamp: t.time
+    stamp: t.ros1.time
     frame_id: t.string
 
 
@@ -127,7 +127,7 @@ class String:
 class Time:
     __msg_name__ = 'std_msgs/Time'
 
-    data: t.time
+    data: t.ros1.time
 
 
 @dataclass(kw_only=True)
