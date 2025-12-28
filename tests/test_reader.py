@@ -6,8 +6,8 @@ from tempfile import TemporaryDirectory
 
 import pytest
 
-import pybag
 import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.types as t
 from pybag.bag_writer import BagFileWriter
 from pybag.mcap_writer import McapFileWriter
 from pybag.reader import DecodedMessage, Reader
@@ -18,14 +18,14 @@ from pybag.reader import DecodedMessage, Reader
 class BagString:
     """String message for bag files."""
     __msg_name__ = 'std_msgs/String'
-    data: pybag.string
+    data: t.string
 
 
 @dataclass(kw_only=True)
 class BagInt32:
     """Int32 message for bag files."""
     __msg_name__ = 'std_msgs/Int32'
-    data: pybag.int32
+    data: t.int32
 
 
 class TestFormatDetection:

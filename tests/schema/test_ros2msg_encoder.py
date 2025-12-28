@@ -5,6 +5,7 @@ from typing import Literal
 import pytest
 
 import pybag
+import pybag.types as t
 from pybag.schema.ros2msg import (
     Array,
     Complex,
@@ -24,9 +25,9 @@ def test_serialize_dataclass_primitives() -> None:
     class Example:
         __msg_name__ = 'tests/msgs/Example'
 
-        integer: pybag.int32
-        name: pybag.string
-        flag: pybag.bool
+        integer: t.int32
+        name: t.string
+        flag: t.bool
 
     obj = Example(42, "hi", True)
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -44,9 +45,9 @@ def test_serialize_dataclass_primitives_with_default() -> None:
     class ExampleDefault:
         __msg_name__ = 'tests/msgs/ExampleDefault'
 
-        integer: pybag.int32 = 42
-        name: pybag.string = "hi"
-        flag: pybag.bool = True
+        integer: t.int32 = 42
+        name: t.string = "hi"
+        flag: t.bool = True
 
     obj = ExampleDefault()
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -62,7 +63,7 @@ def test_serialize_array() -> None:
     @dataclass
     class ArrayExample:
         __msg_name__ = 'tests/msgs/ArrayExample'
-        numbers: pybag.Array[pybag.int32]
+        numbers: t.Array[t.int32]
 
     obj = ArrayExample(numbers=[1, 2, 3])
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -77,7 +78,7 @@ def test_serialize_array_with_length() -> None:
     @dataclass
     class ArrayExample:
         __msg_name__ = 'tests/msgs/ArrayExample'
-        numbers: pybag.Array[pybag.int32, Literal[3]]
+        numbers: t.Array[t.int32, Literal[3]]
 
     obj = ArrayExample(numbers=[1, 2, 3])
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -92,7 +93,7 @@ def test_serialize_array_with_default() -> None:
     @dataclass
     class ArrayExample:
         __msg_name__ = 'tests/msgs/ArrayExample'
-        numbers: pybag.Array[pybag.int32] = field(default_factory=lambda: [1, 2, 3])
+        numbers: t.Array[t.int32] = field(default_factory=lambda: [1, 2, 3])
 
     obj = ArrayExample()
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -147,8 +148,8 @@ def test_serialize_constants() -> None:
     @dataclass(kw_only=True)
     class Example:
         __msg_name__ = 'tests/msgs/ExampleConst'
-        FOO: pybag.Constant[pybag.int32] = 1
-        bar: pybag.int32
+        FOO: t.Constant[t.int32] = 1
+        bar: t.int32
 
     obj = Example(bar=42)
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -167,9 +168,9 @@ def test_serialize_message_type() -> None:
     @dataclass
     class Point:
         __msg_name__ = 'geometry_msgs/msg/Point'
-        x: pybag.float64
-        y: pybag.float64
-        z: pybag.float64
+        x: t.float64
+        y: t.float64
+        z: t.float64
 
     @dataclass
     class Pose:
@@ -190,14 +191,14 @@ def test_serialize_array_with_message_type() -> None:
     @dataclass
     class Point32:
         __msg_name__ = 'geometry_msgs/msg/Point32'
-        x: pybag.float32
-        y: pybag.float32
-        z: pybag.float32
+        x: t.float32
+        y: t.float32
+        z: t.float32
 
     @dataclass
     class Polygon:
         __msg_name__ = 'geometry_msgs/msg/Polygon'
-        points: pybag.Array[Point32]  # Direct usage without Complex wrapper
+        points: t.Array[Point32]  # Direct usage without Complex wrapper
 
     obj = Polygon(points=[Point32(x=1.0, y=2.0, z=3.0)])
     schema, sub_schemas = Ros2MsgSchemaEncoder().parse_schema(obj)
@@ -213,13 +214,13 @@ def test_serialize_fixed_array_with_message_type() -> None:
     @dataclass
     class Header:
         __msg_name__ = 'std_msgs/msg/Header'
-        stamp: pybag.int64
-        frame_id: pybag.string
+        stamp: t.int64
+        frame_id: t.string
 
     @dataclass
     class MultiHeader:
         __msg_name__ = 'tests/msgs/MultiHeader'
-        headers: pybag.Array[Header, Literal[3]]  # Direct usage without Complex wrapper
+        headers: t.Array[Header, Literal[3]]  # Direct usage without Complex wrapper
 
     obj = MultiHeader(headers=[
         Header(stamp=1, frame_id='a'),
@@ -239,23 +240,23 @@ def test_serialize_nested_complex_array() -> None:
     class MultiArrayDimension:
         __msg_name__ = 'std_msgs/msg/MultiArrayDimension'
 
-        label: pybag.string
-        size: pybag.uint32
-        stride: pybag.uint32
+        label: t.string
+        size: t.uint32
+        stride: t.uint32
 
     @dataclass()
     class MultiArrayLayout:
         __msg_name__ = 'std_msgs/msg/MultiArrayLayout'
 
-        dim: pybag.Array[MultiArrayDimension]
-        data_offset: pybag.uint32
+        dim: t.Array[MultiArrayDimension]
+        data_offset: t.uint32
 
     @dataclass()
     class Float32MultiArray:
         __msg_name__ = 'std_msgs/msg/Float32MultiArray'
 
         layout: MultiArrayLayout
-        data: pybag.Array[pybag.float32]
+        data: t.Array[t.float32]
 
     obj = Float32MultiArray(
         layout=MultiArrayLayout(

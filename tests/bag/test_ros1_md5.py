@@ -9,7 +9,7 @@ from typing import Literal
 
 import pytest
 
-import pybag
+import pybag.types as t
 from pybag.schema.ros1msg import Ros1MsgSchemaEncoder, compute_md5sum
 
 
@@ -129,7 +129,7 @@ class TestSchemaEncoderMD5:
         @dataclass(kw_only=True)
         class SimpleInt:
             __msg_name__ = 'test_msgs/SimpleInt'
-            data: pybag.int32
+            data: t.int32
 
         encoder = Ros1MsgSchemaEncoder()
         msg_def = encoder.encode(SimpleInt).decode('utf-8')
@@ -144,9 +144,9 @@ class TestSchemaEncoderMD5:
         @dataclass(kw_only=True)
         class Vector3:
             __msg_name__ = 'geometry_msgs/Vector3'
-            x: pybag.float64
-            y: pybag.float64
-            z: pybag.float64
+            x: t.float64
+            y: t.float64
+            z: t.float64
 
         encoder = Ros1MsgSchemaEncoder()
         msg_def = encoder.encode(Vector3).decode('utf-8')

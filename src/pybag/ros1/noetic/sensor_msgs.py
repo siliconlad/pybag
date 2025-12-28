@@ -274,7 +274,7 @@ class TimeReference:
     __msg_name__ = 'sensor_msgs/TimeReference'
 
     header: std_msgs.Header
-    time_ref: t.time
+    time_ref: t.ros1.time
     source: t.string
 
 

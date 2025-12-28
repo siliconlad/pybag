@@ -17,6 +17,7 @@ from typing import Any
 from pybag.encoding import MessageDecoder, MessageEncoder
 from pybag.io.raw_reader import BytesReader
 from pybag.io.raw_writer import BytesWriter
+from pybag.types import ros1
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +80,9 @@ class RosMsgDecoder(MessageDecoder):
         """Parse a single byte."""
         return self._data.read(1)
 
-    def char(self) -> str:
-        """Parse a single character."""
-        raise Exception("char encoding is deprecated")
+    def char(self) -> int:
+        """Parse a ROS 1 char (uint8)."""
+        return struct.unpack('<B', self._data.read(1))[0]
 
     def int16(self) -> int:
         """Parse a signed 16-bit integer (little-endian)."""
@@ -125,6 +126,26 @@ class RosMsgDecoder(MessageDecoder):
         if length == 0:
             return ''
         return self._data.read(length).decode('utf-8')
+
+    # ROS 1 specific types -----------------------------------------------
+
+    def time(self) -> ros1.Time:
+        """Parse a ROS 1 time (secs: uint32, nsecs: uint32).
+
+        Returns:
+            Time object with secs and nsecs attributes.
+        """
+        secs, nsecs = struct.unpack('<II', self._data.read(8))
+        return ros1.Time(secs=secs, nsecs=nsecs)
+
+    def duration(self) -> ros1.Duration:
+        """Parse a ROS 1 duration (secs: int32, nsecs: int32).
+
+        Returns:
+            Duration object with secs and nsecs attributes.
+        """
+        secs, nsecs = struct.unpack('<ii', self._data.read(8))
+        return ros1.Duration(secs=secs, nsecs=nsecs)
 
     # Container parsers --------------------------------------------------
 
@@ -206,8 +227,9 @@ class RosMsgEncoder(MessageEncoder):
         """Encode a single byte."""
         self._payload.write(value[:1])
 
-    def char(self, value: str) -> None:
-        raise Exception("char encoding is deprecated")
+    def char(self, value: int) -> None:
+        """Encode a ROS 1 char (uint8)."""
+        self._payload.write(struct.pack('<B', value))
 
     def int16(self, value: int) -> None:
         """Encode a signed 16-bit integer (little-endian)."""
@@ -250,6 +272,24 @@ class RosMsgEncoder(MessageEncoder):
         encoded = value.encode('utf-8')
         self.uint32(len(encoded))
         self._payload.write(encoded)
+
+    # ROS 1 specific types -----------------------------------------------
+
+    def time(self, value: ros1.Time) -> None:
+        """Encode a ROS 1 time (secs: uint32, nsecs: uint32).
+
+        Args:
+            value: Time object with secs and nsecs attributes.
+        """
+        self._payload.write(struct.pack('<II', value.secs, value.nsecs))
+
+    def duration(self, value: ros1.Duration) -> None:
+        """Encode a ROS 1 duration (secs: int32, nsecs: int32).
+
+        Args:
+            value: Duration object with secs and nsecs attributes.
+        """
+        self._payload.write(struct.pack('<ii', value.secs, value.nsecs))
 
     # Container encoders -------------------------------------------------
 

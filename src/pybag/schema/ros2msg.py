@@ -296,6 +296,20 @@ class Ros2MsgSchemaEncoder(SchemaEncoder):
         if field_type[0] == 'constant':
             return self._parse_annotation(field_type[1])
 
+        # Provide helpful error messages for ROS 1 specific types
+        if field_type[0] == 'time':
+            raise Ros2MsgError(
+                "ROS 1 'time' type cannot be used with ROS 2/MCAP. "
+                "Use 'builtin_interfaces/Time' (with sec and nanosec fields) instead. "
+                "The pybag.ros1.Time class is only for ROS 1 bag files."
+            )
+        if field_type[0] == 'duration':
+            raise Ros2MsgError(
+                "ROS 1 'duration' type cannot be used with ROS 2/MCAP. "
+                "Use 'builtin_interfaces/Duration' (with sec and nanosec fields) instead. "
+                "The pybag.ros1.Duration class is only for ROS 1 bag files."
+            )
+
         raise Ros2MsgError(f"Unknown field type: {field_type}")
 
     def _parse_default_value(self, annotation: dataclasses.Field) -> Any:

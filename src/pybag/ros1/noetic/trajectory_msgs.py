@@ -21,7 +21,7 @@ class JointTrajectoryPoint:
     velocities: t.Array[t.float64]
     accelerations: t.Array[t.float64]
     effort: t.Array[t.float64]
-    time_from_start: t.duration
+    time_from_start: t.ros1.duration
 
 
 @dataclass(kw_only=True)
@@ -31,7 +31,7 @@ class MultiDOFJointTrajectoryPoint:
     transforms: t.Array[geometry_msgs.Transform]
     velocities: t.Array[geometry_msgs.Twist]
     accelerations: t.Array[geometry_msgs.Twist]
-    time_from_start: t.duration
+    time_from_start: t.ros1.duration
 
 
 @dataclass(kw_only=True)

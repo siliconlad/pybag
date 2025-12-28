@@ -30,7 +30,7 @@ class Byte:
 class Char:
     __msg_name__ = 'std_msgs/msg/Char'
 
-    data: t.char
+    data: t.ros2.char
 
 
 @dataclass(kw_only=True)
