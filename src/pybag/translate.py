@@ -39,7 +39,7 @@ def _is_ros2_time(obj: Any) -> bool:
     msg_name = obj.__msg_name__
     return (
         msg_name in ('builtin_interfaces/msg/Time', 'builtin_interfaces/Time') and
-        hasattr(obj, 'sec') and 
+        hasattr(obj, 'sec') and
         hasattr(obj, 'nanosec')
     )
 
@@ -52,17 +52,17 @@ def _is_ros2_duration(obj: Any) -> bool:
     msg_name = obj.__msg_name__
     return (
         msg_name in ('builtin_interfaces/msg/Duration', 'builtin_interfaces/Duration') and
-        hasattr(obj, 'sec') and 
+        hasattr(obj, 'sec') and
         hasattr(obj, 'nanosec')
     )
 
 
 def ros1_time_to_ros2(time: Ros1Time) -> Ros2Time:
     """Convert ROS1 Time to ROS2 Time.
-    
+
     Args:
         time: ROS1 Time with secs and nsecs attributes.
-        
+
     Returns:
         ROS2 Time with sec and nanosec attributes.
     """
@@ -71,10 +71,10 @@ def ros1_time_to_ros2(time: Ros1Time) -> Ros2Time:
 
 def ros2_time_to_ros1(time: Any) -> Ros1Time:
     """Convert ROS2 Time to ROS1 Time.
-    
+
     Args:
         time: ROS2 Time with sec and nanosec attributes.
-        
+
     Returns:
         ROS1 Time with secs and nsecs attributes.
     """
@@ -83,10 +83,10 @@ def ros2_time_to_ros1(time: Any) -> Ros1Time:
 
 def ros1_duration_to_ros2(duration: Ros1Duration) -> Ros2Duration:
     """Convert ROS1 Duration to ROS2 Duration.
-    
+
     Args:
         duration: ROS1 Duration with secs and nsecs attributes.
-        
+
     Returns:
         ROS2 Duration with sec and nanosec attributes.
     """
@@ -95,10 +95,10 @@ def ros1_duration_to_ros2(duration: Ros1Duration) -> Ros2Duration:
 
 def ros2_duration_to_ros1(duration: Any) -> Ros1Duration:
     """Convert ROS2 Duration to ROS1 Duration.
-    
+
     Args:
         duration: ROS2 Duration with sec and nanosec attributes.
-        
+
     Returns:
         ROS1 Duration with secs and nsecs attributes.
     """
@@ -107,14 +107,14 @@ def ros2_duration_to_ros1(duration: Any) -> Ros1Duration:
 
 def translate_ros1_to_ros2(message: T) -> T:
     """Recursively translate a ROS1 message to ROS2 format.
-    
+
     This function walks through the message object and converts:
     - ROS1 Time(secs, nsecs) -> ROS2 Time(sec, nanosec)
     - ROS1 Duration(secs, nsecs) -> ROS2 Duration(sec, nanosec)
-    
+
     Args:
         message: A ROS1 message object (dataclass).
-        
+
     Returns:
         A new message object with time/duration fields converted to ROS2 format.
     """
@@ -126,15 +126,15 @@ def _translate_value_ros1_to_ros2(value: Any) -> Any:
     # Handle ROS1 Time
     if _is_ros1_time(value):
         return ros1_time_to_ros2(value)
-    
+
     # Handle ROS1 Duration
     if _is_ros1_duration(value):
         return ros1_duration_to_ros2(value)
-    
+
     # Handle lists/arrays
     if isinstance(value, list):
         return [_translate_value_ros1_to_ros2(item) for item in value]
-    
+
     # Handle dataclass (nested message)
     if is_dataclass(value) and not isinstance(value, type):
         # Get all field values and translate them
@@ -142,24 +142,24 @@ def _translate_value_ros1_to_ros2(value: Any) -> Any:
         for field in fields(value):
             field_value = getattr(value, field.name)
             new_values[field.name] = _translate_value_ros1_to_ros2(field_value)
-        
+
         # Create new instance with translated values
         return replace(value, **new_values)
-    
+
     # Return other values unchanged
     return value
 
 
 def translate_ros2_to_ros1(message: T) -> T:
     """Recursively translate a ROS2 message to ROS1 format.
-    
+
     This function walks through the message object and converts:
     - ROS2 Time(sec, nanosec) -> ROS1 Time(secs, nsecs)
     - ROS2 Duration(sec, nanosec) -> ROS1 Duration(secs, nsecs)
-    
+
     Args:
         message: A ROS2 message object (dataclass).
-        
+
     Returns:
         A new message object with time/duration fields converted to ROS1 format.
     """
@@ -171,15 +171,15 @@ def _translate_value_ros2_to_ros1(value: Any) -> Any:
     # Handle ROS2 Time
     if _is_ros2_time(value):
         return ros2_time_to_ros1(value)
-    
+
     # Handle ROS2 Duration
     if _is_ros2_duration(value):
         return ros2_duration_to_ros1(value)
-    
+
     # Handle lists/arrays
     if isinstance(value, list):
         return [_translate_value_ros2_to_ros1(item) for item in value]
-    
+
     # Handle dataclass (nested message)
     if is_dataclass(value) and not isinstance(value, type):
         # Get all field values and translate them
@@ -187,27 +187,27 @@ def _translate_value_ros2_to_ros1(value: Any) -> Any:
         for field in fields(value):
             field_value = getattr(value, field.name)
             new_values[field.name] = _translate_value_ros2_to_ros1(field_value)
-        
+
         # Create new instance with translated values
         return replace(value, **new_values)
-    
+
     # Return other values unchanged
     return value
 
 
 def translate_schema_ros1_to_ros2(msg_name: str, schema_text: str) -> SchemaText:
     """Translate a ROS1 message schema to ROS2 format.
-    
+
     This function transforms ROS1 message definition text to ROS2 format:
     - time -> builtin_interfaces/Time (with sec/nanosec fields)
     - duration -> builtin_interfaces/Duration (with sec/nanosec fields)
     - char remains as-is (handled by the serializer as uint8 vs string)
     - Message name: package/Message -> package/msg/Message
-    
+
     Args:
         msg_name: ROS1 message type name (e.g., "std_msgs/Header").
         schema_text: ROS1 message definition text.
-        
+
     Returns:
         SchemaText with ROS2-compatible name and definition text.
     """
@@ -221,40 +221,40 @@ def translate_schema_ros1_to_ros2(msg_name: str, schema_text: str) -> SchemaText
     result_lines = []
     has_time = False
     has_duration = False
-    
+
     for line in lines:
         stripped = line.strip()
-        
+
         # Skip empty lines and comments
         if not stripped or stripped.startswith('#'):
             result_lines.append(line)
             continue
-        
+
         # Check for MSG: delimiter (sub-message definition)
         if stripped.startswith('MSG:'):
             result_lines.append(line)
             continue
-        
+
         # Check for separator
         if stripped == '=' * 80:
             result_lines.append(line)
             continue
-        
+
         # Parse field: TYPE NAME [=VALUE]
         # Handle constants: TYPE NAME=VALUE
         if '=' in stripped and not stripped.startswith('='):
             # This is a constant definition, keep as-is
             result_lines.append(line)
             continue
-        
+
         # Match field definition
         match = re.match(r'^(\S+)\s+(\S+)(.*)$', stripped)
         if not match:
             result_lines.append(line)
             continue
-        
+
         field_type, field_name, rest = match.groups()
-        
+
         # Handle array notation
         array_suffix = ''
         base_type = field_type
@@ -262,7 +262,7 @@ def translate_schema_ros1_to_ros2(msg_name: str, schema_text: str) -> SchemaText
             bracket_pos = field_type.index('[')
             base_type = field_type[:bracket_pos]
             array_suffix = field_type[bracket_pos:]
-        
+
         # Translate time and duration
         if base_type == 'time':
             has_time = True
@@ -274,33 +274,33 @@ def translate_schema_ros1_to_ros2(msg_name: str, schema_text: str) -> SchemaText
             result_lines.append(f'{new_type} {field_name}{rest}')
         else:
             result_lines.append(line)
-    
+
     result = '\n'.join(result_lines)
-    
+
     # Add builtin_interfaces sub-schemas if needed
     time_schema = """================================================================================
 MSG: builtin_interfaces/Time
 int32 sec
 uint32 nanosec"""
-    
+
     duration_schema = """================================================================================
 MSG: builtin_interfaces/Duration
 int32 sec
 uint32 nanosec"""
-    
+
     # Check if the schema already contains these definitions
     if has_time and 'MSG: builtin_interfaces/Time' not in result:
         result += '\n' + time_schema
-    
+
     if has_duration and 'MSG: builtin_interfaces/Duration' not in result:
         result += '\n' + duration_schema
-    
+
     return SchemaText(name=ros2_msg_name, text=result)
 
 
 def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText:
     """Translate a ROS2 message schema to ROS1 format.
-    
+
     This function transforms ROS2 message definition text to ROS1 format:
     - builtin_interfaces/Time -> time (primitive)
     - builtin_interfaces/Duration -> duration (primitive)
@@ -308,11 +308,11 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
     - builtin_interfaces/msg/Duration -> duration (primitive)
     - Message name: package/msg/Message -> package/Message
     - char remains as-is (handled by the serializer)
-    
+
     Args:
         msg_name: ROS2 message type name (e.g., "std_msgs/msg/Header").
         schema_text: ROS2 message definition text.
-        
+
     Returns:
         SchemaText with ROS1-compatible name and definition text.
     """
@@ -324,7 +324,7 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
 
     for line in lines:
         stripped = line.strip()
-        
+
         # Check for MSG: delimiter (sub-message definition)
         if stripped.startswith('MSG:'):
             sub_msg_name = stripped[4:].strip()
@@ -340,7 +340,7 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
                 skip_sub_schema = False
                 result_lines.append(line)
                 continue
-        
+
         # Check for separator - might start a new sub-schema
         if stripped == '=' * 80:
             if skip_sub_schema:
@@ -348,29 +348,29 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
                 skip_sub_schema = False
             result_lines.append(line)
             continue
-        
+
         # Skip lines that are part of a builtin_interfaces sub-schema
         if skip_sub_schema:
             continue
-        
+
         # Skip empty lines and comments
         if not stripped or stripped.startswith('#'):
             result_lines.append(line)
             continue
-        
+
         # Handle constants: TYPE NAME=VALUE
         if '=' in stripped and not stripped.startswith('='):
             result_lines.append(line)
             continue
-        
+
         # Match field definition
         match = re.match(r'^(\S+)\s+(\S+)(.*)$', stripped)
         if not match:
             result_lines.append(line)
             continue
-        
+
         field_type, field_name, rest = match.groups()
-        
+
         # Handle array notation
         array_suffix = ''
         base_type = field_type
@@ -378,7 +378,7 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
             bracket_pos = field_type.index('[')
             base_type = field_type[:bracket_pos]
             array_suffix = field_type[bracket_pos:]
-        
+
         # Translate builtin_interfaces/Time and Duration to primitives
         if base_type in ('builtin_interfaces/Time', 'builtin_interfaces/msg/Time'):
             new_type = f'time{array_suffix}'
@@ -394,11 +394,11 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
                 result_lines.append(f'{new_type} {field_name}{rest}')
             else:
                 result_lines.append(line)
-    
+
     # Clean up any trailing empty separators
     while result_lines and result_lines[-1].strip() == '=' * 80:
         result_lines.pop()
-    
+
     return SchemaText(name=ros1_msg_name, text='\n'.join(result_lines))
 
 

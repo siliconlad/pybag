@@ -23,9 +23,8 @@ from pybag.translate import (
     ros2_duration_to_ros1,
     ros2_time_to_ros1,
     translate_ros1_to_ros2,
-    translate_ros2_to_ros1,
+    translate_ros2_to_ros1
 )
-
 
 # =============================================================================
 # Test Message Definitions
