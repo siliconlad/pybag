@@ -298,6 +298,17 @@ uint32 nanosec"""
     return SchemaText(name=ros2_msg_name, text=result)
 
 
+def _is_separator_line(line: str) -> bool:
+    """Check if a line is a schema separator.
+
+    The standard separator is 80 '=' characters. However, some tools
+    (e.g., certain MCAP writers) incorrectly use 40 '=' characters.
+    We accept both for compatibility with real-world files.
+    """
+    stripped = line.strip()
+    return stripped == '=' * 80
+
+
 def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText:
     """Translate a ROS2 message schema to ROS1 format.
 
@@ -307,6 +318,7 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
     - builtin_interfaces/msg/Time -> time (primitive)
     - builtin_interfaces/msg/Duration -> duration (primitive)
     - Message name: package/msg/Message -> package/Message
+    - Separator lines: non-standard 40 '=' chars -> standard 80 '=' chars
     - char remains as-is (handled by the serializer)
 
     Args:
@@ -333,20 +345,26 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
                                'builtin_interfaces/Duration', 'builtin_interfaces/msg/Duration'):
                 skip_sub_schema = True
                 # Also remove the preceding separator line if it exists
-                if result_lines and result_lines[-1].strip() == '=' * 80:
+                if result_lines and _is_separator_line(result_lines[-1]):
                     result_lines.pop()
                 continue
             else:
                 skip_sub_schema = False
-                result_lines.append(line)
+                # Convert MSG: line to ROS1 format (remove /msg/ from type name)
+                ros1_sub_msg_name = sub_msg_name.replace('/msg/', '/')
+                result_lines.append(f'MSG: {ros1_sub_msg_name}')
                 continue
 
         # Check for separator - might start a new sub-schema
-        if stripped == '=' * 80:
+        # Convert separator to standard 80 '=' format
+        # Some tools incorrectly use 40 '=' chars, so we normalize to 80
+        if _is_separator_line(line):
             if skip_sub_schema:
                 # This separator ends the skipped sub-schema
                 skip_sub_schema = False
-            result_lines.append(line)
+            else:
+                # Use ROS1 format separator (80 chars)
+                result_lines.append('=' * 80)
             continue
 
         # Skip lines that are part of a builtin_interfaces sub-schema
@@ -396,7 +414,7 @@ def translate_schema_ros2_to_ros1(msg_name: str, schema_text: str) -> SchemaText
                 result_lines.append(line)
 
     # Clean up any trailing empty separators
-    while result_lines and result_lines[-1].strip() == '=' * 80:
+    while result_lines and _is_separator_line(result_lines[-1]):
         result_lines.pop()
 
     return SchemaText(name=ros1_msg_name, text='\n'.join(result_lines))

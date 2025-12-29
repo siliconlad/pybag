@@ -216,12 +216,12 @@ def convert_mcap_to_bag(
         # Warn about data loss
         if attachments := reader.get_attachments():
             logger.warning(
-                f"MCAP contains {len(attachments)} attachment(s) which will be lost."
+                f"MCAP contains {len(attachments)} attachment(s) which will be lost "
                 "in conversion to bag format."
             )
         if metadata := reader.get_metadata():
             logger.warning(
-                f"MCAP contains {len(metadata)} metadata record(s) which will be lost."
+                f"MCAP contains {len(metadata)} metadata record(s) which will be lost "
                 "in conversion to bag format."
             )
 
