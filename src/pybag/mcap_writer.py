@@ -139,7 +139,7 @@ class McapFileWriter:
         self,
         topic: str,
         *,
-        schema: SchemaText | Message,
+        schema: SchemaText | type[Message] | Message,
     ) -> int:
         """Add a channel to the MCAP output.
 
@@ -148,25 +148,27 @@ class McapFileWriter:
 
         Args:
             topic: The topic name.
-            channel_type: The type of the messages to be written to the channel.
-                         If provided, the schema is generated from type annotations.
             schema: A SchemaText object containing the message type name and
-                   schema definition text.
+                   schema definition text, or a message class/instance to
+                   generate the schema from.
 
         Returns:
             The channel ID.
-
-        Raises:
-            ValueError: If neither channel_type nor schema is provided.
         """
         # Check if topic already exists
         if (channel_id := self._summary.get_channel_id(topic)) is not None:
             return channel_id
 
-        if isinstance(schema, Message):
-            schema_type = schema if isinstance(schema, type) else type(schema)
+        # Convert message class or instance to SchemaText
+        if isinstance(schema, type) and hasattr(schema, '__msg_name__'):
             schema = SchemaText(
                name=schema.__msg_name__,
+               text=self._schema_encoder.encode(schema).decode('utf-8'),
+            )
+        elif isinstance(schema, Message):
+            schema_type = type(schema)
+            schema = SchemaText(
+               name=schema_type.__msg_name__,
                text=self._schema_encoder.encode(schema_type).decode('utf-8'),
             )
 

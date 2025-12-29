@@ -170,31 +170,34 @@ class BagFileWriter:
         self,
         topic: str,
         *,
-        schema: SchemaText | Message,
+        schema: SchemaText | type[Message] | Message,
     ) -> int:
         """Add a connection (topic) to the bag file.
 
         Args:
             topic: The topic name.
-            message_type: The message type class. If provided, the schema is
-                         generated from type annotations.
             schema: A SchemaText object containing the message type name and
-                   schema definition text.
+                   schema definition text, or a message class/instance to
+                   generate the schema from.
 
         Returns:
             The connection ID.
-
-        Raises:
-            ValueError: If neither message_type nor schema is provided.
         """
         # TODO: Also check the message type of topic (using hash)?
         if topic in self._topics:
             return self._topics[topic]
 
-        if isinstance(schema, Message):
+        # Convert message class or instance to SchemaText
+        if isinstance(schema, type) and hasattr(schema, '__msg_name__'):
             schema = SchemaText(
                name=schema.__msg_name__,
-               text=self._schema_encoder.encode(type(schema)).decode('utf-8'),
+               text=self._schema_encoder.encode(schema).decode('utf-8'),
+            )
+        elif isinstance(schema, Message):
+            schema_type = type(schema)
+            schema = SchemaText(
+               name=schema_type.__msg_name__,
+               text=self._schema_encoder.encode(schema_type).decode('utf-8'),
             )
 
         conn_id = self._next_conn_id
