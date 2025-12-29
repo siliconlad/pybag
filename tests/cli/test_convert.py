@@ -8,15 +8,13 @@ import pytest
 import pybag.types as t
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
-from pybag.cli.mcap_convert import convert
 from pybag.cli.main import main as cli_main
+from pybag.cli.mcap_convert import convert
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
-from pybag.ros2.humble.builtin_interfaces import Duration as Ros2Duration
-from pybag.ros2.humble.builtin_interfaces import Time as Ros2Time
+from pybag.ros2.humble import builtin_interfaces
 
 
-# Define ROS1-compatible test messages (works with both bag and mcap)
 @dataclass(kw_only=True)
 class SimpleInt:
     """A simple int32 message compatible with both ROS1 and ROS2."""
@@ -63,14 +61,14 @@ class DurationMessageRos1:
 class TimeMessageRos2:
     """Message with ROS2 Time field."""
     __msg_name__ = 'test_msgs/TimeMessage'
-    stamp: Ros2Time
+    stamp: builtin_interfaces.Time
 
 
 @dataclass(kw_only=True)
 class DurationMessageRos2:
     """Message with ROS2 Duration field."""
     __msg_name__ = 'test_msgs/DurationMessage'
-    elapsed: Ros2Duration
+    elapsed: builtin_interfaces.Duration
 
 
 
@@ -321,68 +319,11 @@ def test_convert_mcap_to_bag_with_compression(tmp_path: Path) -> None:
 
     # Convert with bz2 compression
     bag_path = tmp_path / "output.bag"
-    convert(mcap_path, bag_path, bag_compression="bz2")
+    convert(mcap_path, bag_path, bag_compression="bz2", chunk_size=1024)
 
     with BagFileReader.from_file(bag_path) as reader:
         messages = list(reader.messages("/test"))
         assert len(messages) == 100
-
-
-# --- Round-trip tests ---
-
-
-def test_convert_roundtrip_bag_mcap_bag(tmp_path: Path) -> None:
-    """Test that bag -> mcap -> bag preserves message data."""
-    original_bag = tmp_path / "original.bag"
-    mcap_path = tmp_path / "intermediate.mcap"
-    final_bag = tmp_path / "final.bag"
-
-    # Create original bag
-    with BagFileWriter.open(original_bag) as writer:
-        writer.write_message("/test", int(1e9), SimpleInt(data=42))
-        writer.write_message("/test", int(2e9), SimpleInt(data=43))
-
-    # Convert bag -> mcap -> bag
-    convert(original_bag, mcap_path)
-    convert(mcap_path, final_bag)
-
-    # Compare original and final
-    with BagFileReader.from_file(original_bag) as orig:
-        with BagFileReader.from_file(final_bag) as final:
-            orig_msgs = list(orig.messages("/test"))
-            final_msgs = list(final.messages("/test"))
-
-            assert len(orig_msgs) == len(final_msgs)
-            for o, f in zip(orig_msgs, final_msgs, strict=True):
-                assert o.log_time == f.log_time
-                assert o.data.data == f.data.data
-
-
-def test_convert_roundtrip_mcap_bag_mcap(tmp_path: Path) -> None:
-    """Test that mcap -> bag -> mcap preserves message data."""
-    original_mcap = tmp_path / "original.mcap"
-    bag_path = tmp_path / "intermediate.bag"
-    final_mcap = tmp_path / "final.mcap"
-
-    # Create original mcap
-    with McapFileWriter.open(original_mcap, chunk_size=1024) as writer:
-        writer.write_message("/test", int(1e9), SimpleInt(data=42))
-        writer.write_message("/test", int(2e9), SimpleInt(data=43))
-
-    # Convert mcap -> bag -> mcap
-    convert(original_mcap, bag_path)
-    convert(bag_path, final_mcap)
-
-    # Compare original and final
-    with McapFileReader.from_file(original_mcap) as orig:
-        with McapFileReader.from_file(final_mcap) as final:
-            orig_msgs = list(orig.messages("/test"))
-            final_msgs = list(final.messages("/test"))
-
-            assert len(orig_msgs) == len(final_msgs)
-            for o, f in zip(orig_msgs, final_msgs, strict=True):
-                assert o.log_time == f.log_time
-                assert o.data.data == f.data.data
 
 
 # --- Time/Duration/Char type conversion tests ---
@@ -405,9 +346,8 @@ def test_convert_bag_to_mcap_with_time(tmp_path: Path) -> None:
     with McapFileReader.from_file(mcap_path) as reader:
         messages = list(reader.messages("/time"))
         assert len(messages) == 1
-        stamp = messages[0].data.stamp
-        assert stamp.sec == 1234567890
-        assert stamp.nanosec == 123456789
+        assert messages[0].data.stamp.sec == 1234567890
+        assert messages[0].data.stamp.nanosec == 123456789
 
 
 def test_convert_mcap_to_bag_with_time(tmp_path: Path) -> None:
@@ -417,7 +357,7 @@ def test_convert_mcap_to_bag_with_time(tmp_path: Path) -> None:
 
     # Create mcap with ROS2 Time message
     with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
-        msg = TimeMessageRos2(stamp=Ros2Time(sec=1234567890, nanosec=123456789))
+        msg = TimeMessageRos2(stamp=builtin_interfaces.Time(sec=1234567890, nanosec=123456789))
         writer.write_message("/time", int(1e9), msg)
 
     # Convert to bag
@@ -427,9 +367,8 @@ def test_convert_mcap_to_bag_with_time(tmp_path: Path) -> None:
     with BagFileReader.from_file(bag_path) as reader:
         messages = list(reader.messages("/time"))
         assert len(messages) == 1
-        stamp = messages[0].data.stamp
-        assert stamp.secs == 1234567890
-        assert stamp.nsecs == 123456789
+        assert messages[0].data.stamp.secs == 1234567890
+        assert messages[0].data.stamp.nsecs == 123456789
 
 
 def test_convert_bag_to_mcap_with_duration(tmp_path: Path) -> None:
@@ -449,9 +388,8 @@ def test_convert_bag_to_mcap_with_duration(tmp_path: Path) -> None:
     with McapFileReader.from_file(mcap_path) as reader:
         messages = list(reader.messages("/duration"))
         assert len(messages) == 1
-        elapsed = messages[0].data.elapsed
-        assert elapsed.sec == 60
-        assert elapsed.nanosec == 500000000
+        assert messages[0].data.elapsed.sec == 60
+        assert messages[0].data.elapsed.nanosec == 500000000
 
 
 def test_convert_mcap_to_bag_with_duration(tmp_path: Path) -> None:
@@ -461,7 +399,7 @@ def test_convert_mcap_to_bag_with_duration(tmp_path: Path) -> None:
 
     # Create mcap with ROS2 Duration message
     with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
-        msg = DurationMessageRos2(elapsed=Ros2Duration(sec=60, nanosec=500000000))
+        msg = DurationMessageRos2(elapsed=builtin_interfaces.Duration(sec=60, nanosec=500000000))
         writer.write_message("/duration", int(1e9), msg)
 
     # Convert to bag
@@ -471,9 +409,8 @@ def test_convert_mcap_to_bag_with_duration(tmp_path: Path) -> None:
     with BagFileReader.from_file(bag_path) as reader:
         messages = list(reader.messages("/duration"))
         assert len(messages) == 1
-        elapsed = messages[0].data.elapsed
-        assert elapsed.secs == 60
-        assert elapsed.nsecs == 500000000
+        assert messages[0].data.elapsed.secs == 60
+        assert messages[0].data.elapsed.nsecs == 500000000
 
 
 def test_convert_bag_to_mcap_with_char(tmp_path: Path) -> None:

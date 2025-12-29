@@ -112,6 +112,22 @@ class Message(Protocol):
     __msg_name__: str
 
 
+@dataclass(frozen=True, slots=True)
+class SchemaText:
+    """Bundled schema name and text for writing messages.
+
+    This class holds the textual representation of a message schema,
+    including the message type name and the schema definition text.
+
+    Attributes:
+        name: The message type name (e.g., "std_msgs/Header" for ROS1
+              or "std_msgs/msg/Header" for ROS2).
+        text: The schema definition text in ros1msg or ros2msg format.
+    """
+    name: str
+    text: str
+
+
 def _is_message_type(type_: Any) -> bool:
     """Check if a type is a message type (has __msg_name__ attribute)."""
     return hasattr(type_, '__msg_name__')
@@ -191,6 +207,7 @@ __all__ = [
     "Time",
     "Duration",
     "Message",
+    "SchemaText",
     "Array",
     "Complex",
     "Constant",

@@ -95,7 +95,7 @@ def test_add_channel_and_write_message() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
         with McapFileWriter.open(file_path, profile="ros2") as mcap:
-            channel_id = mcap.add_channel("/example", Example)
+            channel_id = mcap.add_channel("/example", schema=Example)
             mcap.write_message("/example", 1, Example(5))
         reader = CrcReader(BytesReader(file_path.read_bytes()))
 

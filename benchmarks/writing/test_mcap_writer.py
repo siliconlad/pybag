@@ -83,7 +83,7 @@ def test_pybag_write(benchmark: BenchmarkFixture) -> None:
 
     def _write_with_pybag(path: Path, messages: Iterable) -> None:
         writer = McapFileWriter.open(path)
-        writer.add_channel("/odom", Odometry)
+        writer.add_channel("/odom", schema=Odometry)
         for i, msg in enumerate(messages):
             timestamp = int(i * 1_500_000_000)
             writer.write_message("/odom", timestamp, msg)

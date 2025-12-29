@@ -10,6 +10,12 @@ from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
+from pybag.translate import (
+    translate_ros1_to_ros2,
+    translate_ros2_to_ros1,
+    translate_schema_ros1_to_ros2,
+    translate_schema_ros2_to_ros1
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +51,7 @@ def convert(
 ) -> Path:
     """Convert a bag file to mcap or vice versa.
 
-    This function converts between ROS 1 bag files and MCAP files (with ros2 profile).
+    This function converts between ROS 1 bag files and MCAP files.
     Messages are streamed through the conversion to minimize memory usage.
 
     Note: When converting MCAP to bag, attachments and metadata records are lost
@@ -109,14 +115,14 @@ def convert(
 
     # Perform conversion
     if input_format == "bag" and output_format == "mcap":
-        return _convert_bag_to_mcap(
+        return convert_bag_to_mcap(
             input_path,
             output_path,
             chunk_size=chunk_size,
             chunk_compression=mcap_compression,
         )
     else:  # mcap to bag
-        return _convert_mcap_to_bag(
+        return convert_mcap_to_bag(
             input_path,
             output_path,
             chunk_size=chunk_size,
@@ -124,7 +130,7 @@ def convert(
         )
 
 
-def _convert_bag_to_mcap(
+def convert_bag_to_mcap(
     input_path: Path,
     output_path: Path,
     *,
@@ -146,8 +152,6 @@ def _convert_bag_to_mcap(
 
     with BagFileReader.from_file(input_path) as reader:
         topics = reader.get_topics()
-        logger.info(f"Found {len(topics)} topics in bag file")
-
         if not topics:
             logger.warning("No topics found in bag file, creating empty mcap")
 
@@ -157,16 +161,24 @@ def _convert_bag_to_mcap(
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
         ) as writer:
+            # TODO: Make this nicer
+            # Pre-register all channels with translated schemas
+            # This ensures the schema is correct for the target format
+            for conn in reader._connections.values():
+                conn_header = conn.connection_header
+                schema = translate_schema_ros1_to_ros2(
+                    conn_header.type,
+                    conn_header.message_definition,
+                )
+                writer.add_channel(conn.topic, schema=schema)
+
             message_count = 0
-            # Read messages in write order for efficiency.
-            # Bag files are typically already in chronological order,
-            # so this avoids unnecessary sorting overhead.
             for msg in reader.messages(topics, in_log_time_order=False):
                 writer.write_message(
                     topic=msg.topic,
                     timestamp=msg.log_time,
-                    message=msg.data,
-                    publish_time=msg.log_time,  # Bag files don't have publish_time
+                    message=translate_ros1_to_ros2(msg.data),
+                    publish_time=msg.log_time,
                 )
                 message_count += 1
             logger.info(f"Converted {message_count} messages to mcap")
@@ -174,7 +186,7 @@ def _convert_bag_to_mcap(
     return output_path
 
 
-def _convert_mcap_to_bag(
+def convert_mcap_to_bag(
     input_path: Path,
     output_path: Path,
     *,
@@ -189,8 +201,8 @@ def _convert_mcap_to_bag(
     Args:
         input_path: Path to the input mcap file.
         output_path: Path to the output bag file.
-        compression: Compression algorithm for bag chunks.
         chunk_size: Chunk size in bytes.
+        chunk_compression: Compression algorithm for bag chunks.
 
     Returns:
         Path to the output file.
@@ -204,12 +216,12 @@ def _convert_mcap_to_bag(
         # Warn about data loss
         if attachments := reader.get_attachments():
             logger.warning(
-                f"MCAP contains {len(attachments)} attachment(s) which will be lost "
+                f"MCAP contains {len(attachments)} attachment(s) which will be lost."
                 "in conversion to bag format."
             )
         if metadata := reader.get_metadata():
             logger.warning(
-                f"MCAP contains {len(metadata)} metadata record(s) which will be lost "
+                f"MCAP contains {len(metadata)} metadata record(s) which will be lost."
                 "in conversion to bag format."
             )
 
@@ -221,15 +233,27 @@ def _convert_mcap_to_bag(
             compression=chunk_compression,
             chunk_size=chunk_size,
         ) as writer:
+            # TODO: Make this nicer
+            # Pre-register all connections with translated schemas
+            # This ensures the schema is correct for the target format
+            channels = reader._reader.get_channels()
+            for channel in channels.values():
+                schema_record = reader._reader.get_channel_schema(channel.id)
+                if schema_record is None:
+                    logger.warning(f"No schema found for channel {channel.topic}")
+                    continue
+                schema = translate_schema_ros2_to_ros1(
+                    schema_record.name,
+                    schema_record.data.decode('utf-8'),
+                )
+                writer.add_connection(channel.topic, schema=schema)
+
             message_count = 0
-            # Read messages in write order for efficiency.
-            # MCAP files are typically already in chronological order,
-            # so this avoids unnecessary sorting overhead.
             for msg in reader.messages(topics, in_log_time_order=False):
                 writer.write_message(
                     topic=msg.topic,
                     timestamp=msg.log_time,
-                    message=msg.data,
+                    message=translate_ros2_to_ros1(msg.data),
                 )
                 message_count += 1
             logger.info(f"Converted {message_count} messages to bag")
