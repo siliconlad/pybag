@@ -473,3 +473,178 @@ def test_convert_roundtrip_char_bag_mcap_bag(tmp_path: Path) -> None:
         messages = list(reader.messages("/char"))
         assert len(messages) == 1
         assert messages[0].data.value == 90
+
+
+# --- Image message type conversion tests ---
+
+
+def test_convert_bag_to_mcap_with_image(tmp_path: Path) -> None:
+    """Test bag to mcap conversion with Image message type."""
+    from pybag.ros1.noetic import sensor_msgs
+    from pybag.ros1.noetic import std_msgs
+
+    bag_path = tmp_path / "input.bag"
+    mcap_path = tmp_path / "output.mcap"
+
+    # Create a simple 2x2 grayscale image
+    image_data = [100, 150, 200, 250]
+    header = std_msgs.Header(
+        seq=1,
+        stamp=t.ros1.Time(secs=1234567890, nsecs=123456789),
+        frame_id="camera_frame"
+    )
+    msg = sensor_msgs.Image(
+        header=header,
+        height=2,
+        width=2,
+        encoding="mono8",
+        is_bigendian=0,
+        step=2,
+        data=image_data
+    )
+
+    with BagFileWriter.open(bag_path) as writer:
+        writer.write_message("/camera/image_raw", int(1e9), msg)
+
+    # Convert to mcap
+    convert(bag_path, mcap_path)
+
+    # Verify the image data is preserved
+    with McapFileReader.from_file(mcap_path) as reader:
+        messages = list(reader.messages("/camera/image_raw"))
+        assert len(messages) == 1
+        result = messages[0].data
+        assert result.height == 2
+        assert result.width == 2
+        assert result.encoding == "mono8"
+        assert result.is_bigendian == 0
+        assert result.step == 2
+        assert list(result.data) == image_data
+        assert result.header.frame_id == "camera_frame"
+        # Time should be converted to ROS2 format
+        assert result.header.stamp.sec == 1234567890
+        assert result.header.stamp.nanosec == 123456789
+
+
+def test_convert_mcap_to_bag_with_image(tmp_path: Path) -> None:
+    """Test mcap to bag conversion with Image message type."""
+    from pybag.ros2.humble import sensor_msgs
+    from pybag.ros2.humble import std_msgs
+
+    mcap_path = tmp_path / "input.mcap"
+    bag_path = tmp_path / "output.bag"
+
+    # Create a simple 2x2 grayscale image
+    image_data = [100, 150, 200, 250]
+    header = std_msgs.Header(
+        stamp=builtin_interfaces.Time(sec=1234567890, nanosec=123456789),
+        frame_id="camera_frame"
+    )
+    msg = sensor_msgs.Image(
+        header=header,
+        height=2,
+        width=2,
+        encoding="mono8",
+        is_bigendian=0,
+        step=2,
+        data=image_data
+    )
+
+    with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
+        writer.write_message("/camera/image_raw", int(1e9), msg)
+
+    # Convert to bag
+    convert(mcap_path, bag_path)
+
+    # Verify the image data is preserved
+    with BagFileReader.from_file(bag_path) as reader:
+        messages = list(reader.messages("/camera/image_raw"))
+        assert len(messages) == 1
+        result = messages[0].data
+        assert result.height == 2
+        assert result.width == 2
+        assert result.encoding == "mono8"
+        assert result.is_bigendian == 0
+        assert result.step == 2
+        assert list(result.data) == image_data
+        assert result.header.frame_id == "camera_frame"
+        # Time should be converted to ROS1 format
+        assert result.header.stamp.secs == 1234567890
+        assert result.header.stamp.nsecs == 123456789
+
+
+def test_convert_bag_to_mcap_with_compressed_image(tmp_path: Path) -> None:
+    """Test bag to mcap conversion with CompressedImage message type."""
+    from pybag.ros1.noetic import sensor_msgs
+    from pybag.ros1.noetic import std_msgs
+
+    bag_path = tmp_path / "input.bag"
+    mcap_path = tmp_path / "output.mcap"
+
+    # Simulated JPEG data (just bytes for testing)
+    jpeg_data = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46]
+    header = std_msgs.Header(
+        seq=42,
+        stamp=t.ros1.Time(secs=1700000000, nsecs=987654321),
+        frame_id="compressed_camera"
+    )
+    msg = sensor_msgs.CompressedImage(
+        header=header,
+        format="jpeg",
+        data=jpeg_data
+    )
+
+    with BagFileWriter.open(bag_path) as writer:
+        writer.write_message("/camera/image/compressed", int(1e9), msg)
+
+    # Convert to mcap
+    convert(bag_path, mcap_path)
+
+    # Verify the compressed image data is preserved
+    with McapFileReader.from_file(mcap_path) as reader:
+        messages = list(reader.messages("/camera/image/compressed"))
+        assert len(messages) == 1
+        result = messages[0].data
+        assert result.format == "jpeg"
+        assert list(result.data) == jpeg_data
+        assert result.header.frame_id == "compressed_camera"
+        assert result.header.stamp.sec == 1700000000
+        assert result.header.stamp.nanosec == 987654321
+
+
+def test_convert_mcap_to_bag_with_compressed_image(tmp_path: Path) -> None:
+    """Test mcap to bag conversion with CompressedImage message type."""
+    from pybag.ros2.humble import sensor_msgs
+    from pybag.ros2.humble import std_msgs
+
+    mcap_path = tmp_path / "input.mcap"
+    bag_path = tmp_path / "output.bag"
+
+    # Simulated PNG data (just bytes for testing)
+    png_data = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+    header = std_msgs.Header(
+        stamp=builtin_interfaces.Time(sec=1111111111, nanosec=222222222),
+        frame_id="png_camera"
+    )
+    msg = sensor_msgs.CompressedImage(
+        header=header,
+        format="png",
+        data=png_data
+    )
+
+    with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
+        writer.write_message("/camera/image/compressed", int(1e9), msg)
+
+    # Convert to bag
+    convert(mcap_path, bag_path)
+
+    # Verify the compressed image data is preserved
+    with BagFileReader.from_file(bag_path) as reader:
+        messages = list(reader.messages("/camera/image/compressed"))
+        assert len(messages) == 1
+        result = messages[0].data
+        assert result.format == "png"
+        assert list(result.data) == png_data
+        assert result.header.frame_id == "png_camera"
+        assert result.header.stamp.secs == 1111111111
+        assert result.header.stamp.nsecs == 222222222
