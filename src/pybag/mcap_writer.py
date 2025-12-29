@@ -172,7 +172,8 @@ class McapFileWriter:
                text=self._schema_encoder.encode(schema_type).decode('utf-8'),
             )
 
-        if (schema_hash := hash(schema.text)) not in self._written_schemas:
+        schema_hash = hash(schema.text + schema.name)
+        if schema_hash not in self._written_schemas:
             schema_data = schema.text.encode('utf-8')
             schema_name = schema.name
             schema_record = SchemaRecord(
