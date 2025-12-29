@@ -17,7 +17,7 @@ from pybag.mcap.records import (
     AttachmentRecord,
     ChannelRecord,
     MetadataRecord,
-    SchemaRecord,
+    SchemaRecord
 )
 
 logger = logging.getLogger(__name__)
