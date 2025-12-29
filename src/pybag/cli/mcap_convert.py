@@ -80,6 +80,10 @@ def convert(
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
+    # Validate paths are different
+    if input_path == output_path:
+        raise ValueError("Input and output paths cannot be the same.")
+
     # Detect input format
     input_format = _detect_format(input_path)
     if input_format is None:
@@ -102,10 +106,6 @@ def convert(
             f"Input and output formats are the same ({input_format}). "
             "Use a different output format or file extension."
         )
-
-    # Validate paths are different
-    if input_path == output_path:
-        raise ValueError("Input and output paths cannot be the same.")
 
     # Check if output exists
     if not overwrite and output_path.exists():

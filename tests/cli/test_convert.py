@@ -256,7 +256,7 @@ def test_convert_same_path_error(tmp_path: Path) -> None:
     with McapFileWriter.open(mcap_path, chunk_size=1024) as writer:
         writer.write_message("/test", int(1e9), SimpleInt(data=1))
 
-    with pytest.raises(ValueError, match="Use a different output format"):
+    with pytest.raises(ValueError, match="Input and output paths cannot be the same."):
         convert(mcap_path, mcap_path)
 
 
