@@ -2,8 +2,10 @@
 
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import Any, Callable, Literal
 
+from pybag.encoding import MessageEncoder
+from pybag.encoding.cdr import CdrEncoder
 from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
@@ -21,8 +23,10 @@ from pybag.mcap.summary import (
     McapSummary,
     McapSummaryFactory
 )
+from pybag.schema.compiler import compile_serializer
+from pybag.schema.ros2msg import Ros2MsgSchemaDecoder, Ros2MsgSchemaEncoder
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
-from pybag.types import Message
+from pybag.types import Message, SchemaText
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +47,7 @@ class McapFileWriter:
         mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = None,
+        chunk_compression: Literal["none", "lz4", "zstd"] | None = "none",
     ) -> None:
         """Initialize a high-level MCAP file writer.
 
@@ -77,6 +81,16 @@ class McapFileWriter:
             profile=profile,
         )
 
+        # Pre-compiled serializers for topics with explicit schemas
+        # Maps topic -> compiled serializer function
+        self._topic_serializers: dict[str, Callable[[MessageEncoder, Any], None]] = {}
+
+        # Schema decoder for parsing explicit schema text
+        self._schema_decoder = Ros2MsgSchemaDecoder()
+        self._schema_encoder = Ros2MsgSchemaEncoder()
+        # TODO: Use Summary instead
+        self._written_schemas: dict[int, SchemaRecord] = {}
+
     def __enter__(self) -> "McapFileWriter":
         """Context manager entry."""
         return self
@@ -93,7 +107,7 @@ class McapFileWriter:
         mode: Literal['w', 'a'] = 'w',
         profile: str = "ros2",
         chunk_size: int | None = None,
-        chunk_compression: Literal["lz4", "zstd"] | None = "lz4",
+        chunk_compression: Literal["none", "lz4", "zstd"] | None = "lz4",
     ) -> "McapFileWriter":
         """Create a writer backed by a file on disk.
 
@@ -121,7 +135,12 @@ class McapFileWriter:
             ),
         )
 
-    def add_channel(self, topic: str, channel_type: type[Message]) -> int:
+    def add_channel(
+        self,
+        topic: str,
+        *,
+        schema: SchemaText | type[Message] | Message,
+    ) -> int:
         """Add a channel to the MCAP output.
 
         If the topic already exists, returns the existing channel ID.
@@ -129,7 +148,9 @@ class McapFileWriter:
 
         Args:
             topic: The topic name.
-            channel_type: The type of the messages to be written to the channel.
+            schema: A SchemaText object containing the message type name and
+                   schema definition text, or a message class/instance to
+                   generate the schema from.
 
         Returns:
             The channel ID.
@@ -138,26 +159,45 @@ class McapFileWriter:
         if (channel_id := self._summary.get_channel_id(topic)) is not None:
             return channel_id
 
-        # Register the schema if it's not already registered
-        if (schema_id := self._summary.get_schema_id(channel_type)) is None:
-            schema_id = self._summary.next_schema_id()
-            # Check that the channel type has a __msg_name__ attribute
-            if not hasattr(channel_type, '__msg_name__'):
-                raise ValueError(f"Channel type {channel_type} needs a __msg_name__ attribute")
+        # Convert message class or instance to SchemaText
+        if isinstance(schema, type) and hasattr(schema, '__msg_name__'):
+            schema = SchemaText(
+               name=schema.__msg_name__,
+               text=self._schema_encoder.encode(schema).decode('utf-8'),
+            )
+        elif isinstance(schema, Message):
+            schema_type = type(schema)
+            schema = SchemaText(
+               name=schema_type.__msg_name__,
+               text=self._schema_encoder.encode(schema_type).decode('utf-8'),
+            )
 
+        schema_hash = hash(schema.text + schema.name)
+        if schema_hash not in self._written_schemas:
+            schema_data = schema.text.encode('utf-8')
+            schema_name = schema.name
             schema_record = SchemaRecord(
-                id=schema_id,
-                name=channel_type.__msg_name__,
+                id=self._summary.next_schema_id(),
+                name=schema_name,
                 encoding=self._message_serializer.schema_encoding,
-                data=self._message_serializer.serialize_schema(channel_type),  # type: ignore[arg-type]
+                data=schema_data,
             )
             self._record_writer.write_schema(schema_record)
+            self._written_schemas[schema_hash] = schema_record
+        else:
+            schema_record = self._written_schemas[schema_hash]
+
+        # Parse the schema text and compile a serializer for this topic
+        # This allows us to serialize messages without relying on type annotations
+        parsed_schema, sub_schemas = self._schema_decoder.parse_schema(schema_record)
+        serializer = compile_serializer(parsed_schema, sub_schemas)
+        self._topic_serializers[topic] = serializer
 
         # Register the channel
         channel_id = self._summary.next_channel_id()
         channel_record = ChannelRecord(
             id=channel_id,
-            schema_id=schema_id,
+            schema_id=schema_record.id,
             topic=topic,
             message_encoding=self._message_serializer.message_encoding,
             metadata={},
@@ -176,6 +216,7 @@ class McapFileWriter:
         """Write a message to a topic at a given timestamp.
 
         Automatically creates the channel (and schema) if it doesn't exist.
+        If the channel was pre-registered with add_channel(), uses that schema.
 
         Args:
             topic: The topic name.
@@ -183,8 +224,10 @@ class McapFileWriter:
             message: The message to write.
             publish_time: The publish timestamp (nanoseconds). If None, defaults to timestamp.
         """
-        # Ensure the channel exists
-        channel_id = self.add_channel(topic, type(message))
+        # Check if channel already exists (may have been pre-registered)
+        channel_id = self._summary.get_channel_id(topic)
+        if channel_id is None:
+            channel_id = self.add_channel(topic, schema=message)
 
         # Get and increment sequence number
         sequence = self._summary.next_sequence_id(channel_id)
@@ -192,13 +235,22 @@ class McapFileWriter:
         # Use publish_time if provided, otherwise default to timestamp (log_time)
         actual_publish_time = publish_time if publish_time is not None else timestamp
 
+        # Serialize the message
+        if topic not in self._topic_serializers:
+            data = self._message_serializer.serialize_message(message)
+        else:
+            serializer = self._topic_serializers[topic]
+            encoder = CdrEncoder(little_endian=True)
+            serializer(encoder, message)
+            data = encoder.save()
+
         # Create message record
         record = MessageRecord(
             channel_id=channel_id,
             sequence=sequence,
             log_time=timestamp,
             publish_time=actual_publish_time,
-            data=self._message_serializer.serialize_message(message),
+            data=data,
         )
 
         # Delegate to low-level writer

@@ -11,7 +11,14 @@ import hashlib
 import logging
 import re
 from dataclasses import fields, is_dataclass
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    get_args,
+    get_origin,
+    get_type_hints
+)
 
 from pybag.bag.records import ConnectionRecord
 from pybag.io.raw_writer import BytesWriter
@@ -303,31 +310,40 @@ class Ros1MsgSchemaEncoder(SchemaEncoder):
         schema = Schema(class_name, {})
         sub_schemas: dict[str, Schema] = {}
 
+        # Use get_type_hints to resolve string annotations from
+        # `from __future__ import annotations`
+        type_hints = get_type_hints(cls, include_extras=True)
+
         for field in fields(cls):
-            if get_origin(field.type) is not Annotated:
-                if isinstance(field.type, Message):
-                    field_type = Complex(field.type.__msg_name__)
+            # Get the resolved type from type_hints instead of field.type
+            # This handles `from __future__ import annotations` which causes
+            # field.type to be a string instead of the actual type
+            field_type_hint = type_hints.get(field.name, field.type)
+
+            if get_origin(field_type_hint) is not Annotated:
+                if hasattr(field_type_hint, '__msg_name__'):
+                    resolved_field_type = Complex(field_type_hint.__msg_name__)
                     field_default = self._parse_default_value(field)
-                    schema.fields[field.name] = SchemaField(field_type, field_default)
-                    sub_schema, sub_sub_schemas = self._parse_message(field.type)
+                    schema.fields[field.name] = SchemaField(resolved_field_type, field_default)
+                    sub_schema, sub_sub_schemas = self._parse_message(field_type_hint)
                     sub_schemas[sub_schema.name] = sub_schema
                     sub_schemas.update(sub_sub_schemas)
                     continue
                 else:
                     raise Ros1MsgError(f"Field '{field.name}' is not correctly annotated.")
 
-            field_type = self._parse_annotation(field.type)
+            resolved_field_type = self._parse_annotation(field_type_hint)
             field_default = self._parse_default_value(field)
 
-            if get_args(field.type)[-1][0] == 'constant':
-                schema.fields[field.name] = SchemaConstant(field_type, field_default)
+            if get_args(field_type_hint)[-1][0] == 'constant':
+                schema.fields[field.name] = SchemaConstant(resolved_field_type, field_default)
                 continue
-            schema.fields[field.name] = SchemaField(field_type, field_default)
+            schema.fields[field.name] = SchemaField(resolved_field_type, field_default)
 
             # Handle nested complex types
-            if isinstance(field_type, (Sequence, Array)):
-                if isinstance(field_type.type, Complex):
-                    list_type = get_args(field.type)[0]
+            if isinstance(resolved_field_type, (Sequence, Array)):
+                if isinstance(resolved_field_type.type, Complex):
+                    list_type = get_args(field_type_hint)[0]
                     if get_origin(list_type) is list and get_args(list_type):
                         complex_annotation = get_args(list_type)[0]
                         if get_origin(complex_annotation) is Annotated:
@@ -336,8 +352,8 @@ class Ros1MsgSchemaEncoder(SchemaEncoder):
                             sub_schemas[sub_schema.name] = sub_schema
                             sub_schemas.update(sub_sub_schemas)
 
-            if isinstance(field_type, Complex):
-                complex_type = get_args(field.type)[0]
+            if isinstance(resolved_field_type, Complex):
+                complex_type = get_args(field_type_hint)[0]
                 sub_schema, sub_sub_schemas = self._parse_message(complex_type)
                 sub_schemas[sub_schema.name] = sub_schema
                 sub_schemas.update(sub_sub_schemas)
