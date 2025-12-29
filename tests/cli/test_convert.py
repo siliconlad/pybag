@@ -480,8 +480,7 @@ def test_convert_roundtrip_char_bag_mcap_bag(tmp_path: Path) -> None:
 
 def test_convert_bag_to_mcap_with_compressed_image(tmp_path: Path) -> None:
     """Test bag to mcap conversion with CompressedImage message type."""
-    from pybag.ros1.noetic import sensor_msgs
-    from pybag.ros1.noetic import std_msgs
+    from pybag.ros1.noetic import sensor_msgs, std_msgs
 
     bag_path = tmp_path / "input.bag"
     mcap_path = tmp_path / "output.mcap"
@@ -519,8 +518,7 @@ def test_convert_bag_to_mcap_with_compressed_image(tmp_path: Path) -> None:
 
 def test_convert_mcap_to_bag_with_compressed_image(tmp_path: Path) -> None:
     """Test mcap to bag conversion with CompressedImage message type."""
-    from pybag.ros2.humble import sensor_msgs
-    from pybag.ros2.humble import std_msgs
+    from pybag.ros2.humble import sensor_msgs, std_msgs
 
     mcap_path = tmp_path / "input.mcap"
     bag_path = tmp_path / "output.bag"

@@ -11,7 +11,14 @@ import hashlib
 import logging
 import re
 from dataclasses import fields, is_dataclass
-from typing import Annotated, Any, Literal, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    get_args,
+    get_origin,
+    get_type_hints
+)
 
 from pybag.bag.records import ConnectionRecord
 from pybag.io.raw_writer import BytesWriter
