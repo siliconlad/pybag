@@ -13,7 +13,12 @@ from pybag.mcap.record_reader import (
     BaseMcapRecordReader,
     McapRecordReaderFactory
 )
-from pybag.mcap.records import AttachmentRecord, MetadataRecord
+from pybag.mcap.records import (
+    AttachmentRecord,
+    ChannelRecord,
+    MetadataRecord,
+    SchemaRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +75,28 @@ class McapFileReader:
     def get_topics(self) -> list[str]:
         """Get all topics in the MCAP file."""
         return [c.topic for c in self._reader.get_channels().values()] # TODO: Use a set?
+
+    def get_channels(self) -> list[ChannelRecord]:
+        """Get all channels in the MCAP file.
+
+        Returns:
+            List of ChannelRecord objects.
+        """
+        return list(self._reader.get_channels().values())
+
+    def get_schema(self, topic: str) -> SchemaRecord | None:
+        """Get the schema for a particular topic.
+
+        Args:
+            topic: The topic name to get the schema for.
+
+        Returns:
+            SchemaRecord for the topic, or None if not found.
+        """
+        channel_id = self._reader.get_channel_id(topic)
+        if channel_id is None:
+            return None
+        return self._reader.get_channel_schema(channel_id)
 
     def get_message_count(self, topic: str) -> int:
         """Get the number of messages in a given topic."""

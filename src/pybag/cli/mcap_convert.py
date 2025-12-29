@@ -161,10 +161,9 @@ def convert_bag_to_mcap(
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
         ) as writer:
-            # TODO: Make this nicer
             # Pre-register all channels with translated schemas
             # This ensures the schema is correct for the target format
-            for conn in reader._connections.values():
+            for conn in reader.get_connections():
                 conn_header = conn.connection_header
                 schema = translate_schema_ros1_to_ros2(
                     conn_header.type,
@@ -233,12 +232,10 @@ def convert_mcap_to_bag(
             compression=chunk_compression,
             chunk_size=chunk_size,
         ) as writer:
-            # TODO: Make this nicer
             # Pre-register all connections with translated schemas
             # This ensures the schema is correct for the target format
-            channels = reader._reader.get_channels()
-            for channel in channels.values():
-                schema_record = reader._reader.get_channel_schema(channel.id)
+            for channel in reader.get_channels():
+                schema_record = reader.get_schema(channel.topic)
                 if schema_record is None:
                     logger.warning(f"No schema found for channel {channel.topic}")
                     continue
