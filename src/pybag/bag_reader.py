@@ -152,6 +152,17 @@ class BagFileReader:
         """
         return list(set(c.topic for c in self._connections.values()))
 
+    def get_connections(self) -> list[ConnectionRecord]:
+        """Get all connection records in the bag file.
+
+        Connection records contain metadata about each topic including
+        the message type and message definition.
+
+        Returns:
+            List of ConnectionRecord objects.
+        """
+        return list(self._connections.values())
+
     def get_message_count(self, topic: str) -> int:
         """Get the number of messages for a topic.
 
