@@ -91,6 +91,12 @@ class BytesReader(BaseReader):
         self._length = len(data)
         self._position = 0
 
+    def reset(self, data: bytes):
+        self._data = data
+        self._view = memoryview(data)
+        self._length = len(data)
+        self._position = 0
+
     def peek(self, size: int) -> bytes:
         # Returns empty bytes when end of data
         return self._data[self._position:self._position + size]

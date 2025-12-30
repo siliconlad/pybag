@@ -10,14 +10,38 @@ logger = logging.getLogger(__name__)
 
 
 class CdrDecoder(MessageDecoder):
+    """CDR (Common Data Representation) decoder for ROS2 messages."""
+
+    __slots__ = ('_is_little_endian', '_data', '_reusable_reader')
+
     def __init__(self, data: bytes):
+        """Create a new CDR decoder.
+
+        Args:
+            data: Optional CDR-encoded message data. If None, the decoder
+                  must be initialized with reset() before use.
+        """
         assert len(data) >= 4, 'Data must be at least 4 bytes long (CDR header).'
 
         # Get endianness from second byte
         self._is_little_endian = bool(data[1])
-
-        # Skip first 4 bytes
         self._data = BytesReader(data[4:])
+
+    def reset(self, data: bytes) -> 'CdrDecoder':
+        """Reset the decoder with new message data for reuse.
+
+        Args:
+            data: CDR-encoded message data (must include 4-byte CDR header)
+
+        Returns:
+            self, allowing for method chaining
+        """
+        assert len(data) >= 4, 'Data must be at least 4 bytes long (CDR header).'
+
+        # Get endianness from second byte
+        self._is_little_endian = bool(data[1])
+        self._data.reset(data[4:])
+        return self
 
     def parse(self, type_str: str) -> Any:
         return getattr(self, type_str)()
