@@ -42,6 +42,41 @@ _WRITE_SIZE = {k: struct.calcsize(v) for k, v in _WRITE_FORMAT.items()}
 _TAB = '    '
 
 
+def _is_simple_struct(schema: Schema) -> tuple[list[tuple[str, str, int]], int] | None:
+    """Check if a schema contains only primitive fields that can be batch-unpacked.
+
+    Handles mixed primitive types with proper CDR alignment by returning field
+    info that allows the caller to generate aligned unpacking code.
+
+    Returns (field_info, max_alignment) if inlinable, None otherwise.
+    field_info is a list of (field_name, struct_format_char, field_size) tuples.
+    """
+    field_info: list[tuple[str, str, int]] = []
+    max_align = 1
+
+    for field_name, entry in schema.fields.items():
+        if isinstance(entry, SchemaConstant):
+            continue  # Skip constants
+        if not isinstance(entry, SchemaField):
+            return None
+
+        field_type = entry.type
+        if not isinstance(field_type, Primitive):
+            return None
+        if field_type.type not in _STRUCT_FORMAT:
+            return None
+
+        fmt_char = _STRUCT_FORMAT[field_type.type]
+        size = _STRUCT_SIZE[field_type.type]
+        field_info.append((field_name, fmt_char, size))
+        max_align = max(max_align, size)
+
+    if not field_info:
+        return None
+
+    return (field_info, max_align)
+
+
 def _sanitize(name: str) -> str:
     return re.sub(r"[^0-9a-zA-Z_]", "_", name)
 
@@ -323,8 +358,59 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
 
             elif isinstance(field_type, Complex):
                 sub_schema = sub_schemas[field_type.type]
-                sub_func = build(sub_schema)
-                lines.append(f"{_TAB}_fields[{field_name!r}] = {sub_func}(decoder)")
+
+                # Check if this is a simple struct that can be inlined
+                simple_info = _is_simple_struct(sub_schema)
+                if simple_info is not None:
+                    field_info, max_align = simple_info
+                    sub_class_name = _sanitize(sub_schema.name)
+
+                    # Ensure the dataclass type is created
+                    create_dataclass_type(sub_schema)
+
+                    # Generate inlined struct unpacking with proper CDR alignment
+                    # Group consecutive fields with the same size to batch unpack them
+                    lines.append(f"{_TAB}_data.align({max_align})")
+
+                    inline_var_names = []
+                    idx = 0
+                    while idx < len(field_info):
+                        # Find run of fields with same size
+                        inline_run_start = idx
+                        inline_run_size = field_info[idx][2]
+                        inline_run_fmt = []
+                        inline_run_fields = []
+
+                        while idx < len(field_info) and field_info[idx][2] == inline_run_size:
+                            f_name, f_fmt, f_size = field_info[idx]
+                            inline_run_fmt.append(f_fmt)
+                            inline_run_fields.append(f_name)
+                            inline_var_names.append(f'_{field_name}_{f_name}')
+                            idx += 1
+
+                        # Emit alignment if this run has different alignment than previous
+                        if inline_run_start > 0:
+                            lines.append(f"{_TAB}_data.align({inline_run_size})")
+
+                        # Emit unpack for this run
+                        inline_fmt_str = ''.join(inline_run_fmt)
+                        inline_total_size = inline_run_size * len(inline_run_fields)
+                        inline_run_var_names = ', '.join(f'_{field_name}_{f}' for f in inline_run_fields)
+
+                        if len(inline_run_fields) == 1:
+                            lines.append(f"{_TAB}{inline_run_var_names} = struct.unpack_from(fmt_prefix + '{inline_fmt_str}', _view, _data.position)[0]")
+                        else:
+                            lines.append(f"{_TAB}{inline_run_var_names} = struct.unpack_from(fmt_prefix + '{inline_fmt_str}', _view, _data.position)")
+                        lines.append(f"{_TAB}_data.position += {inline_total_size}")
+
+                    # Create the dataclass instance
+                    sub_fields = [f[0] for f in field_info]
+                    kwargs = ', '.join(f'{f}=_{field_name}_{f}' for f in sub_fields)
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = _dataclass_types[{sub_class_name!r}]({kwargs})")
+                else:
+                    # Fall back to function call for complex nested types
+                    sub_func = build(sub_schema)
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = {sub_func}(decoder)")
 
             else:
                 lines.append(f"{_TAB}_fields[{field_name!r}] = None")
