@@ -187,7 +187,7 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             f"def {func_name}(decoder):",
             f"{_TAB}fmt_prefix = '<' if decoder._is_little_endian else '>'",
             f"{_TAB}_data = decoder._data",
-            f"{_TAB}_view = _data._view",  # Cache memoryview for unpack_from
+            f"{_TAB}_view = _data.view",  # Cache memoryview for unpack_from
             f"{_TAB}_fields = {{}}",
         ]
         field_names: list[str] = []
@@ -208,14 +208,14 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             # Use struct.unpack_from() to avoid creating intermediate bytes objects
             if count > 1:
                 names = ", ".join(run_fields)
-                lines.append(f"{_TAB}{names} = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data._position)")
-                lines.append(f"{_TAB}_data._position += {total_size}")
+                lines.append(f"{_TAB}{names} = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data.position)")
+                lines.append(f"{_TAB}_data.position += {total_size}")
                 for field in run_fields:
                     lines.append(f"{_TAB}_fields[{field!r}] = {field}")
             else:
                 field = run_fields[0]
-                lines.append(f"{_TAB}_fields[{field!r}] = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data._position)[0]")
-                lines.append(f"{_TAB}_data._position += {total_size}")
+                lines.append(f"{_TAB}_fields[{field!r}] = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data.position)[0]")
+                lines.append(f"{_TAB}_data.position += {total_size}")
 
             run_fields = []
             run_type = None
@@ -267,9 +267,9 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                         lines.append(f"{_TAB}_data.align({size})")
                         # Use unpack_from to avoid intermediate bytes allocation
                         lines.append(
-                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{fmt}', _view, _data._position))"
+                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{fmt}', _view, _data.position))"
                         )
-                        lines.append(f"{_TAB}_data._position += {total_size}")
+                        lines.append(f"{_TAB}_data.position += {total_size}")
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
@@ -301,9 +301,9 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                         lines.append(f"{_TAB}_data.align({size})")
                         # Use unpack_from to avoid intermediate bytes allocation
                         lines.append(
-                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{char}' * _len, _view, _data._position))"
+                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{char}' * _len, _view, _data.position))"
                         )
-                        lines.append(f"{_TAB}_data._position += {size} * _len")
+                        lines.append(f"{_TAB}_data.position += {size} * _len")
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
