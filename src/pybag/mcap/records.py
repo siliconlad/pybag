@@ -2,20 +2,20 @@ from dataclasses import dataclass, field
 from enum import IntEnum
 
 
-@dataclass
+@dataclass(slots=True)
 class HeaderRecord:
     profile: str
     library: str
 
 
-@dataclass
+@dataclass(slots=True)
 class FooterRecord:
     summary_start: int
     summary_offset_start: int
     summary_crc: int
 
 
-@dataclass
+@dataclass(slots=True)
 class ChannelRecord:
     id: int
     schema_id: int
@@ -24,7 +24,7 @@ class ChannelRecord:
     metadata: dict[str, str]
 
 
-@dataclass
+@dataclass(slots=True)
 class SchemaRecord:
     id: int
     name: str
@@ -32,7 +32,7 @@ class SchemaRecord:
     data: bytes
 
 
-@dataclass
+@dataclass(slots=True)
 class MessageRecord:
     channel_id: int
     sequence: int
@@ -41,7 +41,7 @@ class MessageRecord:
     data: bytes
 
 
-@dataclass
+@dataclass(slots=True)
 class ChunkRecord:
     message_start_time: int
     message_end_time: int
@@ -51,13 +51,13 @@ class ChunkRecord:
     records: bytes
 
 
-@dataclass
+@dataclass(slots=True)
 class MessageIndexRecord:
     channel_id: int
     records: list[tuple[int, int]]
 
 
-@dataclass
+@dataclass(slots=True)
 class ChunkIndexRecord:
     message_start_time: int
     message_end_time: int
@@ -70,7 +70,7 @@ class ChunkIndexRecord:
     uncompressed_size: int
 
 
-@dataclass
+@dataclass(slots=True)
 class AttachmentRecord:
     log_time: int
     create_time: int
@@ -80,18 +80,18 @@ class AttachmentRecord:
     crc: int
 
 
-@dataclass
+@dataclass(slots=True)
 class MetadataRecord:
     name: str
     metadata: dict[str, str]
 
 
-@dataclass
+@dataclass(slots=True)
 class DataEndRecord:
     data_section_crc: int
 
 
-@dataclass
+@dataclass(slots=True)
 class AttachmentIndexRecord:
     offset: int
     length: int
@@ -102,14 +102,14 @@ class AttachmentIndexRecord:
     media_type: str
 
 
-@dataclass
+@dataclass(slots=True)
 class MetadataIndexRecord:
     offset: int
     length: int
     name: str
 
 
-@dataclass
+@dataclass(slots=True)
 class StatisticsRecord:
     message_count: int = 0
     schema_count: int = 0
@@ -122,7 +122,7 @@ class StatisticsRecord:
     channel_message_counts: dict[int, int] = field(default_factory=dict)
 
 
-@dataclass
+@dataclass(slots=True)
 class SummaryOffsetRecord:
     group_opcode: int
     group_start: int
