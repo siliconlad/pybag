@@ -11,7 +11,7 @@ from pybag.mcap.records import (
     AttachmentRecord,
     ChannelRecord,
     MetadataRecord,
-    SchemaRecord,
+    SchemaRecord
 )
 
 
