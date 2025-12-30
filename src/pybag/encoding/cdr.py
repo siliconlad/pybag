@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class CdrDecoder(MessageDecoder):
     """CDR (Common Data Representation) decoder for ROS2 messages."""
 
-    __slots__ = ('_is_little_endian', '_data', '_reusable_reader')
+    __slots__ = ('_is_little_endian', '_data')
 
     def __init__(self, data: bytes):
         """Create a new CDR decoder.
