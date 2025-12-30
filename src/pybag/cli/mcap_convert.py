@@ -16,6 +16,7 @@ from pybag.translate import (
     translate_schema_ros1_to_ros2,
     translate_schema_ros2_to_ros1
 )
+from pybag.types import SchemaText
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def convert(
     chunk_size: int | None = None,
     # MCAP output options
     mcap_compression: Literal["none", "lz4", "zstd"] = "lz4",
+    mcap_profile: Literal["ros1", "ros2"] = "ros2",
     # Bag output options
     bag_compression: Literal["none", "bz2"] = "none",
     *,
@@ -62,6 +64,7 @@ def convert(
         output_path: Path to the output file.
         chunk_size: Chunk size for MCAP output in bytes. If None, uses default chunking.
         mcap_compression: Compression for MCAP chunks ("lz4", "zstd", or None).
+        mcap_profile: MCAP profile to use ("ros1" or "ros2").
         bag_compression: Compression for bag chunks ("none" or "bz2").
         overwrite: Whether to overwrite the output file if it exists.
 
@@ -120,6 +123,7 @@ def convert(
             output_path,
             chunk_size=chunk_size,
             chunk_compression=mcap_compression,
+            profile=mcap_profile,
         )
     else:  # mcap to bag
         return convert_mcap_to_bag(
@@ -136,6 +140,7 @@ def convert_bag_to_mcap(
     *,
     chunk_size: int | None = None,
     chunk_compression: Literal["none", "lz4", "zstd"] = "lz4",
+    profile: Literal["ros1", "ros2"] = "ros2",
 ) -> Path:
     """Convert a bag file to mcap format.
 
@@ -144,11 +149,13 @@ def convert_bag_to_mcap(
         output_path: Path to the output mcap file.
         chunk_size: Chunk size in bytes. If None, uses default chunking.
         chunk_compression: Compression algorithm for chunks.
+        profile: MCAP profile to use. "ros1" keeps messages in ROS1 format,
+                "ros2" translates messages to ROS2/CDR format.
 
     Returns:
         Path to the output file.
     """
-    logger.info(f"Converting bag to mcap: {input_path} -> {output_path}")
+    logger.info(f"Converting bag to mcap (profile={profile}): {input_path} -> {output_path}")
 
     with BagFileReader.from_file(input_path) as reader:
         topics = reader.get_topics()
@@ -157,26 +164,39 @@ def convert_bag_to_mcap(
 
         with McapFileWriter.open(
             output_path,
-            profile="ros2",  # TODO: Also support ros1 profile
+            profile=profile,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
         ) as writer:
-            # Pre-register all channels with translated schemas
-            # This ensures the schema is correct for the target format
+            # Pre-register all channels with schemas
             for conn in reader.get_connections():
                 conn_header = conn.connection_header
-                schema = translate_schema_ros1_to_ros2(
-                    conn_header.type,
-                    conn_header.message_definition,
-                )
+                if profile == "ros1":
+                    # Keep schema in ROS1 format
+                    schema = SchemaText(
+                        name=conn_header.type,
+                        text=conn_header.message_definition,
+                    )
+                else:
+                    # Translate schema to ROS2 format
+                    schema = translate_schema_ros1_to_ros2(
+                        conn_header.type,
+                        conn_header.message_definition,
+                    )
                 writer.add_channel(conn.topic, schema=schema)
 
             message_count = 0
             for msg in reader.messages(topics, in_log_time_order=False):
+                if profile == "ros1":
+                    # Keep message in ROS1 format
+                    message = msg.data
+                else:
+                    # Translate message to ROS2 format
+                    message = translate_ros1_to_ros2(msg.data)
                 writer.write_message(
                     topic=msg.topic,
                     timestamp=msg.log_time,
-                    message=translate_ros1_to_ros2(msg.data),
+                    message=message,
                     publish_time=msg.log_time,
                 )
                 message_count += 1
@@ -209,6 +229,10 @@ def convert_mcap_to_bag(
     logger.info(f"Converting mcap to bag: {input_path} -> {output_path}")
 
     with McapFileReader.from_file(input_path) as reader:
+        # Detect the profile from the MCAP file
+        profile = reader.profile
+        logger.info(f"Detected MCAP profile: {profile}")
+
         topics = reader.get_topics()
         logger.info(f"Found {len(topics)} topics in mcap file")
 
@@ -232,25 +256,38 @@ def convert_mcap_to_bag(
             compression=chunk_compression,
             chunk_size=chunk_size,
         ) as writer:
-            # Pre-register all connections with translated schemas
-            # This ensures the schema is correct for the target format
+            # Pre-register all connections with schemas
             for channel in reader.get_channels():
                 schema_record = reader.get_schema(channel.topic)
                 if schema_record is None:
                     logger.warning(f"No schema found for channel {channel.topic}")
                     continue
-                schema = translate_schema_ros2_to_ros1(
-                    schema_record.name,
-                    schema_record.data.decode('utf-8'),
-                )
+                if profile == "ros1":
+                    # Schema is already in ROS1 format
+                    schema = SchemaText(
+                        name=schema_record.name,
+                        text=schema_record.data.decode('utf-8'),
+                    )
+                else:
+                    # Translate schema from ROS2 to ROS1 format
+                    schema = translate_schema_ros2_to_ros1(
+                        schema_record.name,
+                        schema_record.data.decode('utf-8'),
+                    )
                 writer.add_connection(channel.topic, schema=schema)
 
             message_count = 0
             for msg in reader.messages(topics, in_log_time_order=False):
+                if profile == "ros1":
+                    # Message is already in ROS1 format
+                    message = msg.data
+                else:
+                    # Translate message from ROS2 to ROS1 format
+                    message = translate_ros2_to_ros1(msg.data)
                 writer.write_message(
                     topic=msg.topic,
                     timestamp=msg.log_time,
-                    message=translate_ros2_to_ros1(msg.data),
+                    message=message,
                 )
                 message_count += 1
             logger.info(f"Converted {message_count} messages to bag")
@@ -264,10 +301,16 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "convert",
         help="Convert between bag and mcap formats.",
         description=dedent("""
-            Convert ROS 1 bag files to MCAP format (ros2 profile) or vice versa.
+            Convert ROS 1 bag files to MCAP format or vice versa.
 
-            The input and output formats are detected from file extensions (.bag, .mcap),
-            or can be specified explicitly with --output-format.
+            When converting bag to mcap, you can choose the MCAP profile:
+            - ros1: Keeps messages in ROS1 serialization format (rosmsg encoding)
+            - ros2: Translates messages to ROS2/CDR format (default)
+
+            When converting mcap to bag, the profile is auto-detected and messages
+            are translated if needed.
+
+            The input and output formats are detected from file extensions (.bag, .mcap).
 
             Note: When converting MCAP to bag, attachments and metadata records
             are lost as the bag format does not support these features.
@@ -300,6 +343,12 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         default="lz4",
         help="Compression for MCAP chunks (default: lz4). Use 'none' for no compression.",
     )
+    mcap_group.add_argument(
+        "--profile",
+        choices=["ros1", "ros2"],
+        default="ros2",
+        help="MCAP profile for bag->mcap (default: ros2). Ignored for mcap->bag (auto-detected).",
+    )
 
     # Bag output options
     bag_group = parser.add_argument_group("Bag output options")
@@ -322,6 +371,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
             args.output,
             chunk_size=args.chunk_size,
             mcap_compression=args.mcap_compression,
+            mcap_profile=args.profile,
             bag_compression=args.bag_compression,
             overwrite=args.overwrite,
         )
