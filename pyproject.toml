@@ -1,6 +1,6 @@
 [project]
 name = "pybag-sdk"
-version = "0.7.0"
+version = "0.8.0"
 description = "A Python library to work with bag files without ROS."
 readme = "README.md"
 authors = [{ name = "Angus Stewart", email = "siliconlad@protonmail.com" }]
