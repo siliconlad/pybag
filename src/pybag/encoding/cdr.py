@@ -25,116 +25,85 @@ class CdrDecoder(MessageDecoder):
     # Primitive parsers -------------------------------------------------
 
     def bool(self) -> bool:
-        value = struct.unpack('?', self._data.align(1).read(1))[0]
-        return value
+        return self._data.align(1).unpack_one('?', 1)
 
     def int8(self) -> int:
-        value = struct.unpack(
-            '<b' if self._is_little_endian else '>b',
-            self._data.align(1).read(1)
-        )[0]
-        return value
+        fmt = '<b' if self._is_little_endian else '>b'
+        return self._data.align(1).unpack_one(fmt, 1)
 
     def uint8(self) -> int:
-        value = struct.unpack(
-            '<B' if self._is_little_endian else '>B',
-            self._data.align(1).read(1)
-        )[0]
-        return value
+        fmt = '<B' if self._is_little_endian else '>B'
+        return self._data.align(1).unpack_one(fmt, 1)
 
     def byte(self) -> bytes:
         return self._data.align(1).read(1)
 
     def char(self) -> str:
-        value = struct.unpack(
-            '<c' if self._is_little_endian else '>c',
-            self._data.align(1).read(1)
-        )[0]
-        return value.decode()
+        fmt = '<c' if self._is_little_endian else '>c'
+        return self._data.align(1).unpack_one(fmt, 1).decode()
 
     def int16(self) -> int:
-        value = struct.unpack(
-            '<h' if self._is_little_endian else '>h',
-            self._data.align(2).read(2)
-        )[0]
-        return value
+        fmt = '<h' if self._is_little_endian else '>h'
+        return self._data.align(2).unpack_one(fmt, 2)
 
     def uint16(self) -> int:
-        value = struct.unpack(
-            '<H' if self._is_little_endian else '>H',
-            self._data.align(2).read(2)
-        )[0]
-        return value
+        fmt = '<H' if self._is_little_endian else '>H'
+        return self._data.align(2).unpack_one(fmt, 2)
 
     def int32(self) -> int:
-        value = struct.unpack(
-            '<i' if self._is_little_endian else '>i',
-            self._data.align(4).read(4)
-        )[0]
-        return value
+        fmt = '<i' if self._is_little_endian else '>i'
+        return self._data.align(4).unpack_one(fmt, 4)
 
     def uint32(self) -> int:
-        value = struct.unpack(
-            '<I' if self._is_little_endian else '>I',
-            self._data.align(4).read(4)
-        )[0]
-        return value
+        fmt = '<I' if self._is_little_endian else '>I'
+        return self._data.align(4).unpack_one(fmt, 4)
 
     def int64(self) -> int:
-        value = struct.unpack(
-            '<q' if self._is_little_endian else '>q',
-            self._data.align(8).read(8)
-        )[0]
-        return value
+        fmt = '<q' if self._is_little_endian else '>q'
+        return self._data.align(8).unpack_one(fmt, 8)
 
     def uint64(self) -> int:
-        value = struct.unpack(
-            '<Q' if self._is_little_endian else '>Q',
-            self._data.align(8).read(8)
-        )[0]
-        return value
+        fmt = '<Q' if self._is_little_endian else '>Q'
+        return self._data.align(8).unpack_one(fmt, 8)
 
     def float32(self) -> float:
-        value = struct.unpack(
-            '<f' if self._is_little_endian else '>f',
-            self._data.align(4).read(4)
-        )[0]
-        return value
+        fmt = '<f' if self._is_little_endian else '>f'
+        return self._data.align(4).unpack_one(fmt, 4)
 
     def float64(self) -> float:
-        value = struct.unpack(
-            '<d' if self._is_little_endian else '>d',
-            self._data.align(8).read(8)
-        )[0]
-        return value
+        fmt = '<d' if self._is_little_endian else '>d'
+        return self._data.align(8).unpack_one(fmt, 8)
 
     def string(self) -> str:
         # Strings are null-terminated
         length = self.uint32()
         if length <= 1:
-            self._data.read(length)  # discard
+            self._data.seek_from_current(length)
             return ''
-        return self._data.read(length).decode()[:-1]
+        # Read string bytes (still need to allocate for decode)
+        result = self._data.read(length)[:-1].decode()
+        return result
 
     def wstring(self) -> str:
         # Wide strings use 4 bytes per character (uint32)
         # Length is the number of characters including null terminator
         length = self.uint32()
         if length <= 1:
-            # Read and discard the null terminator if present
+            # Skip the null terminator if present
             if length == 1:
-                self._data.align(4).read(4)
+                self._data.align(4)
+                self._data.seek_from_current(4)
             return ''
         # Read each character as a uint32 and convert to string
+        fmt = '<I' if self._is_little_endian else '>I'
         chars = []
         for _ in range(length - 1):  # Exclude null terminator
-            char_code = struct.unpack(
-                '<I' if self._is_little_endian else '>I',
-                self._data.align(4).read(4)
-            )[0]
+            self._data.align(4)
+            char_code = self._data.unpack_one(fmt, 4)
             chars.append(chr(char_code))
-        # Read and discard null terminator
-        self._data.align(4).read(4)
+        # Skip null terminator
+        self._data.align(4)
+        self._data.seek_from_current(4)
         return ''.join(chars)
 
     # Container parsers --------------------------------------------------
