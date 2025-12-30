@@ -9,8 +9,8 @@ from mcap.reader import make_reader
 from mcap_ros1.decoder import DecoderFactory as Ros1DecoderFactory
 from mcap_ros2.decoder import DecoderFactory as Ros2DecoderFactory
 
-import pybag.ros2.humble.std_msgs as ros2_std_msgs
 import pybag.ros1.noetic.std_msgs as ros1_std_msgs
+import pybag.ros2.humble.std_msgs as ros2_std_msgs
 import pybag.types as t
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
@@ -476,13 +476,16 @@ def test_metadata_roundtrip(chunk_size, chunk_compression, profile):
 @pytest.mark.parametrize('write_chunk_size', [None, 1024])
 @pytest.mark.parametrize('append_chunk_size', [None, 1024])
 @pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
 def test_append_mode_basic(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
     chunk_compression: Literal['lz4', 'zstd'] | None,
+    profile: Literal["ros1", "ros2"],
 ):
     """Test basic append mode - append messages to existing file."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     temp_path = tmp_path / 'test.mcap'
 
     # Write initial MCAP file
@@ -490,10 +493,11 @@ def test_append_mode_basic(
         temp_path,
         mode="w",
         chunk_size=write_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
+        profile=profile,
     ) as writer:
-        writer.write_message("/topic1", 1000, ros2_std_msgs.String(data="msg1"))
-        writer.write_message("/topic1", 2000, ros2_std_msgs.String(data="msg2"))
+        writer.write_message("/topic1", 1000, String(data="msg1"))
+        writer.write_message("/topic1", 2000, String(data="msg2"))
 
     # Verify initial file
     with McapFileReader.from_file(temp_path) as reader:
@@ -506,11 +510,12 @@ def test_append_mode_basic(
     with McapFileWriter.open(
         temp_path,
         mode="a",
+        profile=profile,
         chunk_size=append_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
     ) as writer:
-        writer.write_message("/topic1", 3000, ros2_std_msgs.String(data="msg3"))
-        writer.write_message("/topic1", 4000, ros2_std_msgs.String(data="msg4"))
+        writer.write_message("/topic1", 3000, String(data="msg3"))
+        writer.write_message("/topic1", 4000, String(data="msg4"))
 
     # Verify appended file
     with McapFileReader.from_file(temp_path) as reader:
@@ -525,28 +530,32 @@ def test_append_mode_basic(
 
 
 @pytest.mark.parametrize('chunk_size', [None, 1024])
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
 def test_append_mode_crc_preserved(
     tmp_path: Path,
     chunk_size: int | None,
+    profile: Literal["ros1", "ros2"],
 ) -> None:
     """Ensure appended files keep a valid data section CRC."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     temp_path = tmp_path / 'crc_append.mcap'
 
     with McapFileWriter.open(
         temp_path,
         mode="w",
         chunk_size=chunk_size,
-        chunk_compression=None
+        chunk_compression=None,
+        profile=profile,
     ) as writer:
-        writer.write_message("/topic", 1000, ros2_std_msgs.String(data="first"))
+        writer.write_message("/topic", 1000, String(data="first"))
 
     with McapFileWriter.open(
         temp_path,
         mode="a",
         chunk_size=chunk_size,
-        chunk_compression=None
+        chunk_compression=None,
     ) as writer:
-        writer.write_message("/topic", 2000, ros2_std_msgs.String(data="second"))
+        writer.write_message("/topic", 2000, String(data="second"))
 
     with FileReader(temp_path) as reader:
         assert_data_crc(reader)
@@ -555,13 +564,17 @@ def test_append_mode_crc_preserved(
 @pytest.mark.parametrize('write_chunk_size', [None, 1024])
 @pytest.mark.parametrize('append_chunk_size', [None, 1024])
 @pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
 def test_append_mode_new_topic(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
     chunk_compression: Literal['lz4', 'zstd'] | None,
+    profile: Literal["ros1", "ros2"],
 ):
     """Test append mode with a new topic not in the original file."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
+    Int32 = ros1_std_msgs.Int32 if profile == 'ros1' else ros2_std_msgs.Int32
     temp_path = tmp_path / 'test.mcap'
 
     # Write initial MCAP file with one topic
@@ -569,18 +582,20 @@ def test_append_mode_new_topic(
         temp_path,
         mode="w",
         chunk_size=write_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
+        profile=profile,
     ) as writer:
-        writer.write_message("/topic1", 1000, ros2_std_msgs.String(data="msg1"))
+        writer.write_message("/topic1", 1000, String(data="msg1"))
 
     # Append with a different topic
     with McapFileWriter.open(
         temp_path,
         mode="a",
+        profile=profile,
         chunk_size=append_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
     ) as writer:
-        writer.write_message("/topic2", 2000, ros2_std_msgs.Int32(data=42))
+        writer.write_message("/topic2", 2000, Int32(data=42))
 
     # Verify both topics exist
     with McapFileReader.from_file(temp_path) as reader:
@@ -596,13 +611,16 @@ def test_append_mode_new_topic(
 @pytest.mark.parametrize('write_chunk_size', [None, 1024])
 @pytest.mark.parametrize('append_chunk_size', [None, 1024])
 @pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
 def test_append_mode_attachments(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
     chunk_compression: Literal['lz4', 'zstd'] | None,
+    profile: Literal["ros1", "ros2"],
 ):
     """Test append mode preserves and adds attachments."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     temp_path = tmp_path / 'test.mcap'
 
     # Write initial file with attachment
@@ -610,9 +628,10 @@ def test_append_mode_attachments(
         temp_path,
         mode="w",
         chunk_size=write_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
+        profile=profile,
     ) as writer:
-        writer.write_message("/test", 1000, ros2_std_msgs.String(data="msg1"))
+        writer.write_message("/test", 1000, String(data="msg1"))
         writer.write_attachment(
             name="file1.txt",
             data=b"original content",
@@ -625,9 +644,9 @@ def test_append_mode_attachments(
         temp_path,
         mode="a",
         chunk_size=append_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
     ) as writer:
-        writer.write_message("/test", 2000, ros2_std_msgs.String(data="msg2"))
+        writer.write_message("/test", 2000, String(data="msg2"))
         writer.write_attachment(
             name="file2.txt",
             data=b"appended content",
@@ -651,13 +670,16 @@ def test_append_mode_attachments(
 @pytest.mark.parametrize('write_chunk_size', [None, 1024])
 @pytest.mark.parametrize('append_chunk_size', [None, 1024])
 @pytest.mark.parametrize('chunk_compression', [None, 'lz4', 'zstd'])
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
 def test_append_mode_metadata(
     tmp_path: Path,
     write_chunk_size: int | None,
     append_chunk_size: int | None,
     chunk_compression: Literal['lz4', 'zstd'] | None,
+    profile: Literal["ros1", "ros2"],
 ):
     """Test append mode preserves and adds metadata."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     temp_path = tmp_path / 'test.mcap'
 
     # Write initial file with metadata
@@ -665,9 +687,10 @@ def test_append_mode_metadata(
         temp_path,
         mode="w",
         chunk_size=write_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
+        profile=profile,
     ) as writer:
-        writer.write_message("/test", 1000, ros2_std_msgs.String(data="msg1"))
+        writer.write_message("/test", 1000, String(data="msg1"))
         writer.write_metadata(name="info1", metadata={"key": "value1"})
 
     # Append with more metadata
@@ -675,9 +698,9 @@ def test_append_mode_metadata(
         temp_path,
         mode="a",
         chunk_size=append_chunk_size,
-        chunk_compression=chunk_compression
+        chunk_compression=chunk_compression,
     ) as writer:
-        writer.write_message("/test", 2000, ros2_std_msgs.String(data="msg2"))
+        writer.write_message("/test", 2000, String(data="msg2"))
         writer.write_metadata(name="info2", metadata={"key": "value2"})
 
     # Verify all metadata is present
