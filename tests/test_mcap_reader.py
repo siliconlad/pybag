@@ -4,16 +4,19 @@ import random
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Literal
 
 import pytest
 from mcap.reader import make_reader
-from mcap_ros2.decoder import DecoderFactory
-from mcap_ros2.writer import Writer as McapWriter
+from mcap_ros1.decoder import DecoderFactory as Ros1DecoderFactory
+from mcap_ros2.decoder import DecoderFactory as Ros2DecoderFactory
+from mcap_ros2.writer import Writer as Ros2McapWriter
 from rosbags.rosbag2 import StoragePlugin, Writer
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.store import Typestore
 
-import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.ros1.noetic.std_msgs as ros1_std_msgs
+import pybag.ros2.humble.std_msgs as ros2_std_msgs
 import pybag.types as t
 from pybag.mcap_reader import McapFileReader, McapMultipleFileReader
 from pybag.mcap_writer import McapFileWriter
@@ -80,25 +83,27 @@ def test_messages_filter(typestore: Typestore, in_log_time_order: bool, enable_c
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_multiple_existing_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_multiple_existing_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test reading messages from multiple existing topics."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "multiple_topics.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             # Write messages to /topic1 with timestamps 10, 20, 30
-            writer.write_message("/topic1", 10, std_msgs.String(data="topic1_0"))
-            writer.write_message("/topic1", 20, std_msgs.String(data="topic1_1"))
-            writer.write_message("/topic1", 30, std_msgs.String(data="topic1_2"))
+            writer.write_message("/topic1", 10, String(data="topic1_0"))
+            writer.write_message("/topic1", 20, String(data="topic1_1"))
+            writer.write_message("/topic1", 30, String(data="topic1_2"))
 
             # Write messages to /topic2 with timestamps 15, 25, 35
-            writer.write_message("/topic2", 15, std_msgs.String(data="topic2_0"))
-            writer.write_message("/topic2", 25, std_msgs.String(data="topic2_1"))
-            writer.write_message("/topic2", 35, std_msgs.String(data="topic2_2"))
+            writer.write_message("/topic2", 15, String(data="topic2_0"))
+            writer.write_message("/topic2", 25, String(data="topic2_1"))
+            writer.write_message("/topic2", 35, String(data="topic2_2"))
 
             # Write messages to /topic3 with timestamps 5, 45, 50
-            writer.write_message("/topic3", 5, std_msgs.String(data="topic3_0"))
-            writer.write_message("/topic3", 45, std_msgs.String(data="topic3_1"))
-            writer.write_message("/topic3", 50, std_msgs.String(data="topic3_2"))
+            writer.write_message("/topic3", 5, String(data="topic3_0"))
+            writer.write_message("/topic3", 45, String(data="topic3_1"))
+            writer.write_message("/topic3", 50, String(data="topic3_2"))
 
         # Read messages with pybag
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
@@ -135,14 +140,16 @@ def test_multiple_existing_topics(chunk_size, in_log_time_order: bool, enable_cr
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test reading messages from multiple topics where some don't exist."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "partial_topics.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             # Write 10 messages to /existing to ensure multiple chunks are created
             for i in range(10):
-                writer.write_message("/existing", i * 10, std_msgs.String(data=f"msg_{i}"))
+                writer.write_message("/existing", i * 10, String(data=f"msg_{i}"))
 
         # Read messages with pybag
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
@@ -177,14 +184,16 @@ def test_multiple_topics_with_nonexistent(chunk_size, in_log_time_order: bool, e
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test reading messages from multiple topics that don't exist."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "no_topics.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             # Write enough messages to /real_topic to create multiple chunks
             for i in range(10):
-                writer.write_message("/real_topic", i * 10, std_msgs.String(data=f"msg_{i}"))
+                writer.write_message("/real_topic", i * 10, String(data=f"msg_{i}"))
 
         # Read messages with pybag
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
@@ -211,7 +220,8 @@ def test_multiple_nonexistent_topics(chunk_size, in_log_time_order: bool, enable
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_glob_pattern_matching(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_glob_pattern_matching(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test reading messages using glob patterns to match multiple topics.
 
     This test verifies that glob patterns like '/sensor/*' can be used to match
@@ -221,23 +231,24 @@ def test_glob_pattern_matching(chunk_size, in_log_time_order: bool, enable_crc_c
     2. Messages are returned in the correct order (log_time or write order)
     3. Glob patterns with no matches return an empty list without errors
     """
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "glob_pattern.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             # /sensor/camera
-            writer.write_message("/sensor/camera", 10, std_msgs.String(data="camera_0"))
-            writer.write_message("/sensor/camera", 20, std_msgs.String(data="camera_1"))
+            writer.write_message("/sensor/camera", 10, String(data="camera_0"))
+            writer.write_message("/sensor/camera", 20, String(data="camera_1"))
             # /sensor/lidar
-            writer.write_message("/sensor/lidar", 15, std_msgs.String(data="lidar_0"))
-            writer.write_message("/sensor/lidar", 25, std_msgs.String(data="lidar_1"))
+            writer.write_message("/sensor/lidar", 15, String(data="lidar_0"))
+            writer.write_message("/sensor/lidar", 25, String(data="lidar_1"))
             # /sensor/imu
-            writer.write_message("/sensor/imu", 12, std_msgs.String(data="imu_0"))
-            writer.write_message("/sensor/imu", 22, std_msgs.String(data="imu_1"))
+            writer.write_message("/sensor/imu", 12, String(data="imu_0"))
+            writer.write_message("/sensor/imu", 22, String(data="imu_1"))
             # /control
-            writer.write_message("/control/speed", 8, std_msgs.String(data="speed_0"))
-            writer.write_message("/control/steering", 30, std_msgs.String(data="steering_0"))
+            writer.write_message("/control/speed", 8, String(data="speed_0"))
+            writer.write_message("/control/steering", 30, String(data="steering_0"))
             # Write second speed message AFTER steering (out of timestamp order)
-            writer.write_message("/control/speed", 18, std_msgs.String(data="speed_1"))
+            writer.write_message("/control/speed", 18, String(data="speed_1"))
 
         # Read messages with pybag
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
@@ -297,22 +308,25 @@ def test_glob_pattern_matching(chunk_size, in_log_time_order: bool, enable_crc_c
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            writer.write_message("/unordered", 0, std_msgs.String(data=f"msg_{0}"))
-            writer.write_message("/unordered", 1, std_msgs.String(data=f"msg_{1}"))
-            writer.write_message("/unordered", 2, std_msgs.String(data=f"msg_{2}"))
-            writer.write_message("/unordered", 3, std_msgs.String(data=f"msg_{3}"))
-            writer.write_message("/unordered", 4, std_msgs.String(data=f"msg_{4}"))
-            writer.write_message("/unordered", 5, std_msgs.String(data=f"msg_{5}"))
-            writer.write_message("/unordered", 6, std_msgs.String(data=f"msg_{6}"))
-            writer.write_message("/unordered", 7, std_msgs.String(data=f"msg_{7}"))
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
+            writer.write_message("/unordered", 0, String(data=f"msg_{0}"))
+            writer.write_message("/unordered", 1, String(data=f"msg_{1}"))
+            writer.write_message("/unordered", 2, String(data=f"msg_{2}"))
+            writer.write_message("/unordered", 3, String(data=f"msg_{3}"))
+            writer.write_message("/unordered", 4, String(data=f"msg_{4}"))
+            writer.write_message("/unordered", 5, String(data=f"msg_{5}"))
+            writer.write_message("/unordered", 6, String(data=f"msg_{6}"))
+            writer.write_message("/unordered", 7, String(data=f"msg_{7}"))
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            decoder_factory = Ros2DecoderFactory() if profile == 'ros2' else Ros1DecoderFactory()
+            reader = make_reader(f, decoder_factories=[decoder_factory])
             official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
@@ -341,22 +355,25 @@ def test_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check:
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "unordered.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
-            writer.write_message("/unordered", 7, std_msgs.String(data=f"msg_{7}"))
-            writer.write_message("/unordered", 6, std_msgs.String(data=f"msg_{6}"))
-            writer.write_message("/unordered", 5, std_msgs.String(data=f"msg_{5}"))
-            writer.write_message("/unordered", 4, std_msgs.String(data=f"msg_{4}"))
-            writer.write_message("/unordered", 3, std_msgs.String(data=f"msg_{3}"))
-            writer.write_message("/unordered", 2, std_msgs.String(data=f"msg_{2}"))
-            writer.write_message("/unordered", 1, std_msgs.String(data=f"msg_{1}"))
-            writer.write_message("/unordered", 0, std_msgs.String(data=f"msg_{0}"))
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
+            writer.write_message("/unordered", 7, String(data=f"msg_{7}"))
+            writer.write_message("/unordered", 6, String(data=f"msg_{6}"))
+            writer.write_message("/unordered", 5, String(data=f"msg_{5}"))
+            writer.write_message("/unordered", 4, String(data=f"msg_{4}"))
+            writer.write_message("/unordered", 3, String(data=f"msg_{3}"))
+            writer.write_message("/unordered", 2, String(data=f"msg_{2}"))
+            writer.write_message("/unordered", 1, String(data=f"msg_{1}"))
+            writer.write_message("/unordered", 0, String(data=f"msg_{0}"))
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            decoder_factory = Ros2DecoderFactory() if profile == 'ros2' else Ros1DecoderFactory()
+            reader = make_reader(f, decoder_factories=[decoder_factory])
             official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
@@ -385,9 +402,11 @@ def test_reverse_ordered_messages(chunk_size, in_log_time_order: bool, enable_cr
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_random_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_random_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     random.seed(42)  # Make tests reproducible
 
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "overlapping.mcap"
 
@@ -396,13 +415,14 @@ def test_random_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc
         shuffled_timestamps = random.sample(sorted_timestamps, len(sorted_timestamps))
         logging.info(f'Shuffled timestamps: {shuffled_timestamps}')
 
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             for time in shuffled_timestamps:
-                writer.write_message("/overlapping", time, std_msgs.String(data=f"msg_{time}"))
+                writer.write_message("/overlapping", time, String(data=f"msg_{time}"))
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            decoder_factory = Ros2DecoderFactory() if profile == 'ros2' else Ros1DecoderFactory()
+            reader = make_reader(f, decoder_factories=[decoder_factory])
             official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
@@ -431,20 +451,23 @@ def test_random_ordered_messages(chunk_size, in_log_time_order: bool, enable_crc
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_duplicate_timestamps(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_duplicate_timestamps(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test that multiple messages with the same log time are all returned."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "duplicate_timestamps.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             # Ensure we have messages split across different chunks if enabled
             timestamp = 1000
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_0"))
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_1"))
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_2"))
+            writer.write_message("/test", timestamp, String(data="msg_0"))
+            writer.write_message("/test", timestamp, String(data="msg_1"))
+            writer.write_message("/test", timestamp, String(data="msg_2"))
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            decoder_factory = Ros2DecoderFactory() if profile == 'ros2' else Ros1DecoderFactory()
+            reader = make_reader(f, decoder_factories=[decoder_factory])
             official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
 
@@ -473,24 +496,27 @@ def test_duplicate_timestamps(chunk_size, in_log_time_order: bool, enable_crc_ch
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     ahead_messages = [(10, "ahead_0"), (20, "ahead_1"), (30, "ahead_2")]
     behind_messages = [(5, "behind_0"), (15, "behind_1"), (25, "behind_2")]
     expected_per_topic = {"/ahead": ahead_messages, "/behind": behind_messages}
 
     # Write messages to a bag file
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "multi_topic_pybag.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             for log_time, data in ahead_messages:
-                writer.write_message("/ahead", log_time, std_msgs.String(data=data))
+                writer.write_message("/ahead", log_time, String(data=data))
 
             for log_time, data in behind_messages:
-                writer.write_message("/behind", log_time, std_msgs.String(data=data))
+                writer.write_message("/behind", log_time, String(data=data))
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            decoder_factory = Ros2DecoderFactory() if profile == 'ros2' else Ros1DecoderFactory()
+            reader = make_reader(f, decoder_factories=[decoder_factory])
             for topic in expected_per_topic:
                 official_mcap_messages = list(reader.iter_decoded_messages([topic], log_time_order=True))
                 logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
@@ -508,18 +534,20 @@ def test_multi_topic_out_of_order(chunk_size, in_log_time_order: bool, enable_cr
 ######################
 
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_read_multiple_files_as_one(enable_crc_check: bool) -> None:
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_read_multiple_files_as_one(enable_crc_check: bool, profile) -> None:
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         file1 = temp_path / "one.mcap"
         file2 = str(temp_path / "two.mcap")  # str is also Iterable
 
-        with McapFileWriter.open(file1, chunk_size=1) as writer:
-            writer.write_message("/chatter", 1, std_msgs.String(data="hello"))
-            writer.write_message("/chatter", 3, std_msgs.String(data="again"))
-        with McapFileWriter.open(file2, chunk_size=1) as writer:
-            writer.write_message("/chatter", 2, std_msgs.String(data="world"))
-            writer.write_message("/chatter", 4, std_msgs.String(data="!!"))
+        with McapFileWriter.open(file1, chunk_size=1, profile=profile) as writer:
+            writer.write_message("/chatter", 1, String(data="hello"))
+            writer.write_message("/chatter", 3, String(data="again"))
+        with McapFileWriter.open(file2, chunk_size=1, profile=profile) as writer:
+            writer.write_message("/chatter", 2, String(data="world"))
+            writer.write_message("/chatter", 4, String(data="!!"))
 
         reader = McapMultipleFileReader.from_files([file1, file2], enable_crc_check=enable_crc_check)
         assert reader.start_time == 1 and reader.end_time == 4
@@ -558,7 +586,7 @@ def test_random_ordered_messages_from_official_mcap(
 
         # Write messages with shuffled timestamps using official mcap library
         with open(path, 'wb') as f:
-            writer = McapWriter(f) if chunk_size is None else McapWriter(f, chunk_size=chunk_size)
+            writer = Ros2McapWriter(f) if chunk_size is None else Ros2McapWriter(f, chunk_size=chunk_size)
             try:
                 schema_id = writer.register_msgdef('std_msgs/String', 'string data\n')
                 for timestamp in shuffled_timestamps:
@@ -574,7 +602,7 @@ def test_random_ordered_messages_from_official_mcap(
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            reader = make_reader(f, decoder_factories=[Ros2DecoderFactory()])
             official_mcap_messages = list(reader.iter_decoded_messages(log_time_order=True))
             logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
             logging.info(f'mcap: {[msg[-1].data for msg in official_mcap_messages]}')
@@ -616,7 +644,7 @@ def test_multi_topic_out_of_order_from_official_mcap(
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "multi_topic_official.mcap"
         with open(path, "wb") as handle:
-            writer = McapWriter(handle) if chunk_size is None else McapWriter(handle, chunk_size=chunk_size)
+            writer = Ros2McapWriter(handle) if chunk_size is None else Ros2McapWriter(handle, chunk_size=chunk_size)
             try:
                 schema = writer.register_msgdef("std_msgs/String", "string data\n")
 
@@ -642,7 +670,7 @@ def test_multi_topic_out_of_order_from_official_mcap(
 
         # Read messages with official mcap library
         with open(path, 'rb') as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            reader = make_reader(f, decoder_factories=[Ros2DecoderFactory()])
             for topic in expected_per_topic:
                 official_mcap_messages = list(reader.iter_decoded_messages([topic], log_time_order=True))
                 logging.info(f'mcap: {[msg[-2].log_time for msg in official_mcap_messages]}')
@@ -654,7 +682,6 @@ def test_multi_topic_out_of_order_from_official_mcap(
                 messages = list(reader.messages(topic, in_log_time_order=in_log_time_order))
                 assert [msg.log_time for msg in messages] == [log_time for log_time, _ in expected]
                 assert [msg.data.data for msg in messages] == [data for _, data in expected]
-
 
 #########################
 #  Reverse Iteration    #
@@ -669,16 +696,18 @@ def test_multi_topic_out_of_order_from_official_mcap(
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_multiple_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_reverse_iteration_multiple_topics(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test reverse iteration with multiple topics interleaved correctly."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "reverse_multi.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             # Write in specific interleaved order
-            writer.write_message("/topic1", 10, std_msgs.String(data="t1_10"))
-            writer.write_message("/topic2", 5, std_msgs.String(data="t2_5"))
-            writer.write_message("/topic1", 3, std_msgs.String(data="t1_3"))
-            writer.write_message("/topic2", 15, std_msgs.String(data="t2_15"))
+            writer.write_message("/topic1", 10, String(data="t1_10"))
+            writer.write_message("/topic2", 5, String(data="t2_5"))
+            writer.write_message("/topic1", 3, String(data="t1_3"))
+            writer.write_message("/topic2", 15, String(data="t2_15"))
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             # Reverse iteration
@@ -709,13 +738,15 @@ def test_reverse_iteration_multiple_topics(chunk_size, in_log_time_order: bool, 
 )
 @pytest.mark.parametrize("in_log_time_order", [True, False])
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_with_time_filter(chunk_size, in_log_time_order: bool, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_reverse_iteration_with_time_filter(chunk_size, in_log_time_order: bool, enable_crc_check: bool, profile):
     """Test reverse iteration respects start_time and end_time filters."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "reverse_filter.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             for i in range(10):
-                writer.write_message("/test", i * 10, std_msgs.String(data=f"msg_{i}"))
+                writer.write_message("/test", i * 10, String(data=f"msg_{i}"))
 
         # Reverse iteration with time range [20, 60]
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
@@ -732,15 +763,17 @@ def test_reverse_iteration_with_time_filter(chunk_size, in_log_time_order: bool,
     ],
 )
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_duplicate_timestamps(chunk_size, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_reverse_iteration_duplicate_timestamps(chunk_size, enable_crc_check: bool, profile):
     """Test reverse iteration handles duplicate timestamps correctly."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "reverse_dup.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             timestamp = 1000
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_0"))
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_1"))
-            writer.write_message("/test", timestamp, std_msgs.String(data="msg_2"))
+            writer.write_message("/test", timestamp, String(data="msg_0"))
+            writer.write_message("/test", timestamp, String(data="msg_1"))
+            writer.write_message("/test", timestamp, String(data="msg_2"))
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             messages = list(reader.messages("/test", in_reverse=True))
@@ -755,13 +788,15 @@ def test_reverse_iteration_duplicate_timestamps(chunk_size, enable_crc_check: bo
     ],
 )
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_with_filter(chunk_size, enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_reverse_iteration_with_filter(chunk_size, enable_crc_check: bool, profile):
     """Test reverse iteration works with message filter callback."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "reverse_filter_cb.mcap"
-        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None) as writer:
+        with McapFileWriter.open(path, chunk_size=chunk_size, chunk_compression=None, profile=profile) as writer:
             for i in range(10):
-                writer.write_message("/test", i, std_msgs.String(data=f"msg_{i}"))
+                writer.write_message("/test", i, String(data=f"msg_{i}"))
 
         with McapFileReader.from_file(path, enable_crc_check=enable_crc_check) as reader:
             messages = list(reader.messages(
@@ -774,19 +809,21 @@ def test_reverse_iteration_with_filter(chunk_size, enable_crc_check: bool):
 
 
 @pytest.mark.parametrize("enable_crc_check", [True, False])
-def test_reverse_iteration_multiple_files(enable_crc_check: bool):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_reverse_iteration_multiple_files(enable_crc_check: bool, profile):
     """Test reverse iteration across multiple MCAP files."""
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         file1 = temp_path / "one.mcap"
         file2 = temp_path / "two.mcap"
 
-        with McapFileWriter.open(file1, chunk_size=1) as writer:
-            writer.write_message("/chatter", 1, std_msgs.String(data="hello"))
-            writer.write_message("/chatter", 3, std_msgs.String(data="again"))
-        with McapFileWriter.open(file2, chunk_size=1) as writer:
-            writer.write_message("/chatter", 2, std_msgs.String(data="world"))
-            writer.write_message("/chatter", 4, std_msgs.String(data="!!"))
+        with McapFileWriter.open(file1, chunk_size=1, profile=profile) as writer:
+            writer.write_message("/chatter", 1, String(data="hello"))
+            writer.write_message("/chatter", 3, String(data="again"))
+        with McapFileWriter.open(file2, chunk_size=1, profile=profile) as writer:
+            writer.write_message("/chatter", 2, String(data="world"))
+            writer.write_message("/chatter", 4, String(data="!!"))
 
         reader = McapMultipleFileReader.from_files([file1, file2], enable_crc_check=enable_crc_check)
 
@@ -812,7 +849,7 @@ def test_mcap_ros2_char_roundtrip():
 
         # Write with pybag
         with McapFileWriter.open(path, profile="ros2") as writer:
-            msg = std_msgs.Char(data='A')
+            msg = ros2_std_msgs.Char(data='A')
             writer.write_message("/char", 1000, msg)
 
         # Read with pybag
@@ -829,10 +866,10 @@ def test_mcap_ros2_char_multiple_values():
 
         # Write with pybag - test various characters
         with McapFileWriter.open(path, profile="ros2") as writer:
-            writer.write_message("/char", 1000, std_msgs.Char(data='A'))
-            writer.write_message("/char", 2000, std_msgs.Char(data='z'))
-            writer.write_message("/char", 3000, std_msgs.Char(data='0'))
-            writer.write_message("/char", 4000, std_msgs.Char(data=' '))
+            writer.write_message("/char", 1000, ros2_std_msgs.Char(data='A'))
+            writer.write_message("/char", 2000, ros2_std_msgs.Char(data='z'))
+            writer.write_message("/char", 3000, ros2_std_msgs.Char(data='0'))
+            writer.write_message("/char", 4000, ros2_std_msgs.Char(data=' '))
 
         # Read with pybag
         with McapFileReader.from_file(path) as reader:

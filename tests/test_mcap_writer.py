@@ -6,12 +6,15 @@ from typing import Literal
 
 import pytest
 from mcap.reader import make_reader
-from mcap_ros2.decoder import DecoderFactory
+from mcap_ros1.decoder import DecoderFactory as Ros1DecoderFactory
+from mcap_ros2.decoder import DecoderFactory as Ros2DecoderFactory
 
-import pybag.ros2.humble.std_msgs as std_msgs
+import pybag.ros2.humble.std_msgs as ros2_std_msgs
+import pybag.ros1.noetic.std_msgs as ros1_std_msgs
 import pybag.types as t
 from pybag import __version__
 from pybag.encoding.cdr import CdrDecoder
+from pybag.encoding.rosmsg import RosMsgDecoder
 from pybag.io.raw_reader import BytesReader, CrcReader, FileReader
 from pybag.mcap.crc import assert_data_crc
 from pybag.mcap.record_parser import McapRecordParser
@@ -39,8 +42,34 @@ class ExampleMessage:
     sub_array: t.Array[SubMessage, Literal[3]]
 
 
+# Simple message for profile-parameterized tests
+@dataclass
+class SimpleMessage:
+    __msg_name__ = 'test_msgs/SimpleMessage'
+    value: t.int32
+    text: t.string
+
+
+@dataclass
+class NestedMessage:
+    __msg_name__ = 'test_msgs/NestedMessage'
+    header_value: t.uint32
+    name: t.string
+
+
+@dataclass
+class ComplexMessage:
+    __msg_name__ = 'test_msgs/ComplexMessage'
+    integer: t.int32
+    text: t.string
+    fixed_array: t.Array[t.int32, Literal[3]]
+    dynamic_array: t.Array[t.int32]
+    nested: NestedMessage
+
+
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
 @pytest.mark.parametrize("little_endian", [True, False])
-def test_serialize_message_roundtrip(little_endian: bool) -> None:
+def test_serialize_message_roundtrip(little_endian: bool, profile) -> None:
     msg = ExampleMessage(
         integer=42,
         text="hello",
@@ -49,11 +78,14 @@ def test_serialize_message_roundtrip(little_endian: bool) -> None:
         sub=SubMessage(7),
         sub_array=[SubMessage(1), SubMessage(2), SubMessage(3)],
     )
-    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    message_serializer = MessageSerializerFactory.from_profile(profile)
     assert message_serializer is not None
+    assert message_serializer.schema_encoding == 'ros2msg' if profile == 'ros2' else 'ros1msg'
+    assert message_serializer.message_encoding == 'cdr' if profile == 'ros2' else 'ros1'
     data = message_serializer.serialize_message(msg, little_endian=little_endian)
 
-    decoder = CdrDecoder(data)
+    decoder = CdrDecoder(data) if profile == 'ros2' else RosMsgDecoder(data)
+
     # integer
     assert decoder.int32() == 42
     # text
@@ -86,7 +118,8 @@ def test_serialize_message_endianness_diff() -> None:
     assert le != be
 
 
-def test_add_channel_and_write_message() -> None:
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_add_channel_and_write_message(profile) -> None:
     @dataclass
     class Example:
         __msg_name__ = "tests/msgs/Example"
@@ -94,7 +127,7 @@ def test_add_channel_and_write_message() -> None:
 
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
-        with McapFileWriter.open(file_path, profile="ros2") as mcap:
+        with McapFileWriter.open(file_path, profile=profile) as mcap:
             channel_id = mcap.add_channel("/example", schema=Example)
             mcap.write_message("/example", 1, Example(5))
         reader = CrcReader(BytesReader(file_path.read_bytes()))
@@ -106,13 +139,13 @@ def test_add_channel_and_write_message() -> None:
     # Check the header
     header = McapRecordParser.parse_header(reader)
     assert header.library == f"pybag {__version__}"
-    assert header.profile == "ros2"
+    assert header.profile == profile
 
     # Check the schema
     data_schema = McapRecordParser.parse_schema(reader)
     assert data_schema is not None
     assert data_schema.name == "tests/msgs/Example"
-    assert data_schema.encoding == "ros2msg"
+    assert data_schema.encoding == 'ros2msg' if profile == 'ros2' else 'ros1msg'
     assert data_schema.data == "int32 value\n".encode("utf-8")
 
     # Check the channel
@@ -120,7 +153,7 @@ def test_add_channel_and_write_message() -> None:
     assert data_channel.id == channel_id
     assert data_channel.schema_id == 1
     assert data_channel.topic == "/example"
-    assert data_channel.message_encoding == "cdr"
+    assert data_channel.message_encoding == 'cdr' if profile == 'ros2' else 'ros1'
     assert data_channel.metadata == {}
 
     # Check the message
@@ -129,7 +162,7 @@ def test_add_channel_and_write_message() -> None:
     assert data_message.sequence == 1
     assert data_message.log_time == 1
     assert data_message.publish_time == 1
-    message_serializer = MessageSerializerFactory.from_profile('ros2')
+    message_serializer = MessageSerializerFactory.from_profile(profile)
     assert message_serializer is not None
     assert data_message.data == message_serializer.serialize_message(Example(5))
 
@@ -214,16 +247,31 @@ def test_invalid_profile() -> None:
             McapFileWriter.open(file_path, profile="invalid_profile")  # type: ignore
 
 
-def test_chunk_roundtrip() -> None:
+@pytest.mark.parametrize(
+    "chunk_size,chunk_compression",
+    [
+        pytest.param(10, "lz4", id="chunked_lz4"),
+        pytest.param(10, "zstd", id="chunked_zstd"),
+    ],
+)
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_chunk_roundtrip(chunk_size, chunk_compression, profile) -> None:
+    String = ros1_std_msgs.String if profile == 'ros1' else ros2_std_msgs.String
     with tempfile.TemporaryDirectory() as temp_dir:
         path = Path(temp_dir) / "data.mcap"
-        with McapFileWriter.open(path, chunk_size=1, chunk_compression="lz4") as writer:
-            writer.write_message("/pybag", 0, std_msgs.String(data="a"))
-            writer.write_message("/pybag", 1, std_msgs.String(data="b"))
+        with McapFileWriter.open(
+            path,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
+            profile=profile
+        ) as writer:
+            writer.write_message("/pybag", 0, String(data="a"))
+            writer.write_message("/pybag", 1, String(data="b"))
 
         # Check we can read the messages correctly
+        decoder_factory = Ros1DecoderFactory() if profile == "ros1" else Ros2DecoderFactory()
         with open(path, "rb") as f:
-            reader = make_reader(f, decoder_factories=[DecoderFactory()])
+            reader = make_reader(f, decoder_factories=[decoder_factory])
             msgs = [m.data for _, _, _, m in reader.iter_decoded_messages()]
             assert msgs == ["a", "b"]
 
@@ -231,7 +279,7 @@ def test_chunk_roundtrip() -> None:
         with McapChunkedReader.from_file(path) as random_reader:
             chunk_indexes = random_reader.get_chunk_indexes()
             assert len(chunk_indexes) == 2
-            assert all(c.compression == "lz4" for c in chunk_indexes)
+            assert all(c.compression == chunk_compression for c in chunk_indexes)
 
 
 @pytest.mark.parametrize(
@@ -444,8 +492,8 @@ def test_append_mode_basic(
         chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
-        writer.write_message("/topic1", 2000, std_msgs.String(data="msg2"))
+        writer.write_message("/topic1", 1000, ros2_std_msgs.String(data="msg1"))
+        writer.write_message("/topic1", 2000, ros2_std_msgs.String(data="msg2"))
 
     # Verify initial file
     with McapFileReader.from_file(temp_path) as reader:
@@ -461,8 +509,8 @@ def test_append_mode_basic(
         chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/topic1", 3000, std_msgs.String(data="msg3"))
-        writer.write_message("/topic1", 4000, std_msgs.String(data="msg4"))
+        writer.write_message("/topic1", 3000, ros2_std_msgs.String(data="msg3"))
+        writer.write_message("/topic1", 4000, ros2_std_msgs.String(data="msg4"))
 
     # Verify appended file
     with McapFileReader.from_file(temp_path) as reader:
@@ -490,7 +538,7 @@ def test_append_mode_crc_preserved(
         chunk_size=chunk_size,
         chunk_compression=None
     ) as writer:
-        writer.write_message("/topic", 1000, std_msgs.String(data="first"))
+        writer.write_message("/topic", 1000, ros2_std_msgs.String(data="first"))
 
     with McapFileWriter.open(
         temp_path,
@@ -498,7 +546,7 @@ def test_append_mode_crc_preserved(
         chunk_size=chunk_size,
         chunk_compression=None
     ) as writer:
-        writer.write_message("/topic", 2000, std_msgs.String(data="second"))
+        writer.write_message("/topic", 2000, ros2_std_msgs.String(data="second"))
 
     with FileReader(temp_path) as reader:
         assert_data_crc(reader)
@@ -523,7 +571,7 @@ def test_append_mode_new_topic(
         chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/topic1", 1000, std_msgs.String(data="msg1"))
+        writer.write_message("/topic1", 1000, ros2_std_msgs.String(data="msg1"))
 
     # Append with a different topic
     with McapFileWriter.open(
@@ -532,7 +580,7 @@ def test_append_mode_new_topic(
         chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/topic2", 2000, std_msgs.Int32(data=42))
+        writer.write_message("/topic2", 2000, ros2_std_msgs.Int32(data=42))
 
     # Verify both topics exist
     with McapFileReader.from_file(temp_path) as reader:
@@ -564,7 +612,7 @@ def test_append_mode_attachments(
         chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+        writer.write_message("/test", 1000, ros2_std_msgs.String(data="msg1"))
         writer.write_attachment(
             name="file1.txt",
             data=b"original content",
@@ -579,7 +627,7 @@ def test_append_mode_attachments(
         chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+        writer.write_message("/test", 2000, ros2_std_msgs.String(data="msg2"))
         writer.write_attachment(
             name="file2.txt",
             data=b"appended content",
@@ -619,7 +667,7 @@ def test_append_mode_metadata(
         chunk_size=write_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/test", 1000, std_msgs.String(data="msg1"))
+        writer.write_message("/test", 1000, ros2_std_msgs.String(data="msg1"))
         writer.write_metadata(name="info1", metadata={"key": "value1"})
 
     # Append with more metadata
@@ -629,7 +677,7 @@ def test_append_mode_metadata(
         chunk_size=append_chunk_size,
         chunk_compression=chunk_compression
     ) as writer:
-        writer.write_message("/test", 2000, std_msgs.String(data="msg2"))
+        writer.write_message("/test", 2000, ros2_std_msgs.String(data="msg2"))
         writer.write_metadata(name="info2", metadata={"key": "value2"})
 
     # Verify all metadata is present
