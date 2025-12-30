@@ -22,6 +22,7 @@ from typing import (
 
 from pybag.bag.records import ConnectionRecord
 from pybag.io.raw_writer import BytesWriter
+from pybag.mcap.records import SchemaRecord
 from pybag.schema import (
     PRIMITIVE_TYPE_MAP,
     STRING_TYPE_MAP,
@@ -43,26 +44,21 @@ from pybag.types import Message
 logger = logging.getLogger(__name__)
 
 
-# ROS 1 specific primitive types
-ROS1_PRIMITIVE_TYPE_MAP = {
-    **PRIMITIVE_TYPE_MAP,
-    'time': 'time',      # ROS 1 time is a primitive (sec, nsec)
-    'duration': 'duration',  # ROS 1 duration is a primitive (sec, nsec)
-}
-
-
 class Ros1MsgError(Exception):
     """Exception raised for errors in ROS 1 message parsing."""
     def __init__(self, message: str):
         super().__init__(message)
 
 
-class Ros1MsgSchemaDecoder(SchemaDecoder):
-    """Decoder for ROS 1 message definitions."""
+class _Ros1SchemaParserMixin:
+    """Shared parsing logic for ROS 1 schema decoders.
 
-    def __init__(self):
-        self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
-        self._builtin_schemas = self._create_builtin_schemas()
+    This mixin provides common functionality for parsing ROS 1 message
+    definitions, used by both Ros1MsgSchemaDecoder (for bag files) and
+    Ros1McapSchemaDecoder (for MCAP files).
+    """
+
+    _builtin_schemas: dict[str, Schema]
 
     def _create_builtin_schemas(self) -> dict[str, Schema]:
         """Create schemas for built-in ROS 1 message types."""
@@ -162,7 +158,9 @@ class Ros1MsgSchemaDecoder(SchemaDecoder):
             default_value = self._parse_value(schema_type, raw_default)
 
         if is_constant:
-            assert default_value is not None  # Guaranteed by the check above
+            # default_value is guaranteed to be not None by the control flow above
+            if default_value is None:
+                raise Ros1MsgError('Constant value cannot be empty')
             return field_raw_name, SchemaConstant(schema_type, default_value)
         return field_raw_name, SchemaField(schema_type, default_value)
 
@@ -177,21 +175,23 @@ class Ros1MsgSchemaDecoder(SchemaDecoder):
             if builtin_name not in sub_schemas and builtin_name in schema_text:
                 sub_schemas[builtin_name] = builtin_schema
 
-    def parse_schema(self, schema: ConnectionRecord) -> tuple[Schema, dict[str, Schema]]:  # type: ignore[override]
-        """Parse a ROS 1 message definition into a Schema.
+    def _parse_message_definition(
+        self,
+        msg_name: str,
+        msg_def: str,
+        schema_data: bytes,
+    ) -> tuple[Schema, dict[str, Schema]]:
+        """Parse a ROS 1 message definition text into Schema objects.
 
         Args:
-            schema: A ConnectionRecord containing the message definition.
+            msg_name: The full message type name (e.g., 'std_msgs/Header').
+            msg_def: The message definition text.
+            schema_data: The raw schema data bytes (for builtin schema detection).
 
         Returns:
             Tuple of (main_schema, sub_schemas).
         """
-        if schema.conn in self._cache:
-            return self._cache[schema.conn]
-
-        conn_header = schema.connection_header
-        package_name = conn_header.type.split('/')[0]
-        msg_def = conn_header.message_definition
+        package_name = msg_name.split('/')[0]
 
         # Remove comments and empty lines
         lines = [self._remove_inline_comment(line) for line in msg_def.split('\n')]
@@ -226,14 +226,76 @@ class Ros1MsgSchemaDecoder(SchemaDecoder):
             sub_msg_schemas[sub_msg_name] = Schema(sub_msg_name, sub_msg_schema)
 
         # Add any required built-in schemas
-        main_schema = Schema(conn_header.type, msg_schema)
-        self._add_missing_builtin_schemas(
+        main_schema = Schema(msg_name, msg_schema)
+        self._add_missing_builtin_schemas(schema_data, sub_msg_schemas)
+
+        return main_schema, sub_msg_schemas
+
+
+class Ros1MsgSchemaDecoder(_Ros1SchemaParserMixin, SchemaDecoder):
+    """Decoder for ROS 1 message definitions from ConnectionRecord (bag files)."""
+
+    def __init__(self):
+        self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
+        self._builtin_schemas = self._create_builtin_schemas()
+
+    def parse_schema(self, schema: ConnectionRecord) -> tuple[Schema, dict[str, Schema]]:  # type: ignore[override]
+        """Parse a ROS 1 message definition into a Schema.
+
+        Args:
+            schema: A ConnectionRecord containing the message definition.
+
+        Returns:
+            Tuple of (main_schema, sub_schemas).
+        """
+        if schema.conn in self._cache:
+            return self._cache[schema.conn]
+
+        conn_header = schema.connection_header
+        result = self._parse_message_definition(
+            conn_header.type,
+            conn_header.message_definition,
             conn_header.message_definition.encode('utf-8'),
-            sub_msg_schemas
         )
-        result = main_schema, sub_msg_schemas
 
         self._cache[schema.conn] = result
+        return result
+
+
+class Ros1McapSchemaDecoder(_Ros1SchemaParserMixin, SchemaDecoder):
+    """Decoder for ROS 1 message definitions from MCAP SchemaRecord.
+
+    This decoder is specifically designed for parsing ROS 1 message schemas
+    stored in MCAP files, where the schema is provided as a SchemaRecord
+    rather than a ConnectionRecord.
+    """
+
+    def __init__(self):
+        self._cache: dict[int, tuple[Schema, dict[str, Schema]]] = {}
+        self._builtin_schemas = self._create_builtin_schemas()
+
+    def parse_schema(self, schema: SchemaRecord) -> tuple[Schema, dict[str, Schema]]:  # type: ignore[override]
+        """Parse a ROS 1 message definition from MCAP SchemaRecord into a Schema.
+
+        Args:
+            schema: A SchemaRecord containing the message definition.
+
+        Returns:
+            Tuple of (main_schema, sub_schemas).
+        """
+        if schema.id in self._cache:
+            return self._cache[schema.id]
+
+        if schema.encoding != "ros1msg":
+            raise Ros1MsgError(f"Expected ros1msg encoding, got: {schema.encoding}")
+
+        result = self._parse_message_definition(
+            schema.name,
+            schema.data.decode('utf-8'),
+            schema.data,
+        )
+
+        self._cache[schema.id] = result
         return result
 
 

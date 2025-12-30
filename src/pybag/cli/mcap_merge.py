@@ -9,6 +9,8 @@ from pybag.mcap.record_writer import McapRecordWriterFactory
 from pybag.mcap.records import ChannelRecord, MessageRecord, SchemaRecord
 from pybag.mcap.summary import McapSummaryFactory
 
+SUPPORTED_PROFILES = {"ros1", "ros2"}
+
 
 def merge_mcap(
     inputs: Sequence[str],
@@ -25,11 +27,25 @@ def merge_mcap(
         chunk_compression: Optional compression algorithm (lz4 or zstd)
     """
     # Validate that all input files have the same profile
+    profile: str | None = None
     for path in inputs:
         with McapRecordReaderFactory.from_file(path) as reader:
             header = reader.get_header()
-            if header.profile != "ros2":
-                raise ValueError(f"Expected profile 'ros2' got {header.profile} ({path})")
+            if profile is None:
+                profile = header.profile
+                if profile not in SUPPORTED_PROFILES:
+                    raise ValueError(
+                        f"Unsupported profile '{profile}' in {path}. "
+                        f"Supported profiles: {sorted(SUPPORTED_PROFILES)}"
+                    )
+            elif header.profile != profile:
+                raise ValueError(
+                    f"All input files must have the same profile. "
+                    f"Expected '{profile}' but got '{header.profile}' in {path}"
+                )
+
+    if profile is None:
+        raise ValueError("No input files provided")
 
     # Track schemas globally using (name, encoding, data) as key
     next_schema_id = 1
@@ -49,7 +65,7 @@ def merge_mcap(
         McapSummaryFactory.create_summary(chunk_size=chunk_size),
         chunk_size=chunk_size,
         chunk_compression=chunk_compression,
-        profile="ros2"  # TODO: Support other profiles
+        profile=profile,
     ) as writer:
         # Collect all attachments and metadata from all files
         all_attachments = []

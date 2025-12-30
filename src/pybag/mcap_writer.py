@@ -6,6 +6,7 @@ from typing import Any, Callable, Literal
 
 from pybag.encoding import MessageEncoder
 from pybag.encoding.cdr import CdrEncoder
+from pybag.encoding.rosmsg import RosMsgEncoder
 from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import BaseWriter, FileWriter
 from pybag.mcap.crc import compute_crc
@@ -24,6 +25,8 @@ from pybag.mcap.summary import (
     McapSummaryFactory
 )
 from pybag.schema.compiler import compile_serializer
+from pybag.schema.ros1_compiler import compile_ros1_serializer
+from pybag.schema.ros1msg import Ros1McapSchemaDecoder, Ros1MsgSchemaEncoder
 from pybag.schema.ros2msg import Ros2MsgSchemaDecoder, Ros2MsgSchemaEncoder
 from pybag.serialize import MessageSerializer, MessageSerializerFactory
 from pybag.types import Message, SchemaText
@@ -45,7 +48,7 @@ class McapFileWriter:
         summary: McapSummary,
         *,
         mode: Literal['w', 'a'] = 'w',
-        profile: str = "ros2",
+        profile: Literal['ros1', 'ros2'] = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["none", "lz4", "zstd"] | None = "none",
     ) -> None:
@@ -78,16 +81,28 @@ class McapFileWriter:
             mode=mode,
             chunk_size=chunk_size,
             chunk_compression=chunk_compression,
-            profile=profile,
+            profile=self._profile,
         )
 
         # Pre-compiled serializers for topics with explicit schemas
         # Maps topic -> compiled serializer function
         self._topic_serializers: dict[str, Callable[[MessageEncoder, Any], None]] = {}
 
-        # Schema decoder for parsing explicit schema text
-        self._schema_decoder = Ros2MsgSchemaDecoder()
-        self._schema_encoder = Ros2MsgSchemaEncoder()
+        # Schema decoder/encoder and compiler based on profile
+        # TODO: This should be integrated with message_serializer
+        if self._profile == "ros1":
+            self._schema_decoder = Ros1McapSchemaDecoder()
+            self._schema_encoder = Ros1MsgSchemaEncoder()
+            self._schema_compiler = compile_ros1_serializer
+            self._create_encoder: Callable[[], MessageEncoder] = RosMsgEncoder
+        elif self._profile == "ros2":
+            self._schema_decoder = Ros2MsgSchemaDecoder()
+            self._schema_encoder = Ros2MsgSchemaEncoder()
+            self._schema_compiler = compile_serializer
+            self._create_encoder = lambda: CdrEncoder(little_endian=True)
+        else:
+            raise ValueError(f'Unsupported profile: {self._profile}')
+
         # TODO: Use Summary instead
         self._written_schemas: dict[int, SchemaRecord] = {}
 
@@ -105,7 +120,7 @@ class McapFileWriter:
         file_path: str | Path,
         *,
         mode: Literal['w', 'a'] = 'w',
-        profile: str = "ros2",
+        profile: Literal['ros1', 'ros2'] = "ros2",
         chunk_size: int | None = None,
         chunk_compression: Literal["none", "lz4", "zstd"] | None = "lz4",
     ) -> "McapFileWriter":
@@ -190,7 +205,7 @@ class McapFileWriter:
         # Parse the schema text and compile a serializer for this topic
         # This allows us to serialize messages without relying on type annotations
         parsed_schema, sub_schemas = self._schema_decoder.parse_schema(schema_record)
-        serializer = compile_serializer(parsed_schema, sub_schemas)
+        serializer = self._schema_compiler(parsed_schema, sub_schemas)
         self._topic_serializers[topic] = serializer
 
         # Register the channel
@@ -240,7 +255,7 @@ class McapFileWriter:
             data = self._message_serializer.serialize_message(message)
         else:
             serializer = self._topic_serializers[topic]
-            encoder = CdrEncoder(little_endian=True)
+            encoder = self._create_encoder()
             serializer(encoder, message)
             data = encoder.save()
 

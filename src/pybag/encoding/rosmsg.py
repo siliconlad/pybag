@@ -198,8 +198,8 @@ class RosMsgEncoder(MessageEncoder):
 
     @classmethod
     def encoding(cls) -> str:
-        """Return the encoding name."""
-        return "rosmsg"
+        """Return the encoding name for MCAP ROS1 profile."""
+        return "ros1"
 
     def encode(self, type_str: str, value: Any) -> None:
         """Encode a value based on its type string."""
