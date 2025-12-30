@@ -341,7 +341,25 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                 lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
 
             elif isinstance(field_type, String):
-                lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
+                if field_type.type == 'string':
+                    # Inline string decoding to avoid method call overhead
+                    # Strings are length-prefixed (uint32) and null-terminated
+                    var_pos = f'_pos_{field_name}'
+                    var_len = f'_len_{field_name}'
+                    lines.append(f"{_TAB}{var_pos} = _data.position")
+                    lines.append(f"{_TAB}if {var_pos} & 3:")
+                    lines.append(f"{_TAB}    {var_pos} += 4 - ({var_pos} & 3)")
+                    lines.append(f"{_TAB}{var_len} = _UINT32.unpack_from(_view, {var_pos})[0]")
+                    lines.append(f"{_TAB}{var_pos} += 4")
+                    lines.append(f"{_TAB}if {var_len} <= 1:")
+                    lines.append(f"{_TAB}    _data.position = {var_pos} + {var_len}")
+                    lines.append(f"{_TAB}    _fields[{field_name!r}] = ''")
+                    lines.append(f"{_TAB}else:")
+                    lines.append(f"{_TAB}    _fields[{field_name!r}] = _view[{var_pos}:{var_pos} + {var_len} - 1].tobytes().decode()")
+                    lines.append(f"{_TAB}    _data.position = {var_pos} + {var_len}")
+                else:
+                    # wstring or other string types - fall back to method call
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
 
             elif isinstance(field_type, Array):
                 elem = field_type.type
@@ -483,7 +501,9 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
     build(schema)
     code = "import struct\n" + "\n\n".join(function_defs)
 
-    namespace: dict[str, object] = {"struct": struct, "_dataclass_types": dataclass_types}
+    # Pre-compiled struct for inlined string decoding (little-endian uint32)
+    _UINT32 = struct.Struct('<I')
+    namespace: dict[str, object] = {"struct": struct, "_dataclass_types": dataclass_types, "_UINT32": _UINT32}
     exec(code, namespace)
     return namespace[f"decode_{_sanitize(schema.name)}"]  # type: ignore[index]
 
