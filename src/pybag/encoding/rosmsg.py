@@ -48,6 +48,8 @@ class RosMsgDecoder(MessageDecoder):
     - Strings have no null terminator
     """
 
+    __slots__ = ('_data')
+
     def __init__(self, data: bytes):
         """Initialize decoder with serialized message data.
 
@@ -55,8 +57,21 @@ class RosMsgDecoder(MessageDecoder):
             data: The serialized message bytes (no header, unlike CDR).
         """
         self._data = _NoAlignBytesReader(data)
-        # For compatibility with schema compiler (always little-endian)
-        self._is_little_endian = True
+
+    def reset(self, data: bytes) -> 'RosMsgDecoder':
+        """Reset the decoder with new message data for reuse.
+
+        This method allows reusing a single decoder instance across multiple
+        messages, avoiding the overhead of creating new objects.
+
+        Args:
+            data: Serialized message bytes (no header for ROS1)
+
+        Returns:
+            self, allowing for method chaining
+        """
+        self._data.reset(data)
+        return self
 
     def parse(self, type_str: str) -> Any:
         """Parse a value based on its type string."""
