@@ -48,6 +48,8 @@ class RosMsgDecoder(MessageDecoder):
     - Strings have no null terminator
     """
 
+    __slots__ = ('_data')
+
     def __init__(self, data: bytes):
         """Initialize decoder with serialized message data.
 
@@ -55,26 +57,40 @@ class RosMsgDecoder(MessageDecoder):
             data: The serialized message bytes (no header, unlike CDR).
         """
         self._data = _NoAlignBytesReader(data)
-        # For compatibility with schema compiler (always little-endian)
-        self._is_little_endian = True
+
+    def reset(self, data: bytes) -> 'RosMsgDecoder':
+        """Reset the decoder with new message data for reuse.
+
+        This method allows reusing a single decoder instance across multiple
+        messages, avoiding the overhead of creating new objects.
+
+        Args:
+            data: Serialized message bytes (no header for ROS1)
+
+        Returns:
+            self, allowing for method chaining
+        """
+        self._data.reset(data)
+        return self
 
     def parse(self, type_str: str) -> Any:
         """Parse a value based on its type string."""
         return getattr(self, type_str)()
 
     # Primitive parsers -------------------------------------------------
+    # These use unpack_from() to avoid creating intermediate bytes objects
 
     def bool(self) -> bool:
         """Parse a boolean (1 byte)."""
-        return struct.unpack('<?', self._data.read(1))[0]
+        return self._data.unpack_one('<?', 1)
 
     def int8(self) -> int:
         """Parse a signed 8-bit integer."""
-        return struct.unpack('<b', self._data.read(1))[0]
+        return self._data.unpack_one('<b', 1)
 
     def uint8(self) -> int:
         """Parse an unsigned 8-bit integer."""
-        return struct.unpack('<B', self._data.read(1))[0]
+        return self._data.unpack_one('<B', 1)
 
     def byte(self) -> bytes:
         """Parse a single byte."""
@@ -82,39 +98,39 @@ class RosMsgDecoder(MessageDecoder):
 
     def char(self) -> int:
         """Parse a ROS 1 char (uint8)."""
-        return struct.unpack('<B', self._data.read(1))[0]
+        return self._data.unpack_one('<B', 1)
 
     def int16(self) -> int:
         """Parse a signed 16-bit integer (little-endian)."""
-        return struct.unpack('<h', self._data.read(2))[0]
+        return self._data.unpack_one('<h', 2)
 
     def uint16(self) -> int:
         """Parse an unsigned 16-bit integer (little-endian)."""
-        return struct.unpack('<H', self._data.read(2))[0]
+        return self._data.unpack_one('<H', 2)
 
     def int32(self) -> int:
         """Parse a signed 32-bit integer (little-endian)."""
-        return struct.unpack('<i', self._data.read(4))[0]
+        return self._data.unpack_one('<i', 4)
 
     def uint32(self) -> int:
         """Parse an unsigned 32-bit integer (little-endian)."""
-        return struct.unpack('<I', self._data.read(4))[0]
+        return self._data.unpack_one('<I', 4)
 
     def int64(self) -> int:
         """Parse a signed 64-bit integer (little-endian)."""
-        return struct.unpack('<q', self._data.read(8))[0]
+        return self._data.unpack_one('<q', 8)
 
     def uint64(self) -> int:
         """Parse an unsigned 64-bit integer (little-endian)."""
-        return struct.unpack('<Q', self._data.read(8))[0]
+        return self._data.unpack_one('<Q', 8)
 
     def float32(self) -> float:
         """Parse a 32-bit float (IEEE 754, little-endian)."""
-        return struct.unpack('<f', self._data.read(4))[0]
+        return self._data.unpack_one('<f', 4)
 
     def float64(self) -> float:
         """Parse a 64-bit float (IEEE 754, little-endian)."""
-        return struct.unpack('<d', self._data.read(8))[0]
+        return self._data.unpack_one('<d', 8)
 
     def string(self) -> str:
         """Parse a string (length-prefixed, no null terminator).
@@ -135,7 +151,7 @@ class RosMsgDecoder(MessageDecoder):
         Returns:
             Time object with secs and nsecs attributes.
         """
-        secs, nsecs = struct.unpack('<II', self._data.read(8))
+        secs, nsecs = self._data.unpack_from('<II', 8)
         return ros1.Time(secs=secs, nsecs=nsecs)
 
     def duration(self) -> ros1.Duration:
@@ -144,7 +160,7 @@ class RosMsgDecoder(MessageDecoder):
         Returns:
             Duration object with secs and nsecs attributes.
         """
-        secs, nsecs = struct.unpack('<ii', self._data.read(8))
+        secs, nsecs = self._data.unpack_from('<ii', 8)
         return ros1.Duration(secs=secs, nsecs=nsecs)
 
     # Container parsers --------------------------------------------------

@@ -7,6 +7,21 @@ class MessageDecoder(ABC):
     def parse(self, type_str: str) -> Any:
         ...  # pragma: no cover
 
+    @abstractmethod
+    def reset(self, data: bytes) -> 'MessageDecoder':
+        """Reset the decoder with new data for reuse.
+
+        Subclasses should override this method to enable decoder reuse,
+        which can improve performance when decoding many messages.
+
+        Args:
+            data: The new message data to decode.
+
+        Returns:
+            self, for method chaining.
+        """
+        ...  # pragma: no cover
+
     # Primitive parsers -------------------------------------------------
 
     @abstractmethod

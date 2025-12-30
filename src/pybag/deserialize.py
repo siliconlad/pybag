@@ -12,7 +12,10 @@ from pybag.schema.ros2msg import Ros2MsgSchemaDecoder
 
 
 class MessageDeserializer:
-    """Abstract base class for message deserializers."""
+    """
+    This class caches compiled schema decoders and reuses a single decoder
+    instance across all messages to minimize object allocation overhead.
+    """
 
     def __init__(
         self,
@@ -21,13 +24,29 @@ class MessageDeserializer:
         schema_compiler: Callable,
     ):
         self._schema_decoder = schema_decoder
-        self._message_decoder = message_decoder
+        self._message_decoder_class = message_decoder
         self._schema_compiler = schema_compiler
         self._compiled: dict[int, Callable[[MessageDecoder], type]] = {}
+        # Reusable decoder instance - created lazily on first use
+        self._reusable_decoder: MessageDecoder | None = None
 
     def deserialize_message(self, message: MessageRecord, schema: SchemaRecord) -> type:
-        """Deserialize a message using the provided schema."""
-        decoder = self._message_decoder(message.data)
+        """Deserialize a message using the provided schema.
+
+        This method reuses the decoder instance across calls when possible,
+        which significantly reduces object allocation overhead when decoding
+        many messages in sequence.
+        """
+        # Reuse existing decoder if available, otherwise create new one
+        if self._reusable_decoder is not None:
+            # Reset existing decoder with new data (zero allocation)
+            decoder = self._reusable_decoder.reset(message.data)
+        else:
+            # Create new decoder and cache it for reuse
+            decoder = self._message_decoder_class(message.data)
+            self._reusable_decoder = decoder
+
+        # Compile schema decoder if not already cached
         if schema.id not in self._compiled:
             msg_schema, schema_msgs = self._schema_decoder.parse_schema(schema)
             self._compiled[schema.id] = self._schema_compiler(msg_schema, schema_msgs)

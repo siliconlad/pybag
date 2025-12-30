@@ -271,15 +271,23 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x05':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        _, record_length = cls._parse_uint64(file)
-        bytes_reader = BytesReader(file.read(record_length))
+        # Pre-compiled struct format for message header parsing
+        # Format: channel_id (H) + sequence (I) + log_time (Q) + publish_time (Q)
+        message_header_format = struct.Struct('<HIQQ')
+        message_header_size = 22  # Total: 2 + 4 + 8 + 8 = 22 bytes
 
-        _, channel_id = cls._parse_uint16(bytes_reader)
-        _, sequence = cls._parse_uint32(bytes_reader)
-        _, log_time = cls._parse_timestamp(bytes_reader)
-        _, publish_time = cls._parse_timestamp(bytes_reader)
-        # Other fields: 2 + 4 + 8 + 8 = 22 bytes
-        _, data = cls._parse_bytes(bytes_reader, record_length - 22)
+        # Read record length (8 bytes) - inlined for performance
+        record_length = struct.unpack('<Q', file.read(8))[0]
+
+        # Read entire record data at once
+        record_data = file.read(record_length)
+
+        # Unpack all fixed fields in a single call (2 + 4 + 8 + 8 = 22 bytes)
+        message_fields = message_header_format.unpack(record_data[:message_header_size])
+        channel_id, sequence, log_time, publish_time = message_fields
+
+        # Slice remaining bytes as message data
+        data = record_data[message_header_size:]
 
         return MessageRecord(channel_id, sequence, log_time, publish_time, data)
 
