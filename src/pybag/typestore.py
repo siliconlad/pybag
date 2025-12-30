@@ -266,18 +266,37 @@ class TypeStore:
         # Build the full schema text
         schema_parts = [main_text.rstrip()]
 
+        # Track which dependencies we've already emitted to avoid duplicates
+        emitted: set[str] = set()
+
         for dep_name in dependencies:
+            if dep_name in emitted:
+                continue
+            emitted.add(dep_name)
+
             # MSG: prefix always uses short format (package/MessageName)
             dep_msg_name = self._to_msg_prefix_name(dep_name)
             if dep_name in self._user_messages:
                 dep_text = self._clean_msg_text(self._user_messages[dep_name].text)
+                schema_parts.append('=' * 80)
+                schema_parts.append(f'MSG: {dep_msg_name}')
+                schema_parts.append(dep_text.rstrip())
             else:
-                # Dependency is a built-in type
-                dep_text = self._get_builtin_msg_text(dep_name)
+                # Dependency is a built-in type - get text and sub-dependencies
+                dep_text, sub_deps = self._get_builtin_msg_text_with_deps(dep_name)
+                schema_parts.append('=' * 80)
+                schema_parts.append(f'MSG: {dep_msg_name}')
+                schema_parts.append(dep_text.rstrip())
 
-            schema_parts.append('=' * 80)
-            schema_parts.append(f'MSG: {dep_msg_name}')
-            schema_parts.append(dep_text.rstrip())
+                # Also emit sub-dependencies of the built-in type
+                for sub_dep_name, sub_dep_text in sub_deps.items():
+                    if sub_dep_name in emitted:
+                        continue
+                    emitted.add(sub_dep_name)
+                    sub_dep_msg_name = self._to_msg_prefix_name(sub_dep_name)
+                    schema_parts.append('=' * 80)
+                    schema_parts.append(f'MSG: {sub_dep_msg_name}')
+                    schema_parts.append(sub_dep_text.rstrip())
 
         full_text = '\n'.join(schema_parts) + '\n'
         return SchemaText(name=output_name, text=full_text)
@@ -423,8 +442,16 @@ class TypeStore:
 
         return '\n'.join(transformed_lines)
 
-    def _get_builtin_msg_text(self, name: str) -> str:
-        """Get the .msg text for a built-in message type."""
+    def _get_builtin_msg_text_with_deps(self, name: str) -> tuple[str, dict[str, str]]:
+        """Get the .msg text for a built-in message type and its dependencies.
+
+        Returns:
+            Tuple of (main message text, dict of dependency name -> text)
+        """
+        from pybag.schema import SchemaConstant, SchemaField
+        from pybag.schema.ros1msg import Ros1MsgSchemaEncoder
+        from pybag.schema.ros2msg import Ros2MsgSchemaEncoder
+
         msg_class = self._find_builtin_class(name)
         if msg_class is None:
             raise TypeStoreError(f"Built-in message not found: {name}")
@@ -434,21 +461,35 @@ class TypeStore:
         else:
             encoder = Ros2MsgSchemaEncoder()
 
-        # Get just the main message text (not the full encoded with dependencies)
-        schema, _ = encoder.parse_schema(msg_class)
+        # Get main schema and sub-schemas
+        schema, sub_schemas = encoder.parse_schema(msg_class)
 
-        # Convert schema to text
-        lines = []
+        # Convert main schema to text
+        main_lines = []
         for field_name, field in schema.fields.items():
-            from pybag.schema import SchemaConstant, SchemaField
             if isinstance(field, SchemaConstant):
                 type_str = self._schema_type_to_str(field.type)
-                lines.append(f'{type_str} {field_name.upper()}={field.value}')
+                main_lines.append(f'{type_str} {field_name.upper()}={field.value}')
             elif isinstance(field, SchemaField):
                 type_str = self._schema_type_to_str(field.type)
-                lines.append(f'{type_str} {field_name}')
+                main_lines.append(f'{type_str} {field_name}')
 
-        return '\n'.join(lines)
+        main_text = '\n'.join(main_lines)
+
+        # Convert sub-schemas to text
+        sub_texts: dict[str, str] = {}
+        for sub_name, sub_schema in sub_schemas.items():
+            sub_lines = []
+            for field_name, field in sub_schema.fields.items():
+                if isinstance(field, SchemaConstant):
+                    type_str = self._schema_type_to_str(field.type)
+                    sub_lines.append(f'{type_str} {field_name.upper()}={field.value}')
+                elif isinstance(field, SchemaField):
+                    type_str = self._schema_type_to_str(field.type)
+                    sub_lines.append(f'{type_str} {field_name}')
+            sub_texts[sub_name] = '\n'.join(sub_lines)
+
+        return main_text, sub_texts
 
     def _schema_type_to_str(self, field_type: 'SchemaFieldType') -> str:
         """Convert a SchemaFieldType to a string representation.

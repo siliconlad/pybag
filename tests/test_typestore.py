@@ -206,8 +206,12 @@ class TestTypeStoreDependencies:
         schema = store.find('my_pkg/msg/Stamped')
 
         # Should include std_msgs/Header definition
-        assert 'Header header' in schema.text
+        assert 'std_msgs/Header header' in schema.text
         assert 'MSG: std_msgs/Header' in schema.text
+        # Should also include nested builtin_interfaces/Time definition
+        assert 'MSG: builtin_interfaces/Time' in schema.text
+        assert 'int32 sec' in schema.text
+        assert 'uint32 nanosec' in schema.text
 
     def test_user_message_with_array_dependency(self, tmp_path: Path):
         """Test resolving dependencies for array types."""
