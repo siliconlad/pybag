@@ -226,34 +226,65 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             f"{_TAB}_fields = {{}}",
         ]
         field_names: list[str] = []
-        run_type: str | None = None
-        run_fields: list[str] = []
+
+        # Track runs of fields that can be unpacked together
+        # Each entry is (var_name, fmt_char, size, field_assignment_or_none)
+        # field_assignment_or_none is None for primitives (assigned directly to _fields)
+        # or (field_name, sub_class_name, sub_field_names) for complex types
+        run_size: int | None = None
+        run_items: list[tuple[str, str, int, tuple[str, str, list[str]] | None]] = []
+        # Pending complex field instantiations after flush
+        pending_complex: list[tuple[str, str, list[str]]] = []
 
         def flush() -> None:
-            nonlocal run_type, run_fields
-            if not run_fields:
+            nonlocal run_size, run_items, pending_complex
+            if not run_items:
                 return
 
-            count = len(run_fields)
-            size = _STRUCT_SIZE[run_type]  # type: ignore[index]
-            fmt = _STRUCT_FORMAT[run_type] * count  # type: ignore[index]
-            total_size = size * count
-            lines.append(f"{_TAB}_data.align({size})")
+            # Emit alignment
+            lines.append(f"{_TAB}_data.align({run_size})")
 
-            # Use struct.unpack_from() to avoid creating intermediate bytes objects
-            if count > 1:
-                names = ", ".join(run_fields)
-                lines.append(f"{_TAB}{names} = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data.position)")
-                lines.append(f"{_TAB}_data.position += {total_size}")
-                for field in run_fields:
-                    lines.append(f"{_TAB}_fields[{field!r}] = {field}")
+            # Build format string and variable names
+            fmt_chars = ''.join(item[1] for item in run_items)
+            var_names = [item[0] for item in run_items]
+            total_size = sum(item[2] for item in run_items)
+
+            # Emit unpack
+            if len(var_names) > 1:
+                names = ", ".join(var_names)
+                lines.append(f"{_TAB}{names} = struct.unpack_from(fmt_prefix + '{fmt_chars}', _view, _data.position)")
             else:
-                field = run_fields[0]
-                lines.append(f"{_TAB}_fields[{field!r}] = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data.position)[0]")
-                lines.append(f"{_TAB}_data.position += {total_size}")
+                lines.append(f"{_TAB}{var_names[0]} = struct.unpack_from(fmt_prefix + '{fmt_chars}', _view, _data.position)[0]")
+            lines.append(f"{_TAB}_data.position += {total_size}")
 
-            run_fields = []
-            run_type = None
+            # Emit field assignments
+            for var_name, _, _, complex_info in run_items:
+                if complex_info is None:
+                    # Simple primitive - var_name is the field name
+                    lines.append(f"{_TAB}_fields[{var_name!r}] = {var_name}")
+                # Complex fields are handled after the loop
+
+            # Emit complex field instantiations
+            for field_name, sub_class_name, sub_field_names in pending_complex:
+                kwargs = ', '.join(f'{f}=_{field_name}_{f}' for f in sub_field_names)
+                lines.append(f"{_TAB}_fields[{field_name!r}] = _dataclass_types[{sub_class_name!r}]({kwargs})")
+
+            run_items = []
+            run_size = None
+            pending_complex = []
+
+        def add_to_run(var_name: str, fmt_char: str, size: int, complex_info: tuple[str, str, list[str]] | None = None) -> bool:
+            """Try to add a field to the current run. Returns True if added, False if incompatible."""
+            nonlocal run_size, run_items
+            if run_size is None:
+                run_size = size
+                run_items = [(var_name, fmt_char, size, complex_info)]
+                return True
+            elif run_size == size:
+                run_items.append((var_name, fmt_char, size, complex_info))
+                return True
+            else:
+                return False
 
         for field_name, entry in current.fields.items():
             if isinstance(entry, SchemaConstant):
@@ -271,13 +302,38 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             field_type = entry.type
 
             if isinstance(field_type, Primitive) and field_type.type in _STRUCT_FORMAT:
-                if run_type == field_type.type:
-                    run_fields.append(field_name)
-                else:
+                fmt_char = _STRUCT_FORMAT[field_type.type]
+                size = _STRUCT_SIZE[field_type.type]
+                if not add_to_run(field_name, fmt_char, size, None):
                     flush()
-                    run_type = field_type.type
-                    run_fields = [field_name]
+                    add_to_run(field_name, fmt_char, size, None)
                 continue
+
+            # Check if this is a simple Complex that can be merged into the run
+            if isinstance(field_type, Complex):
+                sub_schema = sub_schemas[field_type.type]
+                simple_info = _is_simple_struct(sub_schema)
+                if simple_info is not None:
+                    field_info, max_align = simple_info
+                    # Check if ALL fields in this struct have the same size as current run
+                    # (or if we're starting a new run)
+                    all_same_size = len(set(f[2] for f in field_info)) == 1
+                    if all_same_size:
+                        struct_field_size = field_info[0][2]
+                        # Can we merge with current run?
+                        if run_size is None or run_size == struct_field_size:
+                            sub_class_name = _sanitize(sub_schema.name)
+                            create_dataclass_type(sub_schema)
+                            sub_field_names = [f[0] for f in field_info]
+
+                            # Add all sub-fields to the run
+                            for f_name, f_fmt, f_size in field_info:
+                                var_name = f'_{field_name}_{f_name}'
+                                add_to_run(var_name, f_fmt, f_size, (field_name, sub_class_name, sub_field_names))
+
+                            # Track that we need to instantiate this complex field after flush
+                            pending_complex.append((field_name, sub_class_name, sub_field_names))
+                            continue
 
             flush()
 
@@ -359,7 +415,7 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             elif isinstance(field_type, Complex):
                 sub_schema = sub_schemas[field_type.type]
 
-                # Check if this is a simple struct that can be inlined
+                # Check if this is a simple struct that can be inlined (but not merged)
                 simple_info = _is_simple_struct(sub_schema)
                 if simple_info is not None:
                     field_info, max_align = simple_info
