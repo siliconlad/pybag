@@ -8,6 +8,8 @@ from pybag.io.raw_writer import BytesWriter
 
 logger = logging.getLogger(__name__)
 
+_UINT32_LE = struct.Struct('<I')
+_UINT32_BE = struct.Struct('>I')
 
 class CdrDecoder(MessageDecoder):
     """CDR (Common Data Representation) decoder for ROS2 messages."""
@@ -99,13 +101,27 @@ class CdrDecoder(MessageDecoder):
         return self._data.align(8).unpack_one(fmt, 8)
 
     def string(self) -> str:
-        # Strings are null-terminated
-        length = self.uint32()
+        # Strings are length-prefixed and null-terminated
+        # Inline uint32 read with alignment to avoid method call overhead
+        data = self._data
+        pos = data.position
+
+        # Align to 4-byte boundary
+        if remainder := pos & 3:
+            pos += 4 - remainder
+
+        # Read length directly using pre-compiled struct
+        fmt = _UINT32_LE if self._is_little_endian else _UINT32_BE
+        length = fmt.unpack_from(data.view, pos)[0]
+        pos += 4
         if length <= 1:
-            self._data.seek_from_current(length)
+            data.position = pos + length
             return ''
-        # Read string bytes (still need to allocate for decode)
-        result = self._data.read(length)[:-1].decode()
+
+        # Read string bytes directly from memoryview and decode
+        end = pos + length - 1
+        result = data.view[pos:end].tobytes().decode()
+        data.position = end + 1  # skip past string + null terminator
         return result
 
     def wstring(self) -> str:

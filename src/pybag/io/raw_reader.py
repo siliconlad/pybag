@@ -87,48 +87,48 @@ class FileReader(BaseReader):
 class BytesReader(BaseReader):
     def __init__(self, data: bytes):
         self._data = data
-        self._view = memoryview(data)
+        self.view = memoryview(data)
+        self.position = 0
         self._length = len(data)
-        self._position = 0
 
     def reset(self, data: bytes):
         self._data = data
-        self._view = memoryview(data)
+        self.view = memoryview(data)
+        self.position = 0
         self._length = len(data)
-        self._position = 0
 
     def peek(self, size: int) -> bytes:
         # Returns empty bytes when end of data
-        return self._data[self._position:self._position + size]
+        return self._data[self.position:self.position + size]
 
     def read(self, size: int | None = None) -> bytes:
         if size is None:
-            result = self._data[self._position:]
-            self._position = len(self._data)
+            result = self._data[self.position:]
+            self.position = len(self._data)
             return result
-        result = self._data[self._position:self._position + size]
-        self._position += size
+        result = self._data[self.position:self.position + size]
+        self.position += size
         return result
 
     def seek_from_start(self, offset: int) -> int:
-        self._position = offset
-        return self._position
+        self.position = offset
+        return self.position
 
     def seek_from_end(self, offset: int) -> int:
-        self._position = len(self._data) - offset
-        return self._position
+        self.position = len(self._data) - offset
+        return self.position
 
     def seek_from_current(self, offset: int) -> int:
-        self._position += offset
-        return self._position
+        self.position += offset
+        return self.position
 
     def tell(self) -> int:
-        return self._position
+        return self.position
 
     def align(self, size: int) -> 'BytesReader':
         # Faster bit-based alignment for power-of-2 sizes only
-        if remainder := self._position & (size - 1):
-            self._position += size - remainder
+        if remainder := self.position & (size - 1):
+            self.position += size - remainder
         return self
 
     def unpack_from(self, fmt: str | struct.Struct, size: int) -> tuple[Any, ...]:
@@ -145,10 +145,10 @@ class BytesReader(BaseReader):
             Tuple of unpacked values
         """
         if isinstance(fmt, struct.Struct):
-            result = fmt.unpack_from(self._view, self._position)
+            result = fmt.unpack_from(self.view, self.position)
         else:
-            result = struct.unpack_from(fmt, self._view, self._position)
-        self._position += size
+            result = struct.unpack_from(fmt, self.view, self.position)
+        self.position += size
         return result
 
     def unpack_one(self, fmt: str | struct.Struct, size: int) -> Any:
@@ -164,10 +164,10 @@ class BytesReader(BaseReader):
             Single unpacked value
         """
         if isinstance(fmt, struct.Struct):
-            result = fmt.unpack_from(self._view, self._position)[0]
+            result = fmt.unpack_from(self.view, self.position)[0]
         else:
-            result = struct.unpack_from(fmt, self._view, self._position)[0]
-        self._position += size
+            result = struct.unpack_from(fmt, self.view, self.position)[0]
+        self.position += size
         return result
 
     def size(self) -> int:

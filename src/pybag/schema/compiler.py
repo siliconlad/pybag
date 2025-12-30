@@ -42,6 +42,41 @@ _WRITE_SIZE = {k: struct.calcsize(v) for k, v in _WRITE_FORMAT.items()}
 _TAB = '    '
 
 
+def _is_simple_struct(schema: Schema) -> tuple[list[tuple[str, str, int]], int] | None:
+    """Check if a schema contains only primitive fields that can be batch-unpacked.
+
+    Handles mixed primitive types with proper CDR alignment by returning field
+    info that allows the caller to generate aligned unpacking code.
+
+    Returns (field_info, max_alignment) if inlinable, None otherwise.
+    field_info is a list of (field_name, struct_format_char, field_size) tuples.
+    """
+    field_info: list[tuple[str, str, int]] = []
+    max_align = 1
+
+    for field_name, entry in schema.fields.items():
+        if isinstance(entry, SchemaConstant):
+            continue  # Skip constants
+        if not isinstance(entry, SchemaField):
+            return None
+
+        field_type = entry.type
+        if not isinstance(field_type, Primitive):
+            return None
+        if field_type.type not in _STRUCT_FORMAT:
+            return None
+
+        fmt_char = _STRUCT_FORMAT[field_type.type]
+        size = _STRUCT_SIZE[field_type.type]
+        field_info.append((field_name, fmt_char, size))
+        max_align = max(max_align, size)
+
+    if not field_info:
+        return None
+
+    return (field_info, max_align)
+
+
 def _sanitize(name: str) -> str:
     return re.sub(r"[^0-9a-zA-Z_]", "_", name)
 
@@ -187,38 +222,69 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             f"def {func_name}(decoder):",
             f"{_TAB}fmt_prefix = '<' if decoder._is_little_endian else '>'",
             f"{_TAB}_data = decoder._data",
-            f"{_TAB}_view = _data._view",  # Cache memoryview for unpack_from
+            f"{_TAB}_view = _data.view",  # Cache memoryview for unpack_from
             f"{_TAB}_fields = {{}}",
         ]
         field_names: list[str] = []
-        run_type: str | None = None
-        run_fields: list[str] = []
+
+        # Track runs of fields that can be unpacked together
+        # Each entry is (var_name, fmt_char, size, field_assignment_or_none)
+        # field_assignment_or_none is None for primitives (assigned directly to _fields)
+        # or (field_name, sub_class_name, sub_field_names) for complex types
+        run_size: int | None = None
+        run_items: list[tuple[str, str, int, tuple[str, str, list[str]] | None]] = []
+        # Pending complex field instantiations after flush
+        pending_complex: list[tuple[str, str, list[str]]] = []
 
         def flush() -> None:
-            nonlocal run_type, run_fields
-            if not run_fields:
+            nonlocal run_size, run_items, pending_complex
+            if not run_items:
                 return
 
-            count = len(run_fields)
-            size = _STRUCT_SIZE[run_type]  # type: ignore[index]
-            fmt = _STRUCT_FORMAT[run_type] * count  # type: ignore[index]
-            total_size = size * count
-            lines.append(f"{_TAB}_data.align({size})")
+            # Emit alignment
+            lines.append(f"{_TAB}_data.align({run_size})")
 
-            # Use struct.unpack_from() to avoid creating intermediate bytes objects
-            if count > 1:
-                names = ", ".join(run_fields)
-                lines.append(f"{_TAB}{names} = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data._position)")
-                lines.append(f"{_TAB}_data._position += {total_size}")
-                for field in run_fields:
-                    lines.append(f"{_TAB}_fields[{field!r}] = {field}")
+            # Build format string and variable names
+            fmt_chars = ''.join(item[1] for item in run_items)
+            var_names = [item[0] for item in run_items]
+            total_size = sum(item[2] for item in run_items)
+
+            # Emit unpack
+            if len(var_names) > 1:
+                names = ", ".join(var_names)
+                lines.append(f"{_TAB}{names} = struct.unpack_from(fmt_prefix + '{fmt_chars}', _view, _data.position)")
             else:
-                field = run_fields[0]
-                lines.append(f"{_TAB}_fields[{field!r}] = struct.unpack_from(fmt_prefix + '{fmt}', _view, _data._position)[0]")
-                lines.append(f"{_TAB}_data._position += {total_size}")
+                lines.append(f"{_TAB}{var_names[0]} = struct.unpack_from(fmt_prefix + '{fmt_chars}', _view, _data.position)[0]")
+            lines.append(f"{_TAB}_data.position += {total_size}")
 
-            run_fields = []
-            run_type = None
+            # Emit field assignments
+            for var_name, _, _, complex_info in run_items:
+                if complex_info is None:
+                    # Simple primitive - var_name is the field name
+                    lines.append(f"{_TAB}_fields[{var_name!r}] = {var_name}")
+                # Complex fields are handled after the loop
+
+            # Emit complex field instantiations
+            for field_name, sub_class_name, sub_field_names in pending_complex:
+                kwargs = ', '.join(f'{f}=_{field_name}_{f}' for f in sub_field_names)
+                lines.append(f"{_TAB}_fields[{field_name!r}] = _dataclass_types[{sub_class_name!r}]({kwargs})")
+
+            run_items = []
+            run_size = None
+            pending_complex = []
+
+        def add_to_run(var_name: str, fmt_char: str, size: int, complex_info: tuple[str, str, list[str]] | None = None) -> bool:
+            """Try to add a field to the current run. Returns True if added, False if incompatible."""
+            nonlocal run_size, run_items
+            if run_size is None:
+                run_size = size
+                run_items = [(var_name, fmt_char, size, complex_info)]
+                return True
+            elif run_size == size:
+                run_items.append((var_name, fmt_char, size, complex_info))
+                return True
+            else:
+                return False
 
         for field_name, entry in current.fields.items():
             if isinstance(entry, SchemaConstant):
@@ -236,13 +302,38 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
             field_type = entry.type
 
             if isinstance(field_type, Primitive) and field_type.type in _STRUCT_FORMAT:
-                if run_type == field_type.type:
-                    run_fields.append(field_name)
-                else:
+                fmt_char = _STRUCT_FORMAT[field_type.type]
+                size = _STRUCT_SIZE[field_type.type]
+                if not add_to_run(field_name, fmt_char, size, None):
                     flush()
-                    run_type = field_type.type
-                    run_fields = [field_name]
+                    add_to_run(field_name, fmt_char, size, None)
                 continue
+
+            # Check if this is a simple Complex that can be merged into the run
+            if isinstance(field_type, Complex):
+                sub_schema = sub_schemas[field_type.type]
+                simple_info = _is_simple_struct(sub_schema)
+                if simple_info is not None:
+                    field_info, max_align = simple_info
+                    # Check if ALL fields in this struct have the same size as current run
+                    # (or if we're starting a new run)
+                    all_same_size = len(set(f[2] for f in field_info)) == 1
+                    if all_same_size:
+                        struct_field_size = field_info[0][2]
+                        # Can we merge with current run?
+                        if run_size is None or run_size == struct_field_size:
+                            sub_class_name = _sanitize(sub_schema.name)
+                            create_dataclass_type(sub_schema)
+                            sub_field_names = [f[0] for f in field_info]
+
+                            # Add all sub-fields to the run
+                            for f_name, f_fmt, f_size in field_info:
+                                var_name = f'_{field_name}_{f_name}'
+                                add_to_run(var_name, f_fmt, f_size, (field_name, sub_class_name, sub_field_names))
+
+                            # Track that we need to instantiate this complex field after flush
+                            pending_complex.append((field_name, sub_class_name, sub_field_names))
+                            continue
 
             flush()
 
@@ -250,7 +341,25 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                 lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
 
             elif isinstance(field_type, String):
-                lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
+                if field_type.type == 'string':
+                    # Inline string decoding to avoid method call overhead
+                    # Strings are length-prefixed (uint32) and null-terminated
+                    var_pos = f'_pos_{field_name}'
+                    var_len = f'_len_{field_name}'
+                    lines.append(f"{_TAB}{var_pos} = _data.position")
+                    lines.append(f"{_TAB}if {var_pos} & 3:")
+                    lines.append(f"{_TAB}    {var_pos} += 4 - ({var_pos} & 3)")
+                    lines.append(f"{_TAB}{var_len} = _UINT32.unpack_from(_view, {var_pos})[0]")
+                    lines.append(f"{_TAB}{var_pos} += 4")
+                    lines.append(f"{_TAB}if {var_len} <= 1:")
+                    lines.append(f"{_TAB}    _data.position = {var_pos} + {var_len}")
+                    lines.append(f"{_TAB}    _fields[{field_name!r}] = ''")
+                    lines.append(f"{_TAB}else:")
+                    lines.append(f"{_TAB}    _fields[{field_name!r}] = _view[{var_pos}:{var_pos} + {var_len} - 1].tobytes().decode()")
+                    lines.append(f"{_TAB}    _data.position = {var_pos} + {var_len}")
+                else:
+                    # wstring or other string types - fall back to method call
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = decoder.{field_type.type}()")
 
             elif isinstance(field_type, Array):
                 elem = field_type.type
@@ -267,9 +376,9 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                         lines.append(f"{_TAB}_data.align({size})")
                         # Use unpack_from to avoid intermediate bytes allocation
                         lines.append(
-                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{fmt}', _view, _data._position))"
+                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{fmt}', _view, _data.position))"
                         )
-                        lines.append(f"{_TAB}_data._position += {total_size}")
+                        lines.append(f"{_TAB}_data.position += {total_size}")
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
@@ -301,9 +410,9 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
                         lines.append(f"{_TAB}_data.align({size})")
                         # Use unpack_from to avoid intermediate bytes allocation
                         lines.append(
-                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{char}' * _len, _view, _data._position))"
+                            f"{_TAB}_fields[{field_name!r}] = list(struct.unpack_from(fmt_prefix + '{char}' * _len, _view, _data.position))"
                         )
-                        lines.append(f"{_TAB}_data._position += {size} * _len")
+                        lines.append(f"{_TAB}_data.position += {size} * _len")
                 elif isinstance(elem, Complex):
                     sub_schema = sub_schemas[elem.type]
                     sub_func = build(sub_schema)
@@ -323,8 +432,59 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
 
             elif isinstance(field_type, Complex):
                 sub_schema = sub_schemas[field_type.type]
-                sub_func = build(sub_schema)
-                lines.append(f"{_TAB}_fields[{field_name!r}] = {sub_func}(decoder)")
+
+                # Check if this is a simple struct that can be inlined (but not merged)
+                simple_info = _is_simple_struct(sub_schema)
+                if simple_info is not None:
+                    field_info, max_align = simple_info
+                    sub_class_name = _sanitize(sub_schema.name)
+
+                    # Ensure the dataclass type is created
+                    create_dataclass_type(sub_schema)
+
+                    # Generate inlined struct unpacking with proper CDR alignment
+                    # Group consecutive fields with the same size to batch unpack them
+                    lines.append(f"{_TAB}_data.align({max_align})")
+
+                    inline_var_names = []
+                    idx = 0
+                    while idx < len(field_info):
+                        # Find run of fields with same size
+                        inline_run_start = idx
+                        inline_run_size = field_info[idx][2]
+                        inline_run_fmt = []
+                        inline_run_fields = []
+
+                        while idx < len(field_info) and field_info[idx][2] == inline_run_size:
+                            f_name, f_fmt, f_size = field_info[idx]
+                            inline_run_fmt.append(f_fmt)
+                            inline_run_fields.append(f_name)
+                            inline_var_names.append(f'_{field_name}_{f_name}')
+                            idx += 1
+
+                        # Emit alignment if this run has different alignment than previous
+                        if inline_run_start > 0:
+                            lines.append(f"{_TAB}_data.align({inline_run_size})")
+
+                        # Emit unpack for this run
+                        inline_fmt_str = ''.join(inline_run_fmt)
+                        inline_total_size = inline_run_size * len(inline_run_fields)
+                        inline_run_var_names = ', '.join(f'_{field_name}_{f}' for f in inline_run_fields)
+
+                        if len(inline_run_fields) == 1:
+                            lines.append(f"{_TAB}{inline_run_var_names} = struct.unpack_from(fmt_prefix + '{inline_fmt_str}', _view, _data.position)[0]")
+                        else:
+                            lines.append(f"{_TAB}{inline_run_var_names} = struct.unpack_from(fmt_prefix + '{inline_fmt_str}', _view, _data.position)")
+                        lines.append(f"{_TAB}_data.position += {inline_total_size}")
+
+                    # Create the dataclass instance
+                    sub_fields = [f[0] for f in field_info]
+                    kwargs = ', '.join(f'{f}=_{field_name}_{f}' for f in sub_fields)
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = _dataclass_types[{sub_class_name!r}]({kwargs})")
+                else:
+                    # Fall back to function call for complex nested types
+                    sub_func = build(sub_schema)
+                    lines.append(f"{_TAB}_fields[{field_name!r}] = {sub_func}(decoder)")
 
             else:
                 lines.append(f"{_TAB}_fields[{field_name!r}] = None")
@@ -341,7 +501,9 @@ def compile_schema(schema: Schema, sub_schemas: dict[str, Schema]) -> Callable[[
     build(schema)
     code = "import struct\n" + "\n\n".join(function_defs)
 
-    namespace: dict[str, object] = {"struct": struct, "_dataclass_types": dataclass_types}
+    # Pre-compiled struct for inlined string decoding (little-endian uint32)
+    _UINT32 = struct.Struct('<I')
+    namespace: dict[str, object] = {"struct": struct, "_dataclass_types": dataclass_types, "_UINT32": _UINT32}
     exec(code, namespace)
     return namespace[f"decode_{_sanitize(schema.name)}"]  # type: ignore[index]
 

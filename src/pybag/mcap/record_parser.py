@@ -31,6 +31,10 @@ MAGIC_BYTES_SIZE = 8
 FOOTER_SIZE = 29  # Includes the 1 byte record type and 8 bytes record length
 DATA_END_SIZE = 13  # Includes the 1 byte record type and 8 bytes record length
 
+# Pre-compiled struct format for message header parsing
+# Format: channel_id (H) + sequence (I) + log_time (Q) + publish_time (Q)
+MESSAGE_HEADER_FORMAT = struct.Struct('<HIQQ')
+MESSAGE_HEADER_SIZE = 22  # Total: 2 + 4 + 8 + 8 = 22 bytes
 
 class _Readable(Protocol):
     """Minimal readable interface used when parsing from writer-backed files."""
@@ -271,11 +275,6 @@ class McapRecordParser:
         if (record_type := file.read(1)) != b'\x05':
             raise MalformedMCAP(f'Unexpected record type ({record_type}).')
 
-        # Pre-compiled struct format for message header parsing
-        # Format: channel_id (H) + sequence (I) + log_time (Q) + publish_time (Q)
-        message_header_format = struct.Struct('<HIQQ')
-        message_header_size = 22  # Total: 2 + 4 + 8 + 8 = 22 bytes
-
         # Read record length (8 bytes) - inlined for performance
         record_length = struct.unpack('<Q', file.read(8))[0]
 
@@ -283,11 +282,11 @@ class McapRecordParser:
         record_data = file.read(record_length)
 
         # Unpack all fixed fields in a single call (2 + 4 + 8 + 8 = 22 bytes)
-        message_fields = message_header_format.unpack(record_data[:message_header_size])
+        message_fields = MESSAGE_HEADER_FORMAT.unpack(record_data[:MESSAGE_HEADER_SIZE])
         channel_id, sequence, log_time, publish_time = message_fields
 
         # Slice remaining bytes as message data
-        data = record_data[message_header_size:]
+        data = record_data[MESSAGE_HEADER_SIZE:]
 
         return MessageRecord(channel_id, sequence, log_time, publish_time, data)
 
