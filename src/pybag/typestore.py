@@ -5,15 +5,15 @@ supporting both user-provided .msg files and pybag's built-in message definition
 """
 from __future__ import annotations
 
-import re
 import importlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from pybag.types import SchemaText
 from pybag.schema.ros1msg import Ros1MsgSchemaEncoder
 from pybag.schema.ros2msg import Ros2MsgSchemaEncoder
+from pybag.types import SchemaText
 
 if TYPE_CHECKING:
     from pybag.schema import SchemaFieldType

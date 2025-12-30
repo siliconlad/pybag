@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from pybag.typestore import TypeStore, TypeStoreError
 from pybag.types import SchemaText
+from pybag.typestore import TypeStore, TypeStoreError
 
 
 class TestTypeStoreInit:
