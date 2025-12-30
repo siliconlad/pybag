@@ -211,7 +211,7 @@ def test_invalid_profile() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         file_path = Path(tmpdir) / "test.mcap"
         with pytest.raises(ValueError, match="Unknown encoding type"):
-            McapFileWriter.open(file_path, profile="invalid_profile")
+            McapFileWriter.open(file_path, profile="invalid_profile")  # type: ignore
 
 
 def test_chunk_roundtrip() -> None:
@@ -242,7 +242,8 @@ def test_chunk_roundtrip() -> None:
         pytest.param(1024, "zstd", id="chunked_zstd"),
     ],
 )
-def test_attachments_roundtrip(chunk_size, chunk_compression):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_attachments_roundtrip(chunk_size, chunk_compression, profile):
     """Test reading attachments from an MCAP file."""
     with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
         temp_path = Path(f.name)
@@ -252,7 +253,8 @@ def test_attachments_roundtrip(chunk_size, chunk_compression):
         with McapFileWriter.open(
             temp_path,
             chunk_size=chunk_size,
-            chunk_compression=chunk_compression
+            chunk_compression=chunk_compression,
+            profile=profile,
         ) as writer:
             writer.write_attachment(
                 name="file1.txt",
@@ -278,12 +280,14 @@ def test_attachments_roundtrip(chunk_size, chunk_compression):
 
         # Read and verify statistics
         with McapFileReader.from_file(temp_path) as reader:
+            assert reader.profile == profile
             stats = reader._reader.get_statistics()
             assert stats.attachment_count == 3
             assert stats.metadata_count == 0
 
         # Read all attachments
         with McapFileReader.from_file(temp_path) as reader:
+            assert reader.profile == profile
             all_attachments = reader.get_attachments()
             assert len(all_attachments) == 3
 
@@ -316,6 +320,7 @@ def test_attachments_roundtrip(chunk_size, chunk_compression):
 
         # Read attachments by name
         with McapFileReader.from_file(temp_path) as reader:
+            assert reader.profile == profile
             file1_attachments = reader.get_attachments(name="file1.txt")
             assert len(file1_attachments) == 2
             assert all(a.name == "file1.txt" for a in file1_attachments)
@@ -340,7 +345,8 @@ def test_attachments_roundtrip(chunk_size, chunk_compression):
         pytest.param(1024, "zstd", id="chunked_zstd"),
     ],
 )
-def test_metadata_roundtrip(chunk_size, chunk_compression):
+@pytest.mark.parametrize("profile", ["ros1", "ros2"])
+def test_metadata_roundtrip(chunk_size, chunk_compression, profile):
     """Test reading metadata from an MCAP file."""
     with tempfile.NamedTemporaryFile(suffix=".mcap", delete=False) as f:
         temp_path = Path(f.name)
@@ -350,7 +356,8 @@ def test_metadata_roundtrip(chunk_size, chunk_compression):
         with McapFileWriter.open(
             temp_path,
             chunk_size=chunk_size,
-            chunk_compression=chunk_compression
+            chunk_compression=chunk_compression,
+            profile=profile,
         ) as writer:
             writer.write_metadata(
                 name="device_info",
@@ -367,12 +374,14 @@ def test_metadata_roundtrip(chunk_size, chunk_compression):
 
         # Read and verify statistics
         with McapFileReader.from_file(temp_path) as reader:
+            assert reader.profile == profile
             stats = reader._reader.get_statistics()
             assert stats.attachment_count == 0
             assert stats.metadata_count == 3
 
         # Read all metadata
         with McapFileReader.from_file(temp_path) as reader:
+            assert reader.profile == profile
             all_metadata = reader.get_metadata()
             assert len(all_metadata) == 3
 
@@ -394,6 +403,7 @@ def test_metadata_roundtrip(chunk_size, chunk_compression):
 
         # Read metadata by name
         with McapFileReader.from_file(temp_path) as reader:
+            assert reader.profile == profile
             device_metadata = reader.get_metadata(name="device_info")
             assert len(device_metadata) == 2
             assert all(m.name == "device_info" for m in device_metadata)
