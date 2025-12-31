@@ -265,8 +265,9 @@ def add_parser(subparsers) -> None:
 
             If no sorting flags are specified, no output file is created.
 
-            Note: Bag files only support 'none' and 'bz2' compression. If 'lz4'
-            or 'zstd' is specified for a bag file, 'none' will be used instead.
+            Note: MCAP files support 'none', 'lz4', and 'zstd' compression;
+            using 'bz2' with MCAP will raise an error. Bag files support 'none'
+            and 'bz2'; using 'lz4' or 'zstd' will raise an error.
         """),
     )
     parser.add_argument(
@@ -287,9 +288,10 @@ def add_parser(subparsers) -> None:
         type=str,
         choices=["lz4", "zstd", "none", "bz2"],
         help=dedent("""
-            Compression used for chunk records. MCAP supports 'lz4' and 'zstd'.
-            Bag files support 'none' and 'bz2'. If an unsupported compression
-            is specified for bag files, 'none' will be used.
+            Compression used for chunk records. MCAP files support 'none',
+            'lz4', and 'zstd'; using 'bz2' with MCAP will raise an error.
+            Bag files support 'none' and 'bz2'; using 'lz4' or 'zstd' with
+            bag files will raise an error.
         """),
     )
     parser.add_argument(

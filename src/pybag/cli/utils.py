@@ -117,6 +117,6 @@ def validate_compression_for_mcap(
     if compression == "bz2":
         raise ValueError(
             f"Compression '{compression}' is not supported for MCAP files. "
-            "MCAP files support 'lz4' or 'zstd' compression."
+            "MCAP files support 'none', 'lz4', or 'zstd' compression."
         )
-    return compression  # 'lz4' or 'zstd'
+    return compression  # 'none', 'lz4', or 'zstd'

@@ -525,8 +525,12 @@ def add_parser(subparsers) -> None:
         "--chunk-compression",
         type=str,
         choices=['lz4', 'zstd', 'bz2', 'none'],
-        help="Compression for chunks. For MCAP: lz4, zstd or none. "
-             "For bag files: bz2 or none."
+        help=dedent("""
+            Compression used for chunk records. MCAP files support 'none',
+            'lz4', and 'zstd'; using 'bz2' with MCAP will raise an error.
+            Bag files support 'none' and 'bz2'; using 'lz4' or 'zstd' with
+            bag files will raise an error.
+        """)
     )
     parser.add_argument(
         "--overwrite",

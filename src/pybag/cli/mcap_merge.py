@@ -298,8 +298,9 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
             - For MCAP: (schema_id, topic, message_encoding)
             - For bag: (topic, message_type, md5sum)
 
-            For bag files, compression options 'lz4' and 'zstd' are not supported
-            and will be mapped to 'none' with a warning.
+            Note: MCAP files support 'none', 'lz4', and 'zstd' compression;
+            using 'bz2' with MCAP will raise an error. Bag files support 'none'
+            and 'bz2'; using 'lz4' or 'zstd' will raise an error.
         """)
     )
     parser.add_argument(
@@ -322,9 +323,10 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         type=str,
         choices=["lz4", "zstd", "none", "bz2"],
         help=dedent("""
-            Compression for chunks. MCAP supports 'lz4' and 'zstd'.
-            Bag files support 'none' and 'bz2'. If an unsupported compression
-            is specified for bag files, 'none' will be used.
+            Compression used for chunk records. MCAP files support 'none',
+            'lz4', and 'zstd'; using 'bz2' with MCAP will raise an error.
+            Bag files support 'none' and 'bz2'; using 'lz4' or 'zstd' with
+            bag files will raise an error.
         """)
     )
     parser.set_defaults(func=_run_merge)
