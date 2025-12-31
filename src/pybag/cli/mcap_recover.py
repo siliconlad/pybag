@@ -1,10 +1,16 @@
-"""MCAP recovery CLI command."""
+"""MCAP and ROS bag recovery CLI command."""
 
 import logging
 from pathlib import Path
 from textwrap import dedent
 from typing import Literal
 
+from pybag.bag.record_parser import BagRecordParser
+from pybag.bag.records import BagRecordType, ChunkRecord
+from pybag.bag.records import ConnectionRecord as BagConnectionRecord
+from pybag.bag.records import MessageDataRecord
+from pybag.bag_writer import BagFileWriter
+from pybag.cli.utils import get_file_format_from_magic, map_compression_for_bag
 from pybag.io.raw_reader import BytesReader, FileReader
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.chunk import decompress_chunk
@@ -15,8 +21,236 @@ from pybag.mcap.record_writer import (
 )
 from pybag.mcap.records import ChannelRecord, SchemaRecord
 from pybag.mcap.summary import McapSummaryFactory
+from pybag.types import SchemaText
 
 logger = logging.getLogger(__name__)
+
+
+def _process_bag_chunk_records(
+    chunk_data: bytes,
+    connections: dict[int, BagConnectionRecord],
+    writer: BagFileWriter,
+    *,
+    verbose: bool = False
+) -> tuple[int, dict[int, BagConnectionRecord]]:
+    """Process records inside a decompressed bag chunk.
+
+    Args:
+        chunk_data: The decompressed chunk data.
+        connections: Dictionary to store connection records (conn_id -> record).
+        writer: The bag writer to write records to.
+        verbose: Whether to log verbose progress.
+
+    Returns:
+        Number of messages recovered, and updated connections dict.
+    """
+    messages_recovered = 0
+    chunk_reader = BytesReader(chunk_data)
+
+    try:
+        while chunk_reader.tell() < chunk_reader.size():
+            result = BagRecordParser.parse_record(chunk_reader)
+            if result is None:
+                break
+
+            record_type, record = result
+
+            if record_type == BagRecordType.CONNECTION:
+                conn_record: BagConnectionRecord = record
+                if conn_record.conn not in connections:
+                    connections[conn_record.conn] = conn_record
+                    # Register connection with writer
+                    conn_header = conn_record.connection_header
+                    writer.add_connection(
+                        conn_record.topic,
+                        schema=SchemaText(
+                            name=conn_header.type,
+                            text=conn_header.message_definition,
+                        ),
+                    )
+
+            elif record_type == BagRecordType.MSG_DATA:
+                msg_record: MessageDataRecord = record
+                # Ensure connection exists before writing message
+                if msg_record.conn in connections:
+                    conn = connections[msg_record.conn]
+                    # Write raw message data using internal method
+                    writer._write_raw_message(
+                        conn.topic,
+                        msg_record.time,
+                        msg_record.data,
+                    )
+                    messages_recovered += 1
+                elif verbose:
+                    logger.warning(
+                        f"Skipping message with unknown conn_id {msg_record.conn}"
+                    )
+
+            # Skip other record types (INDEX_DATA can appear in chunks)
+
+    except Exception as e:
+        if verbose:
+            logger.warning(f"Error reading chunk records: {e}")
+        # Stop parsing this chunk but return what we recovered
+
+    return messages_recovered, connections
+
+
+def recover_bag(
+    input_path: str | Path,
+    output_path: str | Path | None = None,
+    chunk_size: int | None = None,
+    compression: Literal["none", "bz2"] | None = None,
+    *,
+    overwrite: bool = False,
+    verbose: bool = False
+) -> Path:
+    """Recover data from a potentially corrupted ROS bag file.
+
+    This command reads records one at a time from the input bag and writes them
+    to a new output bag. If corruption is encountered, it stops and saves all
+    successfully recovered data up to that point.
+
+    Args:
+        input_path: Path to the potentially corrupted bag file.
+        output_path: Path for the recovered output file.
+        chunk_size: Chunk size for the output file in bytes.
+        compression: Compression algorithm for chunks ('none' or 'bz2').
+        overwrite: Whether to overwrite existing output file.
+        verbose: Whether to print detailed recovery progress.
+
+    Returns:
+        Path to the recovered bag file.
+    """
+    # Resolve input and output paths
+    input_path = Path(input_path).resolve()
+    if output_path is None:
+        output_path = input_path.with_name(f"{input_path.stem}_recovered.bag")
+    output_path = Path(output_path).resolve()
+    if output_path == input_path:
+        raise ValueError('Input path cannot be same as output.')
+
+    # Check if output path exists
+    if not overwrite and output_path.exists():
+        raise ValueError('Output bag exists. Please set `overwrite` to True.')
+
+    messages_recovered = 0
+    connections: dict[int, BagConnectionRecord] = {}
+
+    with FileReader(input_path) as reader:
+        # Parse version string
+        version = BagRecordParser.parse_version(reader)
+        if verbose:
+            logger.info(f"Bag version: {version}")
+
+        # Parse bag header record
+        result = BagRecordParser.parse_record(reader)
+        if result is None:
+            raise ValueError("Failed to parse bag header record")
+
+        record_type, bag_header = result
+        if record_type != BagRecordType.BAG_HEADER:
+            raise ValueError(f"Expected BAG_HEADER record, got {record_type}")
+
+        if verbose:
+            logger.info(
+                f"Bag header: {bag_header.conn_count} connections, "
+                f"{bag_header.chunk_count} chunks"
+            )
+
+        # Create output writer
+        with BagFileWriter.open(
+            output_path,
+            compression=compression or 'none',
+            chunk_size=chunk_size,
+        ) as writer:
+            try:
+                # Iterate through all records in the file
+                while True:
+                    result = BagRecordParser.parse_record(reader)
+                    if result is None:
+                        break  # EOF
+
+                    record_type, record = result
+
+                    if record_type == BagRecordType.CONNECTION:
+                        conn_record: BagConnectionRecord = record
+                        if conn_record.conn not in connections:
+                            connections[conn_record.conn] = conn_record
+                            # Register connection with writer
+                            conn_header = conn_record.connection_header
+                            writer.add_connection(
+                                conn_record.topic,
+                                schema=SchemaText(
+                                    name=conn_header.type,
+                                    text=conn_header.message_definition,
+                                ),
+                            )
+
+                    elif record_type == BagRecordType.MSG_DATA:
+                        msg_record: MessageDataRecord = record
+                        # Ensure connection exists before writing message
+                        if msg_record.conn in connections:
+                            conn = connections[msg_record.conn]
+                            # Write raw message data
+                            writer._write_raw_message(
+                                conn.topic,
+                                msg_record.time,
+                                msg_record.data,
+                            )
+                            messages_recovered += 1
+                        elif verbose:
+                            logger.warning(
+                                f"Skipping message with unknown conn_id "
+                                f"{msg_record.conn}"
+                            )
+
+                    elif record_type == BagRecordType.CHUNK:
+                        chunk_record: ChunkRecord = record
+                        try:
+                            chunk_data = BagRecordParser.decompress_chunk(chunk_record)
+                            chunk_messages, connections = _process_bag_chunk_records(
+                                chunk_data,
+                                connections,
+                                writer,
+                                verbose=verbose
+                            )
+                            messages_recovered += chunk_messages
+                        except Exception as e:
+                            if verbose:
+                                logger.warning(f"Error processing chunk: {e}")
+
+                    elif record_type == BagRecordType.INDEX_DATA:
+                        # Skip index data records
+                        pass
+
+                    elif record_type == BagRecordType.CHUNK_INFO:
+                        # Skip chunk info records (summary section)
+                        pass
+
+                    else:
+                        if verbose:
+                            logger.warning(
+                                f"Unknown record type {record_type}, skipping"
+                            )
+
+            except Exception as e:
+                logger.warning(f"Encountered error while reading records: {e}")
+                logger.info(
+                    f"Recovered {messages_recovered} messages before corruption"
+                )
+            else:
+                logger.info("\nFull recovery successful - no corruption detected!")
+
+    # Print recovery summary
+    logger.info(f"\n{'='*60}")
+    logger.info("Recovery Summary:")
+    logger.info(f"  Input file:  {input_path}")
+    logger.info(f"  Output file: {output_path}")
+    logger.info(f"  Messages recovered: {messages_recovered}")
+    logger.info(f"  Connections recovered: {len(connections)}")
+
+    return output_path
 
 
 def _process_chunk_records(
@@ -239,31 +473,79 @@ def recover_mcap(
     return output_path
 
 
+def _run_recover(args) -> Path:
+    """Run the recover command with format auto-detection.
+
+    Args:
+        args: Parsed command-line arguments.
+
+    Returns:
+        Path to the recovered file.
+    """
+    input_path = Path(args.input).resolve()
+    file_format = get_file_format_from_magic(input_path)
+
+    if file_format == "mcap":
+        return recover_mcap(
+            input_path,
+            output_path=args.output,
+            chunk_size=args.chunk_size,
+            chunk_compression=args.chunk_compression,
+            overwrite=args.overwrite,
+            verbose=args.verbose,
+        )
+    else:  # bag format
+        # Map compression for bag files
+        compression = map_compression_for_bag(args.chunk_compression)
+
+        return recover_bag(
+            input_path,
+            output_path=args.output,
+            chunk_size=args.chunk_size,
+            compression=compression,
+            overwrite=args.overwrite,
+            verbose=args.verbose,
+        )
+
+
 def add_parser(subparsers) -> None:
     parser = subparsers.add_parser(
         "recover",
-        help="Recover data from a corrupted MCAP file.",
+        help="Recover data from a corrupted MCAP or ROS bag file.",
         description=dedent("""
-            Attempt to recover data from a potentially corrupted MCAP file.
+            Attempt to recover data from a potentially corrupted MCAP or ROS bag file.
+            The file format is automatically detected from the file header.
+
             This command reads messages one at a time and writes them to a new
-            MCAP file. If corruption is encountered during reading, the command
+            file. If corruption is encountered during reading, the command
             stops and saves all successfully recovered data up to that point.
 
-            This is useful for extracting partial data from damaged MCAP files.
+            This is useful for extracting partial data from damaged files.
+
+            Supported formats:
+              - MCAP (.mcap) - ROS 2 recording format
+              - ROS bag (.bag) - ROS 1 recording format
         """)
     )
-    parser.add_argument("input", help="Path to the potentially corrupted MCAP file.")
-    parser.add_argument("-o", "--output", help="Output MCAP file path for recovered data")
+    parser.add_argument(
+        "input",
+        help="Path to the potentially corrupted MCAP or bag file."
+    )
+    parser.add_argument(
+        "-o", "--output",
+        help="Output file path for recovered data (format matches input)."
+    )
     parser.add_argument(
         "--chunk-size",
         type=int,
-        help="Chunk size of the recovered MCAP in bytes."
+        help="Chunk size of the recovered file in bytes."
     )
     parser.add_argument(
         "--chunk-compression",
         type=str,
-        choices=['lz4', 'zstd'],
-        help="Compression used for the chunk records."
+        choices=['lz4', 'zstd', 'bz2', 'none'],
+        help="Compression for chunks. For MCAP: lz4, zstd or none. "
+             "For bag files: bz2 or none."
     )
     parser.add_argument(
         "--overwrite",
@@ -275,13 +557,4 @@ def add_parser(subparsers) -> None:
         action="store_true",
         help="Print detailed recovery progress."
     )
-    parser.set_defaults(
-        func=lambda args: recover_mcap(
-            args.input,
-            output_path=args.output,
-            chunk_size=args.chunk_size,
-            chunk_compression=args.chunk_compression,
-            overwrite=args.overwrite,
-            verbose=args.verbose,
-        )
-    )
+    parser.set_defaults(func=_run_recover)

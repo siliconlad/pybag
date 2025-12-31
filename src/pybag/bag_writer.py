@@ -296,6 +296,51 @@ class BagFileWriter:
         if self._chunk_buffer.size() >= self._chunk_size:
             self._flush_chunk()
 
+    def _write_raw_message(
+        self,
+        topic: str,
+        timestamp: int,
+        data: bytes,
+    ) -> None:
+        """Write a pre-serialized message to the bag file.
+
+        This is an internal method used for recovery operations where
+        message data is already serialized.
+
+        Args:
+            topic: The topic name (must already be registered).
+            timestamp: The timestamp in nanoseconds since epoch.
+            data: The pre-serialized message data.
+
+        Raises:
+            KeyError: If the topic has not been registered.
+        """
+        conn_id = self._topics[topic]
+
+        # Update chunk time bounds
+        if self._chunk_start_time is None:
+            self._chunk_start_time = timestamp
+        self._chunk_end_time = timestamp if self._chunk_end_time is None else max(self._chunk_end_time, timestamp)
+
+        # Track message count per connection
+        self._chunk_message_counts[conn_id] = self._chunk_message_counts.get(conn_id, 0) + 1
+
+        # Record the offset within the chunk buffer before writing
+        msg_offset = self._chunk_buffer.size()
+
+        # Write message to chunk buffer (data is already serialized)
+        msg_record = MessageDataRecord(conn=conn_id, time=timestamp, data=data)
+        self._chunk_record_writer.write_message_data(msg_record)
+
+        # Track index entry for this message
+        if conn_id not in self._chunk_index_entries:
+            self._chunk_index_entries[conn_id] = []
+        self._chunk_index_entries[conn_id].append((timestamp, msg_offset))
+
+        # Check if we should flush the chunk
+        if self._chunk_buffer.size() >= self._chunk_size:
+            self._flush_chunk()
+
     def _flush_chunk(self) -> None:
         """Flush the current chunk to disk."""
         if self._chunk_buffer.size() == 0:
