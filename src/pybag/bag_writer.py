@@ -238,6 +238,44 @@ class BagFileWriter:
 
         return conn_id
 
+    def add_connection_record(self, record: ConnectionRecord) -> int:
+        """Add a connection record directly to the bag file.
+
+        This method is useful for recovery operations where you have
+        an existing ConnectionRecord from another bag file.
+
+        Args:
+            record: A ConnectionRecord to add.
+
+        Returns:
+            The connection ID.
+
+        Raises:
+            ValueError: If a connection with this ID already exists.
+        """
+        conn_id = record.conn
+
+        if conn_id in self._connections:
+            raise ValueError(f"Connection ID {conn_id} already exists")
+
+        # Track the connection
+        self._connections[conn_id] = record
+        self._topics[record.topic] = conn_id
+
+        # Update next_conn_id if necessary to avoid collisions
+        if conn_id >= self._next_conn_id:
+            self._next_conn_id = conn_id + 1
+
+        # Write connection record to current chunk
+        self._chunk_record_writer.write_connection(record)
+
+        # Compile and store a serializer for this topic
+        parsed_schema, sub_schemas = self._schema_decoder.parse_schema(record)
+        serializer = compile_ros1_serializer(parsed_schema, sub_schemas)
+        self._topic_serializers[record.topic] = serializer
+
+        return conn_id
+
     def write_message(
         self,
         topic: str,
@@ -296,26 +334,25 @@ class BagFileWriter:
         if self._chunk_buffer.size() >= self._chunk_size:
             self._flush_chunk()
 
-    def _write_raw_message(
-        self,
-        topic: str,
-        timestamp: int,
-        data: bytes,
-    ) -> None:
-        """Write a pre-serialized message to the bag file.
+    def write_message_record(self, record: MessageDataRecord) -> None:
+        """Write a pre-serialized message record to the bag file.
 
-        This is an internal method used for recovery operations where
-        message data is already serialized.
+        This method is useful for recovery operations or copying messages
+        between bag files without re-serializing the message data.
 
         Args:
-            topic: The topic name (must already be registered).
-            timestamp: The timestamp in nanoseconds since epoch.
-            data: The pre-serialized message data.
+            record: A MessageDataRecord containing the connection ID,
+                   timestamp, and pre-serialized message data.
 
         Raises:
-            KeyError: If the topic has not been registered.
+            KeyError: If the connection ID has not been registered.
         """
-        conn_id = self._topics[topic]
+        conn_id = record.conn
+        timestamp = record.time
+
+        # Verify connection exists
+        if conn_id not in self._connections:
+            raise KeyError(f"Connection ID {conn_id} has not been registered")
 
         # Update chunk time bounds
         if self._chunk_start_time is None:
@@ -329,8 +366,7 @@ class BagFileWriter:
         msg_offset = self._chunk_buffer.size()
 
         # Write message to chunk buffer (data is already serialized)
-        msg_record = MessageDataRecord(conn=conn_id, time=timestamp, data=data)
-        self._chunk_record_writer.write_message_data(msg_record)
+        self._chunk_record_writer.write_message_data(record)
 
         # Track index entry for this message
         if conn_id not in self._chunk_index_entries:

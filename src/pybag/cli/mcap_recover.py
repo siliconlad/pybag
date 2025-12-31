@@ -21,7 +21,7 @@ from pybag.mcap.record_writer import (
 )
 from pybag.mcap.records import ChannelRecord, SchemaRecord
 from pybag.mcap.summary import McapSummaryFactory
-from pybag.types import SchemaText
+
 
 logger = logging.getLogger(__name__)
 
@@ -59,27 +59,15 @@ def _process_bag_chunk_records(
                 conn_record: BagConnectionRecord = record
                 if conn_record.conn not in connections:
                     connections[conn_record.conn] = conn_record
-                    # Register connection with writer
-                    conn_header = conn_record.connection_header
-                    writer.add_connection(
-                        conn_record.topic,
-                        schema=SchemaText(
-                            name=conn_header.type,
-                            text=conn_header.message_definition,
-                        ),
-                    )
+                    # Register connection with writer using the record directly
+                    writer.add_connection_record(conn_record)
 
             elif record_type == BagRecordType.MSG_DATA:
                 msg_record: MessageDataRecord = record
                 # Ensure connection exists before writing message
                 if msg_record.conn in connections:
-                    conn = connections[msg_record.conn]
-                    # Write raw message data using internal method
-                    writer._write_raw_message(
-                        conn.topic,
-                        msg_record.time,
-                        msg_record.data,
-                    )
+                    # Write message record directly (no re-serialization)
+                    writer.write_message_record(msg_record)
                     messages_recovered += 1
                 elif verbose:
                     logger.warning(
@@ -177,27 +165,15 @@ def recover_bag(
                         conn_record: BagConnectionRecord = record
                         if conn_record.conn not in connections:
                             connections[conn_record.conn] = conn_record
-                            # Register connection with writer
-                            conn_header = conn_record.connection_header
-                            writer.add_connection(
-                                conn_record.topic,
-                                schema=SchemaText(
-                                    name=conn_header.type,
-                                    text=conn_header.message_definition,
-                                ),
-                            )
+                            # Register connection with writer using the record directly
+                            writer.add_connection_record(conn_record)
 
                     elif record_type == BagRecordType.MSG_DATA:
                         msg_record: MessageDataRecord = record
                         # Ensure connection exists before writing message
                         if msg_record.conn in connections:
-                            conn = connections[msg_record.conn]
-                            # Write raw message data
-                            writer._write_raw_message(
-                                conn.topic,
-                                msg_record.time,
-                                msg_record.data,
-                            )
+                            # Write message record directly (no re-serialization)
+                            writer.write_message_record(msg_record)
                             messages_recovered += 1
                         elif verbose:
                             logger.warning(
