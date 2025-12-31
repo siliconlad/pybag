@@ -5,7 +5,7 @@ import pytest
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
 from pybag.cli.main import main as cli_main
-from pybag.cli.utils import get_file_format, map_compression_for_bag
+from pybag.cli.utils import get_file_format, validate_compression_for_bag
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter

@@ -160,25 +160,33 @@ def info_bag(input_path: str | Path) -> None:
         print()
 
         # Print topic information
-        if not connections:
+        if not topics:
             print("No topics found.")
         else:
             print("Topics:")
 
-            # Build a list of topic info
-            topic_info = []
+            # Build a mapping from topic to connection for message type lookup
+            # Use first connection for each topic (they should have the same type)
+            topic_to_conn = {}
             for conn in connections:
-                msg_count = reader.get_message_count(conn.topic)
+                if conn.topic not in topic_to_conn:
+                    topic_to_conn[conn.topic] = conn
+
+            # Build a list of topic info (iterate over unique topics, not connections)
+            topic_info = []
+            for topic in topics:
+                msg_count = reader.get_message_count(topic)
 
                 # Calculate frequency (messages per second)
                 frequency = msg_count / _ns_to_seconds(duration_ns) if duration_ns > 0 else 0
 
                 # Get message type from connection header
+                conn = topic_to_conn[topic]
                 conn_header = conn.connection_header
                 msg_type = conn_header.type
 
                 topic_info.append({
-                    'topic': conn.topic,
+                    'topic': topic,
                     'messages': msg_count,
                     'frequency': frequency,
                     'msg_type': msg_type,

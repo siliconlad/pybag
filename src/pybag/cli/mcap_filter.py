@@ -9,7 +9,11 @@ from typing import Literal
 
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
-from pybag.cli.utils import get_file_format, map_compression_for_bag
+from pybag.cli.utils import (
+    get_file_format,
+    validate_compression_for_bag,
+    validate_compression_for_mcap
+)
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
@@ -34,7 +38,7 @@ def filter_mcap(
     start_time: float | None = None,
     end_time: float | None = None,
     chunk_size: int | None = None,
-    chunk_compression: Literal["lz4", "zstd"] | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
     *,
     overwrite: bool = False
 ) -> Path:
@@ -284,6 +288,8 @@ def _run_filter(args) -> Path:
     file_format = get_file_format(input_path)
 
     if file_format == 'mcap':
+        # Validate compression for MCAP files
+        chunk_compression = validate_compression_for_mcap(args.chunk_compression)
         return filter_mcap(
             input_path,
             output_path=args.output,
@@ -292,12 +298,12 @@ def _run_filter(args) -> Path:
             start_time=args.start_time,
             end_time=args.end_time,
             chunk_size=args.chunk_size,
-            chunk_compression=args.chunk_compression,
+            chunk_compression=chunk_compression,
             overwrite=args.overwrite,
         )
     else:
         # Map compression for bag files
-        compression = map_compression_for_bag(args.chunk_compression)
+        compression = validate_compression_for_bag(args.chunk_compression)
         return filter_bag(
             input_path,
             output_path=args.output,

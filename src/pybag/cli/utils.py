@@ -65,7 +65,7 @@ def get_file_format_from_magic(file_path: Path) -> Literal["mcap", "bag"]:
     return get_file_format(file_path)
 
 
-def map_compression_for_bag(
+def validate_compression_for_bag(
     compression: Literal["lz4", "zstd", "none", "bz2"] | None
 ) -> Literal["none", "bz2"] | None:
     """Map MCAP compression options to bag-compatible compression.
@@ -87,9 +87,36 @@ def map_compression_for_bag(
     if compression is None:
         return None
     if compression in ("lz4", "zstd"):
-        logger.warning(
+        raise ValueError(
             f"Compression '{compression}' not supported for bag files. "
-            "Using 'none' instead. Bag files support 'none' or 'bz2'."
+            "Bag files support 'none' or 'bz2'."
         )
-        return "none"
     return compression  # 'none' or 'bz2'
+
+
+def validate_compression_for_mcap(
+    compression: Literal["lz4", "zstd", "none", "bz2"] | None
+) -> Literal["none", "lz4", "zstd"] | None:
+    """Validate and map compression options for MCAP files.
+
+    MCAP files only support 'lz4' or 'zstd' compression (or None for default).
+    This function validates the compression option and raises an error for
+    bag-only compression options.
+
+    Args:
+        compression: The requested compression option.
+
+    Returns:
+        An MCAP-compatible compression option, or None for default.
+
+    Raises:
+        ValueError: If compression is 'none' or 'bz2' (bag-only options).
+    """
+    if compression is None:
+        return None
+    if compression == "bz2":
+        raise ValueError(
+            f"Compression '{compression}' is not supported for MCAP files. "
+            "MCAP files support 'lz4' or 'zstd' compression."
+        )
+    return compression  # 'lz4' or 'zstd'

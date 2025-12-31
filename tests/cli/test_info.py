@@ -55,3 +55,17 @@ def test_cli_info_bag_basic(tmp_path: Path, capsys) -> None:
     assert "/foo" in output
     assert "/bar" in output
     assert "std_msgs/Int32" in output
+
+    # Count how many times each topic appears in the Topics section
+    # The topic should only appear once in the output
+    lines = output.split('\n')
+    foo_count = sum(1 for line in lines if '/foo' in line and 'std_msgs' in line)
+    bar_count = sum(1 for line in lines if '/bar' in line and 'std_msgs' in line)
+    # Each topic should appear exactly once in the topic listing
+    assert foo_count == 1, f"Expected /foo to appear once, but found {foo_count} times"
+    assert bar_count == 1, f"Expected /bar to appear once, but found {bar_count} times"
+
+    # Verify message counts are correct (not double-counted)
+    # /foo has 2 messages, /bar has 1 message
+    assert "Topics:         2" in output  # 2 unique topics
+    assert "Messages:       3" in output  # 3 total messages

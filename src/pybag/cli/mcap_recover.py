@@ -10,7 +10,11 @@ from pybag.bag.records import BagRecordType, ChunkRecord
 from pybag.bag.records import ConnectionRecord as BagConnectionRecord
 from pybag.bag.records import MessageDataRecord
 from pybag.bag_writer import BagFileWriter
-from pybag.cli.utils import get_file_format_from_magic, map_compression_for_bag
+from pybag.cli.utils import (
+    get_file_format_from_magic,
+    validate_compression_for_bag,
+    validate_compression_for_mcap
+)
 from pybag.io.raw_reader import BytesReader, FileReader
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.chunk import decompress_chunk
@@ -21,7 +25,6 @@ from pybag.mcap.record_writer import (
 )
 from pybag.mcap.records import ChannelRecord, SchemaRecord
 from pybag.mcap.summary import McapSummaryFactory
-
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +296,7 @@ def recover_mcap(
     input_path: str | Path,
     output_path: str | Path | None = None,
     chunk_size: int | None = None,
-    chunk_compression: Literal["lz4", "zstd"] | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
     *,
     overwrite: bool = False,
     verbose: bool = False
@@ -462,17 +465,19 @@ def _run_recover(args) -> Path:
     file_format = get_file_format_from_magic(input_path)
 
     if file_format == "mcap":
+        # Validate compression for MCAP files
+        chunk_compression = validate_compression_for_mcap(args.chunk_compression)
         return recover_mcap(
             input_path,
             output_path=args.output,
             chunk_size=args.chunk_size,
-            chunk_compression=args.chunk_compression,
+            chunk_compression=chunk_compression,
             overwrite=args.overwrite,
             verbose=args.verbose,
         )
     else:  # bag format
         # Map compression for bag files
-        compression = map_compression_for_bag(args.chunk_compression)
+        compression = validate_compression_for_bag(args.chunk_compression)
 
         return recover_bag(
             input_path,

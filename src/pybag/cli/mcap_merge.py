@@ -8,7 +8,11 @@ from typing import Literal
 
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
-from pybag.cli.utils import get_file_format, map_compression_for_bag
+from pybag.cli.utils import (
+    get_file_format,
+    validate_compression_for_bag,
+    validate_compression_for_mcap
+)
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
@@ -25,7 +29,7 @@ def merge_mcap(
     inputs: Sequence[str],
     output: str,
     chunk_size: int | None = None,
-    chunk_compression: Literal["lz4", "zstd"] | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
 ) -> None:
     """Merge multiple MCAP files into a single file.
 
@@ -260,15 +264,17 @@ def _run_merge(args) -> None:
     file_format = formats.pop()
 
     if file_format == 'mcap':
+        # Validate compression for MCAP files
+        chunk_compression = validate_compression_for_mcap(args.chunk_compression)
         merge_mcap(
             args.input,
             args.output,
             chunk_size=args.chunk_size,
-            chunk_compression=args.chunk_compression,
+            chunk_compression=chunk_compression,
         )
     else:
         # Map compression for bag files
-        compression = map_compression_for_bag(args.chunk_compression)
+        compression = validate_compression_for_bag(args.chunk_compression)
         merge_bag(
             args.input,
             args.output,

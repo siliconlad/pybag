@@ -2,7 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from pybag.cli.utils import get_file_format, map_compression_for_bag
+from pybag.cli.utils import (
+    get_file_format,
+    validate_compression_for_bag,
+    validate_compression_for_mcap
+)
 
 # =============================================================================
 # Format detection tests
@@ -34,10 +38,24 @@ def test_get_file_format_unsupported() -> None:
 def test_map_compression_for_bag() -> None:
     """Test compression mapping for bag files."""
     # Supported compressions pass through
-    assert map_compression_for_bag(None) is None
-    assert map_compression_for_bag("none") == "none"
-    assert map_compression_for_bag("bz2") == "bz2"
+    assert validate_compression_for_bag(None) is None
+    assert validate_compression_for_bag("none") == "none"
+    assert validate_compression_for_bag("bz2") == "bz2"
 
     # Unsupported compressions fall back to 'none'
-    assert map_compression_for_bag("lz4") == "none"
-    assert map_compression_for_bag("zstd") == "none"
+    with pytest.raises(ValueError, match="not supported"):
+        assert validate_compression_for_bag("lz4")
+    with pytest.raises(ValueError, match="not supported"):
+        assert validate_compression_for_bag("zstd")
+
+
+def test_map_compression_for_mcap() -> None:
+    """Test compression mapping for bag files."""
+    # Supported compressions pass through
+    assert validate_compression_for_mcap(None) is None
+    assert validate_compression_for_mcap("none") == "none"
+    assert validate_compression_for_mcap("lz4") == "lz4"
+    assert validate_compression_for_mcap("zstd") == "zstd"
+
+    with pytest.raises(ValueError, match="not supported"):
+        assert validate_compression_for_mcap("bz2") == "bz2"
