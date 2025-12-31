@@ -238,6 +238,44 @@ class BagFileWriter:
 
         return conn_id
 
+    def add_connection_record(self, record: ConnectionRecord) -> int:
+        """Add a connection record directly to the bag file.
+
+        This method is useful for recovery operations where you have
+        an existing ConnectionRecord from another bag file.
+
+        Args:
+            record: A ConnectionRecord to add.
+
+        Returns:
+            The connection ID.
+
+        Raises:
+            ValueError: If a connection with this ID already exists.
+        """
+        conn_id = record.conn
+
+        if conn_id in self._connections:
+            raise ValueError(f"Connection ID {conn_id} already exists")
+
+        # Track the connection
+        self._connections[conn_id] = record
+        self._topics[record.topic] = conn_id
+
+        # Update next_conn_id if necessary to avoid collisions
+        if conn_id >= self._next_conn_id:
+            self._next_conn_id = conn_id + 1
+
+        # Write connection record to current chunk
+        self._chunk_record_writer.write_connection(record)
+
+        # Compile and store a serializer for this topic
+        parsed_schema, sub_schemas = self._schema_decoder.parse_schema(record)
+        serializer = compile_ros1_serializer(parsed_schema, sub_schemas)
+        self._topic_serializers[record.topic] = serializer
+
+        return conn_id
+
     def write_message(
         self,
         topic: str,
@@ -286,6 +324,49 @@ class BagFileWriter:
         # Write message to chunk buffer
         msg_record = MessageDataRecord(conn=conn_id, time=timestamp, data=data)
         self._chunk_record_writer.write_message_data(msg_record)
+
+        # Track index entry for this message
+        if conn_id not in self._chunk_index_entries:
+            self._chunk_index_entries[conn_id] = []
+        self._chunk_index_entries[conn_id].append((timestamp, msg_offset))
+
+        # Check if we should flush the chunk
+        if self._chunk_buffer.size() >= self._chunk_size:
+            self._flush_chunk()
+
+    def write_message_record(self, record: MessageDataRecord) -> None:
+        """Write a pre-serialized message record to the bag file.
+
+        This method is useful for recovery operations or copying messages
+        between bag files without re-serializing the message data.
+
+        Args:
+            record: A MessageDataRecord containing the connection ID,
+                   timestamp, and pre-serialized message data.
+
+        Raises:
+            KeyError: If the connection ID has not been registered.
+        """
+        conn_id = record.conn
+        timestamp = record.time
+
+        # Verify connection exists
+        if conn_id not in self._connections:
+            raise KeyError(f"Connection ID {conn_id} has not been registered")
+
+        # Update chunk time bounds
+        if self._chunk_start_time is None:
+            self._chunk_start_time = timestamp
+        self._chunk_end_time = timestamp if self._chunk_end_time is None else max(self._chunk_end_time, timestamp)
+
+        # Track message count per connection
+        self._chunk_message_counts[conn_id] = self._chunk_message_counts.get(conn_id, 0) + 1
+
+        # Record the offset within the chunk buffer before writing
+        msg_offset = self._chunk_buffer.size()
+
+        # Write message to chunk buffer (data is already serialized)
+        self._chunk_record_writer.write_message_data(record)
 
         # Track index entry for this message
         if conn_id not in self._chunk_index_entries:

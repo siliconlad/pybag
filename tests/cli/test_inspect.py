@@ -1,13 +1,31 @@
-"""Tests for MCAP inspect CLI command."""
+"""Tests for MCAP and bag inspect CLI command."""
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+import pybag.types as t
+from pybag.bag_writer import BagFileWriter
 from pybag.cli.main import main as cli_main
 from pybag.mcap_writer import McapFileWriter
 from pybag.ros2.humble.std_msgs import Int32, String
+
+
+# ROS1-style message types for bag file tests
+@dataclass(kw_only=True)
+class BagInt32:
+    """ROS1 Int32 message."""
+    __msg_name__ = "std_msgs/Int32"
+    data: t.int32
+
+
+@dataclass(kw_only=True)
+class BagString:
+    """ROS1 String message."""
+    __msg_name__ = "std_msgs/String"
+    data: t.string
 
 
 @pytest.fixture
@@ -290,3 +308,170 @@ class TestInspectHelp:
         assert "--id" in output
         assert "--name" in output
         assert "--json" in output
+
+##################
+# Bag file tests #
+##################
+
+@pytest.fixture
+def bag_with_data(tmp_path: Path) -> Path:
+    """Create a bag file with connections (schemas/channels)."""
+    input_path = tmp_path / "test.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/sensor/temperature", int(1e9), BagInt32(data=25))
+        writer.write_message("/sensor/humidity", int(2e9), BagInt32(data=50))
+        writer.write_message("/control/status", int(3e9), BagString(data="OK"))
+
+    return input_path
+
+
+class TestBagInspectSchemas:
+    """Tests for inspect schemas subcommand with bag files."""
+
+    def test_list_schemas(self, bag_with_data: Path, capsys) -> None:
+        """Test listing all schemas in a bag file."""
+        cli_main(["inspect", "schemas", str(bag_with_data)])
+
+        output = capsys.readouterr().out
+        assert "Schemas (3):" in output
+        assert "std_msgs/Int32" in output
+        assert "std_msgs/String" in output
+        assert "ros1msg" in output
+
+    def test_schema_detail_by_id(self, bag_with_data: Path, capsys) -> None:
+        """Test showing schema details by ID in a bag file."""
+        cli_main(["inspect", "schemas", str(bag_with_data), "--id", "0"])
+
+        output = capsys.readouterr().out
+        assert "Schema ID: 0" in output
+        assert "Name:" in output
+        assert "Encoding:  ros1msg" in output
+        assert "Data:" in output
+
+    def test_filter_schemas_by_name(self, bag_with_data: Path, capsys) -> None:
+        """Test filtering schemas by name pattern in a bag file."""
+        cli_main(["inspect", "schemas", str(bag_with_data), "--name", "*Int32"])
+
+        output = capsys.readouterr().out
+        assert "std_msgs/Int32" in output
+        assert "std_msgs/String" not in output
+
+    def test_schemas_json_output(self, bag_with_data: Path, capsys) -> None:
+        """Test JSON output for schemas in a bag file."""
+        cli_main(["inspect", "schemas", str(bag_with_data), "--json"])
+
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert isinstance(data, list)
+        assert len(data) == 3
+        assert all("id" in s and "name" in s and "encoding" in s for s in data)
+        assert all(s["encoding"] == "ros1msg" for s in data)
+
+    def test_schema_not_found(self, bag_with_data: Path, capsys) -> None:
+        """Test error when schema ID is not found in a bag file."""
+        cli_main(["inspect", "schemas", str(bag_with_data), "--id", "999"])
+
+        output = capsys.readouterr().out
+        assert "not found" in output
+
+
+class TestBagInspectChannels:
+    """Tests for inspect channels subcommand with bag files."""
+
+    def test_list_channels(self, bag_with_data: Path, capsys) -> None:
+        """Test listing all channels in a bag file."""
+        cli_main(["inspect", "channels", str(bag_with_data)])
+
+        output = capsys.readouterr().out
+        assert "Channels (3):" in output
+        assert "/sensor/temperature" in output
+        assert "/sensor/humidity" in output
+        assert "/control/status" in output
+        assert "ros1msg" in output
+
+    def test_channel_detail_by_id(self, bag_with_data: Path, capsys) -> None:
+        """Test showing channel details by ID in a bag file."""
+        cli_main(["inspect", "channels", str(bag_with_data), "--id", "0"])
+
+        output = capsys.readouterr().out
+        assert "Channel ID:" in output
+        assert "Topic:" in output
+        assert "Message Encoding: ros1msg" in output
+        assert "Schema ID:" in output
+
+    def test_filter_channels_by_topic(self, bag_with_data: Path, capsys) -> None:
+        """Test filtering channels by topic pattern in a bag file."""
+        cli_main(["inspect", "channels", str(bag_with_data), "--topic", "/sensor/*"])
+
+        output = capsys.readouterr().out
+        assert "Channels (2):" in output
+        assert "/sensor/temperature" in output
+        assert "/sensor/humidity" in output
+        assert "/control/status" not in output
+
+    def test_channels_json_output(self, bag_with_data: Path, capsys) -> None:
+        """Test JSON output for channels in a bag file."""
+        cli_main(["inspect", "channels", str(bag_with_data), "--json"])
+
+        output = capsys.readouterr().out
+        data = json.loads(output)
+        assert isinstance(data, list)
+        assert len(data) == 3
+        assert all("id" in c and "topic" in c for c in data)
+        assert all(c["message_encoding"] == "ros1msg" for c in data)
+
+    def test_channel_not_found(self, bag_with_data: Path, capsys) -> None:
+        """Test error when channel ID is not found in a bag file."""
+        cli_main(["inspect", "channels", str(bag_with_data), "--id", "999"])
+
+        output = capsys.readouterr().out
+        assert "not found" in output
+
+
+class TestBagInspectMetadata:
+    """Tests for inspect metadata subcommand with bag files."""
+
+    def test_metadata_not_supported(self, bag_with_data: Path, capsys) -> None:
+        """Test that metadata is not supported for bag files."""
+        cli_main(["inspect", "metadata", str(bag_with_data)])
+
+        output = capsys.readouterr().out
+        assert "Metadata not supported in bag format" in output
+
+
+class TestBagInspectAttachments:
+    """Tests for inspect attachments subcommand with bag files."""
+
+    def test_attachments_not_supported(self, bag_with_data: Path, capsys) -> None:
+        """Test that attachments are not supported for bag files."""
+        cli_main(["inspect", "attachments", str(bag_with_data)])
+
+        output = capsys.readouterr().out
+        assert "Attachments not supported in bag format" in output
+
+
+class TestBagInspectEmpty:
+    """Tests for inspect commands on empty bag files."""
+
+    def test_empty_schemas(self, tmp_path: Path, capsys) -> None:
+        """Test inspecting schemas in empty bag file."""
+        input_path = tmp_path / "empty.bag"
+        with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+            pass  # Empty file
+
+        cli_main(["inspect", "schemas", str(input_path)])
+        output = capsys.readouterr().out
+        assert "Schemas (0):" in output
+        assert "No schemas found" in output
+
+    def test_empty_channels(self, tmp_path: Path, capsys) -> None:
+        """Test inspecting channels in empty bag file."""
+        input_path = tmp_path / "empty.bag"
+        with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+            pass  # Empty file
+
+        cli_main(["inspect", "channels", str(input_path)])
+        output = capsys.readouterr().out
+        assert "Channels (0):" in output
+        assert "No channels found" in output

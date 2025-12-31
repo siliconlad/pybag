@@ -1,9 +1,15 @@
 from pathlib import Path
 
+import pytest
+
+from pybag.bag_reader import BagFileReader
+from pybag.bag_writer import BagFileWriter
 from pybag.cli.main import main as cli_main
+from pybag.cli.utils import get_file_format, validate_compression_for_bag
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
+from pybag.ros1.noetic.std_msgs import Int32 as Ros1Int32
 from pybag.ros2.humble.builtin_interfaces import Time
 from pybag.ros2.humble.sensor_msgs import BatteryState
 from pybag.ros2.humble.std_msgs import Empty, Header, Int32
@@ -460,3 +466,302 @@ def test_cli_filter_empty_result_creates_empty_mcap(tmp_path: Path) -> None:
 
     assert len(output_schemas) == 0, f"Expected 0 output schema, got {len(output_schemas)}"
     assert len(output_channels) == 0, f"Expected 0 output channel, got {len(output_channels)}"
+
+
+# =============================================================================
+# Bag file filter tests
+# =============================================================================
+
+
+def test_cli_filter_bag_include_and_time(tmp_path: Path) -> None:
+    """Test filtering bag file by topic and time range."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/bar", int(2e9), Ros1Int32(data=2))
+        writer.write_message("/foo", int(3e9), Ros1Int32(data=3))
+
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--include-topic",
+            "/foo",
+            "--start-time",
+            "2",
+            "--end-time",
+            "4",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    with BagFileReader.from_file(output_path) as reader:
+        assert set(reader.get_topics()) == {"/foo"}
+
+        messages = list(reader.messages("/foo"))
+        assert [m.log_time for m in messages] == [int(3e9)]
+        assert [m.data.data for m in messages] == [3]
+
+
+def test_cli_filter_bag_exclude(tmp_path: Path) -> None:
+    """Test excluding topics from bag file."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/bar", int(2e9), Ros1Int32(data=2))
+        writer.write_message("/foo", int(3e9), Ros1Int32(data=3))
+
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--exclude-topic",
+            "/bar",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    with BagFileReader.from_file(output_path) as reader:
+        assert set(reader.get_topics()) == {"/foo"}
+
+        messages = list(reader.messages("/foo"))
+        assert [m.log_time for m in messages] == [int(1e9), int(3e9)]
+        assert [m.data.data for m in messages] == [1, 3]
+
+
+def test_cli_filter_bag_glob_with_exclude(tmp_path: Path) -> None:
+    """Test glob patterns with exclusion for bag files.
+
+    Ensures exclusions are applied AFTER glob expansion.
+    """
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo/a", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/foo/b", int(2e9), Ros1Int32(data=2))
+        writer.write_message("/foo/c", int(3e9), Ros1Int32(data=3))
+        writer.write_message("/bar", int(4e9), Ros1Int32(data=4))
+
+    # Include /foo/* but exclude /foo/b
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--include-topic",
+            "/foo/*",
+            "--exclude-topic",
+            "/foo/b",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    with BagFileReader.from_file(output_path) as reader:
+        topics = set(reader.get_topics())
+        expected_topics = {"/foo/a", "/foo/c"}
+        assert topics == expected_topics, f"Expected {expected_topics}, got {topics}"
+
+        messages_a = list(reader.messages("/foo/a"))
+        assert len(messages_a) == 1
+        assert messages_a[0].data.data == 1
+
+        messages_c = list(reader.messages("/foo/c"))
+        assert len(messages_c) == 1
+        assert messages_c[0].data.data == 3
+
+
+def test_cli_filter_bag_exclude_with_glob(tmp_path: Path) -> None:
+    """Test glob patterns in exclude filters for bag files."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo/a", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/foo/b", int(2e9), Ros1Int32(data=2))
+        writer.write_message("/bar", int(3e9), Ros1Int32(data=3))
+
+    # Exclude all /foo/* topics
+    cli_main(
+        [
+            "filter",
+            str(input_path),
+            "--exclude-topic",
+            "/foo/*",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    with BagFileReader.from_file(output_path) as reader:
+        topics = set(reader.get_topics())
+        expected_topics = {"/bar"}
+        assert topics == expected_topics, f"Expected {expected_topics}, got {topics}"
+
+        messages = list(reader.messages("/bar"))
+        assert len(messages) == 1
+        assert messages[0].data.data == 3
+
+
+def test_cli_filter_bag_empty_result(tmp_path: Path) -> None:
+    """Test filtering bag with no matching topics creates empty bag."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/bar", int(2e9), Ros1Int32(data=2))
+
+    # Filter to non-existent topic
+    cli_main([
+        "filter",
+        str(input_path),
+        "--include-topic",
+        "/does/not/exist",
+        "--output",
+        str(output_path),
+    ])
+
+    assert output_path.exists(), "Output file expected"
+
+    with BagFileReader.from_file(output_path) as reader:
+        assert reader.get_topics() == []
+        assert reader.get_connections() == []
+
+
+def test_cli_filter_bag_default_output_path(tmp_path: Path) -> None:
+    """Test that default output path is input_stem_filtered.bag."""
+    input_path = tmp_path / "recording.bag"
+    expected_output = tmp_path / "recording_filtered.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+
+    cli_main([
+        "filter",
+        str(input_path),
+    ])
+
+    assert expected_output.exists(), f"Expected output at {expected_output}"
+
+    with BagFileReader.from_file(expected_output) as reader:
+        assert set(reader.get_topics()) == {"/foo"}
+
+
+def test_cli_filter_bag_overwrite(tmp_path: Path) -> None:
+    """Test overwrite flag for bag files."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+
+    # Create output file
+    output_path.touch()
+
+    # Without overwrite, should fail
+    with pytest.raises(ValueError, match="Output bag exists"):
+        cli_main([
+            "filter",
+            str(input_path),
+            "--output",
+            str(output_path),
+        ])
+
+    # With overwrite, should succeed
+    cli_main([
+        "filter",
+        str(input_path),
+        "--output",
+        str(output_path),
+        "--overwrite",
+    ])
+
+    with BagFileReader.from_file(output_path) as reader:
+        assert set(reader.get_topics()) == {"/foo"}
+
+
+def test_cli_filter_bag_same_input_output_error(tmp_path: Path) -> None:
+    """Test that filtering to same file raises error."""
+    input_path = tmp_path / "input.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+
+    with pytest.raises(ValueError, match="Input path cannot be same as output"):
+        cli_main([
+            "filter",
+            str(input_path),
+            "--output",
+            str(input_path),
+        ])
+
+
+def test_cli_filter_bag_with_compression(tmp_path: Path) -> None:
+    """Test filtering bag file with bz2 compression."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/foo", int(2e9), Ros1Int32(data=2))
+
+    cli_main([
+        "filter",
+        str(input_path),
+        "--output",
+        str(output_path),
+        "--chunk-compression",
+        "bz2",
+    ])
+
+    with BagFileReader.from_file(output_path) as reader:
+        messages = list(reader.messages("/foo"))
+        assert len(messages) == 2
+        assert [m.data.data for m in messages] == [1, 2]
+
+
+def test_cli_filter_bag_time_range_only(tmp_path: Path) -> None:
+    """Test filtering bag file by time range only (all topics)."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "out.bag"
+
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/foo", int(2e9), Ros1Int32(data=2))
+        writer.write_message("/bar", int(3e9), Ros1Int32(data=3))
+        writer.write_message("/foo", int(4e9), Ros1Int32(data=4))
+
+    # Filter to time range 1.5s - 3.5s
+    cli_main([
+        "filter",
+        str(input_path),
+        "--start-time",
+        "1.5",
+        "--end-time",
+        "3.5",
+        "--output",
+        str(output_path),
+    ])
+
+    with BagFileReader.from_file(output_path) as reader:
+        # Should have both topics
+        assert set(reader.get_topics()) == {"/foo", "/bar"}
+
+        # /foo should only have message at 2e9
+        foo_msgs = list(reader.messages("/foo"))
+        assert len(foo_msgs) == 1
+        assert foo_msgs[0].log_time == int(2e9)
+        assert foo_msgs[0].data.data == 2
+
+        # /bar should have message at 3e9
+        bar_msgs = list(reader.messages("/bar"))
+        assert len(bar_msgs) == 1
+        assert bar_msgs[0].log_time == int(3e9)
+        assert bar_msgs[0].data.data == 3

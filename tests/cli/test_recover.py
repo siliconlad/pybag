@@ -2,11 +2,16 @@ from pathlib import Path
 
 import pytest
 
+from pybag.bag.record_parser import BagRecordParser
+from pybag.bag.records import BagRecordType
+from pybag.bag_reader import BagFileReader
+from pybag.bag_writer import BagFileWriter
 from pybag.cli.main import main as cli_main
 from pybag.io.raw_reader import FileReader
 from pybag.mcap.record_parser import McapRecordParser, McapRecordType
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
+from pybag.ros1.noetic.std_msgs import Int32 as Ros1Int32
 from pybag.ros2.humble.std_msgs import Int32
 
 
@@ -252,3 +257,224 @@ def test_cli_recover_corrupted_non_chunked(tmp_path: Path) -> None:
         # Should have recovered the first 3 messages (before truncation point)
         assert len(messages) == 3, f"Expected 3 messages, got {len(messages)}"
         assert [m.data.data for m in messages] == [0, 1, 2]
+
+
+# =============================================================================
+# ROS Bag Recovery Tests
+# =============================================================================
+
+
+def test_cli_recover_bag_valid_file(tmp_path: Path) -> None:
+    """Test that recovery works on a valid bag file."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "recovered.bag"
+
+    # Create a valid bag file
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Ros1Int32(data=1))
+        writer.write_message("/bar", int(2e9), Ros1Int32(data=2))
+        writer.write_message("/foo", int(3e9), Ros1Int32(data=3))
+
+    # Run recovery command
+    cli_main(
+        [
+            "recover",
+            str(input_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    # Verify that all messages were recovered
+    with BagFileReader.from_file(output_path) as reader:
+        topics = set(reader.get_topics())
+        assert topics == {"/foo", "/bar"}
+
+        foo_messages = list(reader.messages("/foo"))
+        assert len(foo_messages) == 2
+        assert [m.data.data for m in foo_messages] == [1, 3]
+
+        bar_messages = list(reader.messages("/bar"))
+        assert len(bar_messages) == 1
+        assert [m.data.data for m in bar_messages] == [2]
+
+
+def test_cli_recover_bag_overwrite(tmp_path: Path) -> None:
+    """Test that bag recovery respects overwrite flag."""
+    input_path = tmp_path / "input.bag"
+    output_path = tmp_path / "recovered.bag"
+
+    # Create input file
+    with BagFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/test", int(1e9), Ros1Int32(data=1))
+
+    # Create existing output file
+    with BagFileWriter.open(output_path, chunk_size=1024) as writer:
+        writer.write_message("/old", int(1e9), Ros1Int32(data=999))
+
+    # Try to recover without overwrite flag - should raise error
+    with pytest.raises(ValueError):
+        cli_main(
+            [
+                "recover",
+                str(input_path),
+                "--output",
+                str(output_path),
+            ]
+        )
+
+    # Now recover with overwrite flag - should succeed
+    cli_main(
+        [
+            "recover",
+            str(input_path),
+            "--output",
+            str(output_path),
+            "--overwrite",
+        ]
+    )
+
+    # Verify the output has the new data
+    with BagFileReader.from_file(output_path) as reader:
+        topics = set(reader.get_topics())
+        assert topics == {"/test"}  # Not /old
+        messages = list(reader.messages("/test"))
+        assert len(messages) == 1
+        assert messages[0].data.data == 1  # Not 999
+
+
+def test_cli_recover_bag_corrupted_chunk(tmp_path: Path) -> None:
+    """Test recovery from bag file with corrupted data inside a chunk.
+
+    Creates a bag with multiple chunks, then corrupts the compressed data
+    in the second chunk. Recovery should save messages from the first chunk
+    and skip the corrupted second chunk.
+    """
+    input_path = tmp_path / "input.bag"
+    corrupted_path = tmp_path / "corrupted.bag"
+    output_path = tmp_path / "recovered.bag"
+
+    # Create a valid bag file with small chunk size to force multiple chunks
+    with BagFileWriter.open(input_path, chunk_size=100, compression="bz2") as writer:
+        # Write messages that will span multiple chunks
+        for i in range(10):
+            writer.write_message("/test", int((i + 1) * 1e9), Ros1Int32(data=i))
+
+    # Read and count chunks to find the second chunk's location
+    with FileReader(input_path) as reader:
+        BagRecordParser.parse_version(reader)
+        BagRecordParser.parse_record(reader)  # Skip bag header
+
+        chunk_positions = []
+        while True:
+            pos = reader.tell()
+            result = BagRecordParser.parse_record(reader)
+            if result is None:
+                break
+            record_type, _ = result
+            if record_type == BagRecordType.CHUNK:
+                chunk_positions.append(pos)
+
+    assert len(chunk_positions) >= 2, "Need at least 2 chunks for this test"
+
+    # Create corrupted file by copying and corrupting the second chunk
+    with open(input_path, 'rb') as f:
+        data = bytearray(f.read())
+
+    # Corrupt the second chunk's compressed data
+    corrupt_offset = chunk_positions[1] + 50  # Offset into chunk data
+    if corrupt_offset < len(data) - 10:
+        # Corrupt several bytes to ensure decompression fails
+        for i in range(10):
+            data[corrupt_offset + i] = 0xFF
+
+    with open(corrupted_path, 'wb') as f:
+        f.write(data)
+
+    # Run recovery command
+    cli_main(
+        [
+            "recover",
+            str(corrupted_path),
+            "--output",
+            str(output_path),
+            "--verbose",
+        ]
+    )
+
+    # Verify that at least some messages were recovered
+    with BagFileReader.from_file(output_path) as reader:
+        messages = list(reader.messages("/test"))
+        # Should have recovered messages from chunks before corruption
+        assert len(messages) > 0, "Should have recovered at least some messages"
+        assert len(messages) < 10, "Should not have recovered all messages"
+        # Verify all recovered messages have valid data values (0-9)
+        for msg in messages:
+            assert 0 <= msg.data.data < 10, f"Invalid message data: {msg.data.data}"
+
+
+def test_cli_recover_bag_truncated(tmp_path: Path) -> None:
+    """Test recovery from bag file that was truncated mid-write.
+
+    Creates a bag file with multiple chunks, then truncates it to simulate
+    a crash during writing. Recovery should save all complete chunks before
+    the truncation.
+    """
+    input_path = tmp_path / "input.bag"
+    corrupted_path = tmp_path / "corrupted.bag"
+    output_path = tmp_path / "recovered.bag"
+
+    # Create a valid bag file with small chunk size to force multiple chunks
+    with BagFileWriter.open(input_path, chunk_size=100) as writer:
+        for i in range(10):
+            writer.write_message("/test", int((i + 1) * 1e9), Ros1Int32(data=i))
+
+    # Find chunk positions to know where to truncate
+    chunk_positions = []
+    with FileReader(input_path) as reader:
+        BagRecordParser.parse_version(reader)
+        BagRecordParser.parse_record(reader)  # Skip bag header
+
+        while True:
+            pos = reader.tell()
+            result = BagRecordParser.parse_record(reader)
+            if result is None:
+                break
+            record_type, _ = result
+            if record_type == BagRecordType.CHUNK:
+                chunk_positions.append(pos)
+
+    # If we have multiple chunks, truncate in the middle of a later chunk
+    # Otherwise, just truncate the file
+    if len(chunk_positions) >= 2:
+        # Truncate in the middle of the second chunk
+        truncate_pos = chunk_positions[1] + 20
+    else:
+        # Fall back to truncating at 60% of file
+        with open(input_path, 'rb') as f:
+            full_data = f.read()
+        truncate_pos = int(len(full_data) * 0.6)
+
+    with open(input_path, 'rb') as f:
+        data = f.read(truncate_pos)
+
+    with open(corrupted_path, 'wb') as f:
+        f.write(data)
+
+    # Run recovery command
+    cli_main(
+        [
+            "recover",
+            str(corrupted_path),
+            "--output",
+            str(output_path),
+            "--verbose",
+        ]
+    )
+
+    # Verify that at least some messages were recovered
+    with BagFileReader.from_file(output_path) as reader:
+        messages = list(reader.messages("/test"))
+        # Should have recovered some messages from complete chunks before truncation
+        assert len(messages) > 0, "Should have recovered at least some messages"
+        assert len(messages) < 10, "Should not have recovered all messages"
