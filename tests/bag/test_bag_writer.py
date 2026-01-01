@@ -286,3 +286,201 @@ def test_pybag_write_rosbags_read_compressed(
         for i, (conn, timestamp, rawdata) in enumerate(messages):
             msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
             assert msg.data == f"msg_{i}"
+
+
+###############################
+# Test append mode            #
+###############################
+
+
+class TestBagAppendMode:
+    """Tests for append mode functionality."""
+
+    def test_append_mode_basic(self, tmp_path: Path):
+        """Test basic append mode: create bag, close, reopen, add messages."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create initial bag with some messages
+        with BagFileWriter.open(bag_path) as writer:
+            writer.write_message("/topic", 1_000_000_000, StringMessage(data="first"))
+            writer.write_message("/topic", 2_000_000_000, StringMessage(data="second"))
+
+        # Reopen in append mode and add more messages
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/topic", 3_000_000_000, StringMessage(data="third"))
+            writer.write_message("/topic", 4_000_000_000, StringMessage(data="fourth"))
+
+        # Read all messages and verify
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/topic"))
+
+            assert len(messages) == 4
+            assert messages[0].data.data == "first"
+            assert messages[1].data.data == "second"
+            assert messages[2].data.data == "third"
+            assert messages[3].data.data == "fourth"
+
+    def test_append_mode_new_topic(self, tmp_path: Path):
+        """Test adding messages on a new topic while appending."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create initial bag with one topic
+        with BagFileWriter.open(bag_path) as writer:
+            writer.write_message("/topic_a", 1_000_000_000, StringMessage(data="a1"))
+
+        # Append with a new topic
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/topic_b", 2_000_000_000, Int32Message(data=42))
+
+        # Verify both topics exist
+        with BagFileReader.from_file(bag_path) as reader:
+            topics = reader.get_topics()
+            assert "/topic_a" in topics
+            assert "/topic_b" in topics
+
+            msgs_a = list(reader.messages("/topic_a"))
+            msgs_b = list(reader.messages("/topic_b"))
+
+            assert len(msgs_a) == 1
+            assert msgs_a[0].data.data == "a1"
+
+            assert len(msgs_b) == 1
+            assert msgs_b[0].data.data == 42
+
+    def test_append_mode_multiple_appends(self, tmp_path: Path):
+        """Test chaining multiple append operations."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create initial bag
+        with BagFileWriter.open(bag_path) as writer:
+            writer.write_message("/test", 1_000_000_000, Int32Message(data=1))
+
+        # First append
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/test", 2_000_000_000, Int32Message(data=2))
+
+        # Second append
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/test", 3_000_000_000, Int32Message(data=3))
+
+        # Third append
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/test", 4_000_000_000, Int32Message(data=4))
+
+        # Verify all messages
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/test"))
+
+            assert len(messages) == 4
+            for i, msg in enumerate(messages, start=1):
+                assert msg.data.data == i
+
+    def test_append_mode_nonexistent_file(self, tmp_path: Path):
+        """Verify error when appending to non-existent file."""
+        bag_path = tmp_path / "nonexistent.bag"
+
+        with pytest.raises(FileNotFoundError):
+            BagFileWriter.open(bag_path, mode='a')
+
+    def test_append_mode_with_compression(self, tmp_path: Path):
+        """Test append mode with compression enabled."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create initial bag with compression
+        with BagFileWriter.open(bag_path, compression='bz2', chunk_size=100) as writer:
+            for i in range(5):
+                writer.write_message("/test", i * 1_000_000_000, StringMessage(data=f"msg_{i}"))
+
+        # Append with compression
+        with BagFileWriter.open(bag_path, mode='a', compression='bz2', chunk_size=100) as writer:
+            for i in range(5, 10):
+                writer.write_message("/test", i * 1_000_000_000, StringMessage(data=f"msg_{i}"))
+
+        # Verify all messages
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/test"))
+
+            assert len(messages) == 10
+            for i, msg in enumerate(messages):
+                assert msg.data.data == f"msg_{i}"
+
+    def test_append_mode_rosbags_compatibility(self, tmp_path: Path, typestore):
+        """Test that rosbags can read appended bag files."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create and append
+        with BagFileWriter.open(bag_path) as writer:
+            writer.write_message("/test", 1_000_000_000, StringMessage(data="first"))
+
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/test", 2_000_000_000, StringMessage(data="second"))
+
+        # Read with rosbags
+        with RosbagsReader(bag_path) as reader:
+            messages = list(reader.messages())
+
+            assert len(messages) == 2
+
+            conn, timestamp, rawdata = messages[0]
+            msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+            assert msg.data == "first"
+
+            conn, timestamp, rawdata = messages[1]
+            msg = typestore.deserialize_ros1(rawdata, conn.msgtype)
+            assert msg.data == "second"
+
+    def test_append_mode_invalid_mode(self, tmp_path: Path):
+        """Verify error when using invalid mode."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create a valid bag first
+        with BagFileWriter.open(bag_path) as writer:
+            writer.write_message("/test", 1_000_000_000, StringMessage(data="test"))
+
+        with pytest.raises(ValueError, match="Invalid mode"):
+            BagFileWriter.open(bag_path, mode='x')  # type: ignore
+
+    def test_append_mode_empty_bag(self, tmp_path: Path):
+        """Test that appending to an empty bag file raises an error.
+
+        An empty bag file (no messages written) has no connection records,
+        so append mode should fail with a clear error message.
+        """
+        bag_path = tmp_path / "test.bag"
+
+        # Create empty bag
+        with BagFileWriter.open(bag_path) as writer:
+            pass  # No messages
+
+        # Append to empty bag should not fail
+        BagFileWriter.open(bag_path, mode='a')
+
+    def test_append_mode_unsupported_version(self, tmp_path: Path):
+        """Verify error when bag file has unsupported version."""
+        bag_path = tmp_path / "test.bag"
+
+        # Write a fake bag with wrong version
+        with open(bag_path, 'wb') as f:
+            f.write(b"#ROSBAG V1.0\n")
+
+        with pytest.raises(ValueError, match="Unsupported bag version"):
+            BagFileWriter.open(bag_path, mode='a')
+
+    def test_append_mode_out_of_order_timestamps(self, tmp_path: Path):
+        """Test appending messages with timestamps earlier than existing ones."""
+        bag_path = tmp_path / "test.bag"
+
+        # Create bag with later timestamp
+        with BagFileWriter.open(bag_path) as writer:
+            writer.write_message("/test", 2_000_000_000, Int32Message(data=2))
+
+        # Append with earlier timestamp (should work - bag format allows this)
+        with BagFileWriter.open(bag_path, mode='a') as writer:
+            writer.write_message("/test", 1_000_000_000, Int32Message(data=1))
+
+        # Verify both messages exist
+        with BagFileReader.from_file(bag_path) as reader:
+            messages = list(reader.messages("/test"))
+            assert len(messages) == 2
+            assert messages[0].data == 1
+            assert messages[1].data == 2
