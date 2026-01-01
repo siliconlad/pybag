@@ -58,8 +58,8 @@ class FileWriter(BaseWriter):
     """Write binary data to a file."""
 
     def __init__(self, file_path: Path | str, mode: str = "w+b"):
-        self._file_path = Path(file_path).absolute()
-        self._file = open(self._file_path, mode)
+        self.file_path = Path(file_path).absolute()
+        self._file = open(self.file_path, mode)
 
     def write(self, data: bytes) -> int:
         return self._file.write(data)

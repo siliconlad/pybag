@@ -9,15 +9,18 @@ from typing import Any, Callable, Literal
 # Number of nanoseconds in one second
 NSEC_PER_SEC = 1_000_000_000
 
+from pybag.bag.record_parser import BagRecordParser
 from pybag.bag.record_writer import BagRecordWriter
 from pybag.bag.records import (
     BagHeaderRecord,
+    BagRecordType,
     ChunkInfoRecord,
     ConnectionRecord,
     IndexDataRecord,
     MessageDataRecord
 )
 from pybag.encoding.rosmsg import RosMsgEncoder
+from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import BaseWriter, BytesWriter, FileWriter
 from pybag.schema.ros1_compiler import compile_ros1_serializer
 from pybag.schema.ros1msg import (
@@ -45,6 +48,7 @@ class BagFileWriter:
         self,
         writer: BaseWriter,
         *,
+        mode: Literal['w', 'a'] = 'w',
         compression: Literal['none', 'bz2'] = 'none',
         chunk_size: int | None = None,
     ):
@@ -52,10 +56,16 @@ class BagFileWriter:
 
         Args:
             writer: The underlying binary writer.
+            mode: The mode to open the file in: 'w' for write (creates new file),
+                  'a' for append (adds to existing file). In append mode, the file
+                  must already exist and be a valid ROS 1 bag file. Existing
+                  messages, connections, and chunk info are preserved; new chunks
+                  are appended and the index section is rebuilt on close.
             compression: Compression algorithm for chunks.
             chunk_size: Target size for chunks in bytes.
         """
         self._writer = writer
+        self._mode = mode
         self._compression = compression
         self._chunk_size = chunk_size or (1024 * 1024)  # 1MB
         self._record_writer = BagRecordWriter(writer)
@@ -69,7 +79,6 @@ class BagFileWriter:
         self._topics: dict[str, int] = {}  # topic -> conn_id
         self._connections: dict[int, ConnectionRecord] = {}
         self._message_types: dict[type[Message], tuple[str, str]] = {}  # type -> (msg_def, md5sum)
-        self._serializers: dict[type[Message], Callable[[Any, Any], None]] = {}
 
         # Pre-compiled serializers for topics with explicit schemas
         # Maps topic -> compiled serializer function
@@ -87,14 +96,22 @@ class BagFileWriter:
         # Chunk info records (for summary)
         self._chunk_infos: list[ChunkInfoRecord] = []
 
-        # Write initial file structure
-        self._write_header()
+        # Initialize based on mode
+        if mode == 'w':
+            # Write initial file structure for new files
+            self._write_header()
+        elif mode == 'a':
+            # Load existing state and prepare for appending
+            self._load_existing_state()
+        else:
+            raise ValueError(f"Invalid mode: {mode!r}. Must be 'w' or 'a'.")
 
     @classmethod
     def open(
         cls,
         file_path: str | Path,
         *,
+        mode: Literal['w', 'a'] = 'w',
         compression: Literal['none', 'bz2'] = 'none',
         chunk_size: int | None = None,
     ) -> "BagFileWriter":
@@ -102,14 +119,22 @@ class BagFileWriter:
 
         Args:
             file_path: Path to the output bag file.
+            mode: The mode to open the file in: 'w' for write (creates new file),
+                  'a' for append (adds to existing file). In append mode, the file
+                  must already exist and be a valid ROS 1 bag file. Existing
+                  messages, connections, and chunk info are preserved; new chunks
+                  are appended and the index section is rebuilt on close.
             compression: Compression algorithm for chunks.
             chunk_size: Target size for chunks in bytes.
 
         Returns:
             A new BagFileWriter instance.
         """
+        # Use 'wb' for write mode (truncates), 'r+b' for append mode (read/write)
+        file_mode = 'wb' if mode == 'w' else 'r+b'
         return cls(
-            FileWriter(file_path),
+            FileWriter(file_path, mode=file_mode),
+            mode=mode,
             compression=compression,
             chunk_size=chunk_size,
         )
@@ -135,6 +160,91 @@ class BagFileWriter:
             BagHeaderRecord(index_pos=0, conn_count=0, chunk_count=0),
         )
 
+    def _load_existing_state(self) -> None:
+        """Load state from an existing bag file for append mode.
+
+        This method parses the existing bag file to extract:
+        - The bag header (to find index_pos)
+        - All connection records
+        - All chunk info records
+
+        After loading, it truncates the file at index_pos so new chunks
+        can be appended before the index section is rewritten on close.
+
+        Raises:
+            TypeError: If the writer is not a FileWriter.
+            ValueError: If the bag version is not 2.0, if index_pos is invalid,
+                or if no connection records are found at index_pos (which may
+                indicate a corrupted or incomplete bag file).
+        """
+        # Get the file path from the writer (must be a FileWriter for append mode)
+        if not isinstance(self._writer, FileWriter):
+            raise TypeError("Append mode requires a FileWriter")
+
+        file_path = self._writer.file_path
+
+        # Create a separate reader to parse the existing file
+        # We use a reader because BagRecordParser expects BaseReader
+        reader = FileReader(file_path)
+        try:
+            # Parse version
+            version = BagRecordParser.parse_version(reader)
+            if version != "2.0":
+                raise ValueError(f"Unsupported bag version: {version} (must be 2.0)")
+
+            # Record the header position (after version line)
+            self._header_pos = reader.tell()
+
+            # Parse bag header
+            result = BagRecordParser.parse_record(reader)
+            if result is None or result[0] != BagRecordType.BAG_HEADER:
+                raise ValueError("Expected bag header record")
+            bag_header: BagHeaderRecord = result[1]
+
+            # Seek to the index section to read connections and chunk infos
+            reader.seek_from_start(bag_header.index_pos)
+
+            # Parse the index section (connections and chunk infos)
+            while True:
+                result = BagRecordParser.parse_record(reader)
+                if result is None:
+                    break
+
+                op, record = result
+                if op == BagRecordType.CONNECTION:
+                    conn: ConnectionRecord = record
+                    self._connections[conn.conn] = conn
+                    self._topics[conn.topic] = conn.conn
+
+                    # Compile a serializer for this existing connection
+                    parsed_schema, sub_schemas = self._schema_decoder.parse_schema(conn)
+                    serializer = compile_ros1_serializer(parsed_schema, sub_schemas)
+                    self._topic_serializers[conn.topic] = serializer
+
+                    # Update next_conn_id to avoid collisions
+                    if conn.conn >= self._next_conn_id:
+                        self._next_conn_id = conn.conn + 1
+
+                elif op == BagRecordType.CHUNK_INFO:
+                    self._chunk_infos.append(record)
+
+            # Verify we found connections at index_pos
+            if not self._connections and bag_header.conn_count != 0:
+                # TODO: Reconstruct from the rest of the file
+                raise ValueError(
+                    "No connection records found at index_pos. "
+                    "The bag file may be corrupted or missing the index section. "
+                    "Reconstruction from chunks is not yet implemented."
+                )
+        finally:
+            # Close the reader after parsing
+            reader.close()
+
+        # Truncate the file at index_pos to remove the old index section
+        # New chunks will be written starting at this position
+        self._writer.seek_from_start(bag_header.index_pos)
+        self._writer.truncate()
+
     def _get_message_info(self, message_type: type[Message]) -> tuple[str, str]:
         """Get or create message definition and MD5 sum.
 
@@ -151,20 +261,6 @@ class BagFileWriter:
             md5sum = compute_md5sum(msg_def, msg_name)
             self._message_types[message_type] = (msg_def, md5sum)
         return self._message_types[message_type]
-
-    def _get_serializer(self, message_type: type[Message]) -> Callable[[Any, Any], None]:
-        """Get or create a serializer for a message type.
-
-        Args:
-            message_type: The message class.
-
-        Returns:
-            A callable that serializes messages.
-        """
-        if message_type not in self._serializers:
-            schema, sub_schemas = self._schema_encoder.parse_schema(message_type)
-            self._serializers[message_type] = compile_ros1_serializer(schema, sub_schemas)
-        return self._serializers[message_type]
 
     def add_connection(
         self,
@@ -227,14 +323,15 @@ class BagFileWriter:
         self._connections[conn_id] = connection
         self._topics[topic] = conn_id
 
-        # Write connection record to current chunk
-        self._chunk_record_writer.write_connection(connection)
-
         # If explicit schema was provided, compile and store a serializer for this topic
         # This allows us to serialize messages without relying on type annotations
         parsed_schema, sub_schemas = self._schema_decoder.parse_schema(connection)
         serializer = compile_ros1_serializer(parsed_schema, sub_schemas)
         self._topic_serializers[topic] = serializer
+
+        # Write connection record inside the current chunk
+        # (connections are also written at index_pos during close for fast lookup)
+        self._chunk_record_writer.write_connection(connection)
 
         return conn_id
 
@@ -266,13 +363,14 @@ class BagFileWriter:
         if conn_id >= self._next_conn_id:
             self._next_conn_id = conn_id + 1
 
-        # Write connection record to current chunk
-        self._chunk_record_writer.write_connection(record)
-
         # Compile and store a serializer for this topic
         parsed_schema, sub_schemas = self._schema_decoder.parse_schema(record)
         serializer = compile_ros1_serializer(parsed_schema, sub_schemas)
         self._topic_serializers[record.topic] = serializer
+
+        # Write connection record inside the current chunk
+        # (connections are also written at index_pos during close for fast lookup)
+        self._chunk_record_writer.write_connection(record)
 
         return conn_id
 
