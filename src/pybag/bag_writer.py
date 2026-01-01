@@ -201,9 +201,6 @@ class BagFileWriter:
                 raise ValueError("Expected bag header record")
             bag_header: BagHeaderRecord = result[1]
 
-            if bag_header.index_pos <= 0:
-                raise ValueError("Invalid bag file: index_pos is not set")
-
             # Seek to the index section to read connections and chunk infos
             reader.seek_from_start(bag_header.index_pos)
 

@@ -482,5 +482,5 @@ class TestBagAppendMode:
         with BagFileReader.from_file(bag_path) as reader:
             messages = list(reader.messages("/test"))
             assert len(messages) == 2
-            assert messages[0].data == 1
-            assert messages[1].data == 2
+            assert messages[0].data.data == 1
+            assert messages[1].data.data == 2
