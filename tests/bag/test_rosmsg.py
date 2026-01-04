@@ -1,7 +1,5 @@
 """Tests for ROS 1 message serialization (rosmsg format)."""
 
-import struct
-
 import pytest
 
 from pybag.encoding.rosmsg import RosMsgDecoder, RosMsgEncoder

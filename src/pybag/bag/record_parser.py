@@ -80,7 +80,7 @@ class BagRecordParser:
         Returns:
             Tuple of (new_offset, field_name, field_value).
         """
-        field_len = struct.unpack_from('<i', data, offset)[0]
+        field_len = struct.unpack_from('<I', data, offset)[0]
         offset += 4
         field_data = data[offset:offset + field_len]
         offset += field_len
@@ -135,7 +135,7 @@ class BagRecordParser:
         header_len_bytes = file.read(4)
         if len(header_len_bytes) < 4:
             return None  # EOF
-        header_len = struct.unpack('<i', header_len_bytes)[0]
+        header_len = struct.unpack('<I', header_len_bytes)[0]
         header = cls._parse_header(file, header_len)
 
         # Get the operation type
@@ -147,7 +147,7 @@ class BagRecordParser:
         data_len_bytes = file.read(4)
         if len(data_len_bytes) < 4:
             return None  # EOF
-        data_len = struct.unpack('<i', data_len_bytes)[0]
+        data_len = struct.unpack('<I', data_len_bytes)[0]
         data = cls._parse_data(file, data_len)
 
         return op, cls._parse_record_by_type(op, header, data)
@@ -183,9 +183,9 @@ class BagRecordParser:
         data: bytes
     ) -> BagHeaderRecord:
         """Parse a bag header record."""
-        index_pos = struct.unpack('<q', header['index_pos'])[0]
-        conn_count = struct.unpack('<i', header['conn_count'])[0]
-        chunk_count = struct.unpack('<i', header['chunk_count'])[0]
+        index_pos = struct.unpack('<Q', header['index_pos'])[0]
+        conn_count = struct.unpack('<I', header['conn_count'])[0]
+        chunk_count = struct.unpack('<I', header['chunk_count'])[0]
         return BagHeaderRecord(index_pos, conn_count, chunk_count, data)
 
     @classmethod
@@ -196,7 +196,7 @@ class BagRecordParser:
     ) -> ChunkRecord:
         """Parse a chunk record."""
         compression = header['compression'].decode('ascii')
-        size = struct.unpack('<i', header['size'])[0]
+        size = struct.unpack('<I', header['size'])[0]
         return ChunkRecord(compression, size, data)
 
     @classmethod
@@ -210,7 +210,7 @@ class BagRecordParser:
         The connection header contains basic info, and the data section
         contains the full connection header from the original publisher.
         """
-        conn = struct.unpack('<i', header['conn'])[0]
+        conn = struct.unpack('<I', header['conn'])[0]
         topic = header['topic'].decode('utf-8')
         return ConnectionRecord(conn, topic, data)
 
@@ -221,7 +221,7 @@ class BagRecordParser:
         data: bytes
     ) -> MessageDataRecord:
         """Parse a message data record."""
-        conn = struct.unpack('<i', header['conn'])[0]
+        conn = struct.unpack('<I', header['conn'])[0]
         time = _decode_ros_time(header['time'])
         return MessageDataRecord(conn, time, data)
 
@@ -232,9 +232,9 @@ class BagRecordParser:
         data: bytes
     ) -> IndexDataRecord:
         """Parse an index data record."""
-        ver = struct.unpack('<i', header['ver'])[0]
-        conn = struct.unpack('<i', header['conn'])[0]
-        count = struct.unpack('<i', header['count'])[0]
+        ver = struct.unpack('<I', header['ver'])[0]
+        conn = struct.unpack('<I', header['conn'])[0]
+        count = struct.unpack('<I', header['count'])[0]
         return IndexDataRecord(ver, conn, count, data)
 
     @classmethod
@@ -244,11 +244,11 @@ class BagRecordParser:
         data: bytes
     ) -> ChunkInfoRecord:
         """Parse a chunk info record."""
-        ver = struct.unpack('<i', header['ver'])[0]
-        chunk_pos = struct.unpack('<q', header['chunk_pos'])[0]
+        ver = struct.unpack('<I', header['ver'])[0]
+        chunk_pos = struct.unpack('<Q', header['chunk_pos'])[0]
         start_time = _decode_ros_time(header['start_time'])
         end_time = _decode_ros_time(header['end_time'])
-        count = struct.unpack('<i', header['count'])[0]
+        count = struct.unpack('<I', header['count'])[0]
         return ChunkInfoRecord(ver, chunk_pos, start_time, end_time, count, data)
 
     @classmethod

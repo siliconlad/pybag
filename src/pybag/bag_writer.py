@@ -146,7 +146,7 @@ class BagFileWriter:
         Format: field_len (4 bytes) | name=value
         """
         field_data = name.encode('ascii') + b'=' + value
-        return struct.pack('<i', len(field_data)) + field_data
+        return struct.pack('<I', len(field_data)) + field_data
 
     def _write_header(self) -> None:
         """Write the initial file header.
@@ -510,7 +510,7 @@ class BagFileWriter:
             for time_ns, offset in entries:
                 secs = time_ns // NSEC_PER_SEC
                 nsecs = time_ns % NSEC_PER_SEC
-                index_data_buffer.write(struct.pack('<IIi', secs, nsecs, offset))
+                index_data_buffer.write(struct.pack('<III', secs, nsecs, offset))
             # Write the index records
             index_record = IndexDataRecord(
                 ver=1,
