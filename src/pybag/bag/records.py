@@ -83,7 +83,7 @@ class ConnectionRecord:
         fields: dict[str, bytes] = {}
         offset = 0
         while offset < len(self.data):
-            field_len = struct.unpack_from('<i', self.data, offset)[0]
+            field_len = struct.unpack_from('<I', self.data, offset)[0]
             offset += 4
             field_data = self.data[offset:offset + field_len]
             offset += field_len
@@ -192,7 +192,7 @@ class ChunkInfoRecord:
         num_entries = len(self.data) // 8
         for i in range(num_entries):
             offset = i * 8
-            conn_id, msg_count = struct.unpack_from('<ii', self.data, offset)
+            conn_id, msg_count = struct.unpack_from('<II', self.data, offset)
             counts[conn_id] = msg_count
         return counts
 
@@ -224,8 +224,8 @@ class IndexDataRecord:
         result: list[tuple[int, int]] = []
         for i in range(self.count):
             offset = i * 12
-            # ROS time format: two uint32 (secs, nsecs) + int32 offset
-            secs, nsecs, chunk_offset = struct.unpack_from('<IIi', self.data, offset)
+            # ROS time format: two uint32 (secs, nsecs) + uint32 offset
+            secs, nsecs, chunk_offset = struct.unpack_from('<III', self.data, offset)
             timestamp_ns = secs * NSEC_PER_SEC + nsecs
             result.append((timestamp_ns, chunk_offset))
         return result
