@@ -11,7 +11,7 @@ import pybag.ros2.humble.builtin_interfaces as builtin_interfaces
 import pybag.ros2.humble.geometry_msgs as geometry_msgs
 import pybag.ros2.humble.nav_msgs as nav_msgs
 import pybag.ros2.humble.std_msgs as std_msgs
-from pybag.cli.mcap_sort import sort_mcap
+from pybag.cli.sort import sort_mcap
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap_writer import McapFileWriter
 
