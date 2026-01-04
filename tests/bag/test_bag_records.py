@@ -5,7 +5,7 @@ import pytest
 from pybag.bag.records import ChunkInfoRecord, IndexDataRecord
 
 
-def test_connection_counts_max_uint32(self):
+def test_connection_counts_max_uint32():
     """Test connection counts with maximum uint32 values."""
     max_uint32 = 2**32 - 1  # 4294967295
 
@@ -25,7 +25,7 @@ def test_connection_counts_max_uint32(self):
     assert counts[max_uint32] == max_uint32
 
 
-def test_index_entries_max_offset(self):
+def test_index_entries_max_offset():
     """Test index entries with maximum uint32 offset."""
     max_offset = 2**32 - 1  # 4294967295
 
