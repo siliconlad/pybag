@@ -262,12 +262,12 @@ class McapRecordParser:
         bytes_reader = BytesReader(file.read(record_length))
 
         _, id = cls._parse_uint16(bytes_reader)
-        _, channel_id = cls._parse_uint16(bytes_reader)
+        _, schema_id = cls._parse_uint16(bytes_reader)
         _, topic = cls._parse_string(bytes_reader)
         _, message_encoding = cls._parse_string(bytes_reader)
         _, metadata = cls._parse_map(bytes_reader, "string", "string")
 
-        return ChannelRecord(id, channel_id, topic, message_encoding, metadata)
+        return ChannelRecord(id, schema_id, topic, message_encoding, metadata)
 
 
     @classmethod

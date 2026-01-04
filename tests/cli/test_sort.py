@@ -7,7 +7,7 @@ import pytest
 import pybag.ros2.humble.std_msgs as std_msgs
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
-from pybag.cli.mcap_sort import sort_bag, sort_mcap
+from pybag.cli.sort import sort_bag, sort_mcap
 from pybag.cli.utils import get_file_format, validate_compression_for_bag
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory

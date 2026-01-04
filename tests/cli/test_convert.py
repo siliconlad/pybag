@@ -8,8 +8,8 @@ import pytest
 import pybag.types as t
 from pybag.bag_reader import BagFileReader
 from pybag.bag_writer import BagFileWriter
+from pybag.cli.convert import convert
 from pybag.cli.main import main as cli_main
-from pybag.cli.mcap_convert import convert
 from pybag.mcap_reader import McapFileReader
 from pybag.mcap_writer import McapFileWriter
 from pybag.ros2.humble import builtin_interfaces
