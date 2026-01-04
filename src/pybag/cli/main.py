@@ -1,14 +1,6 @@
 import argparse
 
-from pybag.cli import (
-    convert,
-    filter,
-    info,
-    inspect,
-    merge,
-    recover,
-    sort
-)
+from pybag.cli import convert, filter, info, inspect, merge, recover, sort
 
 
 def build_parser() -> argparse.ArgumentParser:
