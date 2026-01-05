@@ -133,6 +133,10 @@ def _translate_value_ros1_to_ros2(value: Any) -> Any:
 
     # Handle lists/arrays
     if isinstance(value, list):
+        # Fast path: empty lists or primitive arrays (int, float, str, bool, bytes)
+        # These cannot contain Time/Duration objects, so skip recursion
+        if not value or isinstance(value[0], (int, float, str, bool, bytes)):
+            return value
         return [_translate_value_ros1_to_ros2(item) for item in value]
 
     # Handle dataclass (nested message)
@@ -178,6 +182,10 @@ def _translate_value_ros2_to_ros1(value: Any) -> Any:
 
     # Handle lists/arrays
     if isinstance(value, list):
+        # Fast path: empty lists or primitive arrays (int, float, str, bool, bytes)
+        # These cannot contain Time/Duration objects, so skip recursion
+        if not value or isinstance(value[0], (int, float, str, bool, bytes)):
+            return value
         return [_translate_value_ros2_to_ros1(item) for item in value]
 
     # Handle dataclass (nested message)
