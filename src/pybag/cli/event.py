@@ -13,6 +13,7 @@ from textwrap import dedent
 from typing import Literal
 
 from pybag.cli.utils import get_file_format_from_magic
+from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
@@ -197,46 +198,26 @@ def add_event_mcap(
     input_path: str | Path,
     event_name: str,
     timestamp: float,
-    output_path: str | Path | None = None,
     description: str | None = None,
     extra_fields: dict[str, str] | None = None,
-    chunk_size: int | None = None,
-    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
-    *,
-    overwrite: bool = False,
 ) -> Path:
-    """Add an event to an MCAP file.
+    """Add an event to an MCAP file by appending in place.
+
+    This function appends a new event metadata record to an existing MCAP file
+    without rewriting the entire file. The event is written at the end of the
+    data section and the summary section is updated accordingly.
 
     Args:
-        input_path: Path to input MCAP file.
+        input_path: Path to the MCAP file to modify.
         event_name: Name of the event.
         timestamp: Event timestamp in seconds.
-        output_path: Path to output MCAP file. If None, defaults to
-            <input_stem>_with_event.mcap.
         description: Optional event description.
         extra_fields: Optional extra key-value pairs to include in the event.
-        chunk_size: Target chunk size in bytes for the output file.
-        chunk_compression: Compression algorithm for chunks.
-        overwrite: Whether to overwrite the output file if it exists.
 
     Returns:
-        Path to the output MCAP file.
-
-    Raises:
-        ValueError: If input and output paths are the same, or if output exists
-            and overwrite is False.
+        Path to the modified MCAP file (same as input_path).
     """
     input_path = Path(input_path).resolve()
-    if output_path is None:
-        output_path = input_path.with_name(f"{input_path.stem}_with_event.mcap")
-    output_path = Path(output_path).resolve()
-
-    if output_path == input_path:
-        raise ValueError('Input path cannot be same as output.')
-
-    if not overwrite and output_path.exists():
-        raise ValueError('Output mcap exists. Please set `overwrite` to True.')
-
     timestamp_ns = _to_ns(timestamp)
 
     # Build the event metadata
@@ -251,78 +232,37 @@ def add_event_mcap(
 
     new_event = MetadataRecord(name=EVENT_METADATA_NAME, metadata=event_metadata)
 
-    with McapRecordReaderFactory.from_file(input_path) as reader:
-        all_channels = reader.get_channels()
-        topic_to_channel_ids: dict[str, set[int]] = defaultdict(set)
-        for channel_id, channel in all_channels.items():
-            topic_to_channel_ids[channel.topic].add(channel_id)
+    # Load existing summary from the file using FileReader (for peek support)
+    summary = McapSummaryFactory.create_summary(
+        file=FileReader(input_path),
+        load_summary_eagerly=True,
+    )
 
-        all_attachments = reader.get_attachments()
-        all_metadata = reader.get_metadata()
+    # Open file for reading and writing (append mode)
+    file_writer = FileWriter(input_path, mode="r+b")
 
-        with McapRecordWriterFactory.create_writer(
-            FileWriter(output_path),
-            McapSummaryFactory.create_summary(chunk_size=chunk_size),
-            chunk_size=chunk_size,
-            chunk_compression=chunk_compression,
-            profile=reader.get_header().profile,
-        ) as writer:
-            # Write message records
-            written_schema_ids: set[int] = set()
-            written_channel_ids: set[int] = set()
-            sequence_counters: dict[int, int] = defaultdict(int)
+    # Create writer in append mode - this will seek to before the data end record
+    # and set up the CRC writer with the existing CRC
+    with McapRecordWriterFactory.create_writer(
+        file_writer,
+        summary,
+        mode='a',
+        chunk_size=1024 * 1024,  # Default chunk size (not used for metadata)
+    ) as writer:
+        # Only write the new event metadata - all other records are preserved
+        writer.write_metadata(new_event)
 
-            for msg_record in reader.get_messages(in_log_time_order=False):
-                # Write the schema record the first time
-                schema_id = all_channels[msg_record.channel_id].schema_id
-                if schema_id != 0 and schema_id not in written_schema_ids:
-                    if (schema := reader.get_schema(schema_id)) is not None:
-                        writer.write_schema(schema)
-                        written_schema_ids.add(schema_id)
-
-                # Write the channel record the first time
-                if msg_record.channel_id not in written_channel_ids:
-                    writer.write_channel(all_channels[msg_record.channel_id])
-                    written_channel_ids.add(msg_record.channel_id)
-
-                # Write message with updated sequence number
-                new_record = MessageRecord(
-                    channel_id=msg_record.channel_id,
-                    sequence=sequence_counters[msg_record.channel_id],
-                    log_time=msg_record.log_time,
-                    publish_time=msg_record.publish_time,
-                    data=msg_record.data,
-                )
-                sequence_counters[msg_record.channel_id] += 1
-                writer.write_message(new_record)
-
-            # Write attachments
-            for attachment in all_attachments:
-                writer.write_attachment(attachment)
-
-            # Write existing metadata
-            for metadata in all_metadata:
-                writer.write_metadata(metadata)
-
-            # Write the new event
-            writer.write_metadata(new_event)
-
-    return output_path
+    return input_path
 
 
 def add_event(
     input_path: str | Path,
     event_name: str,
     timestamp: float,
-    output_path: str | Path | None = None,
     description: str | None = None,
     extra_fields: dict[str, str] | None = None,
-    chunk_size: int | None = None,
-    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
-    *,
-    overwrite: bool = False,
 ) -> Path:
-    """Add an event to an MCAP or bag file."""
+    """Add an event to an MCAP file by appending in place."""
     input_path = Path(input_path).resolve()
     file_format = get_file_format_from_magic(input_path)
 
@@ -331,12 +271,8 @@ def add_event(
             input_path,
             event_name,
             timestamp,
-            output_path=output_path,
             description=description,
             extra_fields=extra_fields,
-            chunk_size=chunk_size,
-            chunk_compression=chunk_compression,
-            overwrite=overwrite,
         )
     else:
         raise ValueError("Events are not supported in bag format.")
@@ -515,10 +451,6 @@ def _run_list(args) -> None:
 
 def _run_add(args) -> None:
     """Run the event add command."""
-    from pybag.cli.utils import validate_compression_for_mcap
-
-    chunk_compression = validate_compression_for_mcap(args.chunk_compression)
-
     # Parse extra key-value pairs
     extra_fields: dict[str, str] | None = None
     if args.extra:
@@ -529,18 +461,14 @@ def _run_add(args) -> None:
             key, value = item.split("=", 1)
             extra_fields[key] = value
 
-    output_path = add_event(
+    file_path = add_event(
         args.input,
         args.name,
         args.timestamp,
-        output_path=args.output,
         description=args.description,
         extra_fields=extra_fields,
-        chunk_size=args.chunk_size,
-        chunk_compression=chunk_compression,
-        overwrite=args.overwrite,
     )
-    print(f"Event added. Output written to: {output_path}")
+    print(f"Event added to: {file_path}")
 
 
 def _run_delete(args) -> None:
@@ -620,24 +548,21 @@ def add_parser(subparsers) -> None:
         "add",
         help="Add an event to an MCAP file.",
         description=dedent("""
-            Add a new event to an MCAP file. Events are markers with a timestamp
+            Add a new event to an MCAP file. The event is appended directly to
+            the file without creating a copy. Events are markers with a timestamp
             and name that indicate when something significant happened.
 
             Example:
               pybag event add recording.mcap "collision" 10.5 --description "Hit obstacle"
-              pybag event add recording.mcap "start" 0.0 -o output.mcap
+              pybag event add recording.mcap "start" 0.0
         """),
     )
-    add_parser_cmd.add_argument("input", help="Path to input MCAP file (*.mcap)")
+    add_parser_cmd.add_argument("input", help="Path to MCAP file (*.mcap)")
     add_parser_cmd.add_argument("name", help="Name of the event (e.g., 'start', 'collision')")
     add_parser_cmd.add_argument(
         "timestamp",
         type=float,
         help="Timestamp of the event in seconds",
-    )
-    add_parser_cmd.add_argument(
-        "-o", "--output",
-        help="Output file path. If not specified, creates <input>_with_event.mcap",
     )
     add_parser_cmd.add_argument(
         "--description",
@@ -648,22 +573,6 @@ def add_parser(subparsers) -> None:
         action="append",
         metavar="KEY=VALUE",
         help="Extra key-value pair to include in the event (can be used multiple times)",
-    )
-    add_parser_cmd.add_argument(
-        "--chunk-size",
-        type=int,
-        help="Chunk size of the output file in bytes",
-    )
-    add_parser_cmd.add_argument(
-        "--chunk-compression",
-        type=str,
-        choices=["lz4", "zstd", "none"],
-        help="Compression used for chunk records",
-    )
-    add_parser_cmd.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite output file if it exists",
     )
     add_parser_cmd.set_defaults(func=_run_add)
 
