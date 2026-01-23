@@ -1,6 +1,5 @@
 """Tests for the event CLI command."""
 
-import shutil
 from pathlib import Path
 
 import pytest
