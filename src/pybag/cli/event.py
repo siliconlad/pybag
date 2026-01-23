@@ -435,6 +435,148 @@ def delete_events(
 
 
 #####################
+# Event Clipping    #
+#####################
+
+def clip_event_mcap(
+    input_path: str | Path,
+    event_name: str,
+    output_path: str | Path | None = None,
+    before: float | None = None,
+    after: float | None = None,
+    include_topics: list[str] | None = None,
+    exclude_topics: list[str] | None = None,
+    chunk_size: int | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
+    *,
+    overwrite: bool = False,
+) -> Path:
+    """Clip an MCAP file around an event.
+
+    Extracts a portion of an MCAP file centered on an event's timestamp,
+    including a specified time margin before and after the event.
+
+    Args:
+        input_path: Path to input MCAP file.
+        event_name: Name of the event to clip around.
+        output_path: Path to output MCAP file. If None, defaults to
+            <input_stem>_clip_<event_name>.mcap.
+        before: Time in seconds to include before the event. If None and after
+            is specified, uses the same value as after. If both are None,
+            defaults to 5.0 seconds.
+        after: Time in seconds to include after the event. If None and before
+            is specified, uses the same value as before. If both are None,
+            defaults to 5.0 seconds.
+        include_topics: List of topic patterns to include (glob patterns supported).
+            If None, all topics are included.
+        exclude_topics: List of topic patterns to exclude (glob patterns supported).
+        chunk_size: Target chunk size in bytes for the output file.
+        chunk_compression: Compression algorithm for chunks.
+        overwrite: Whether to overwrite the output file if it exists.
+
+    Returns:
+        Path to the output MCAP file.
+
+    Raises:
+        ValueError: If no event with the given name is found, or if multiple
+            events match and it's ambiguous which one to use.
+    """
+    from pybag.cli.filter import filter_mcap
+
+    input_path = Path(input_path).resolve()
+
+    # Handle symmetric margins: if only one is given, use it for both
+    if before is None and after is None:
+        before = 5.0
+        after = 5.0
+    elif before is None:
+        before = after
+    elif after is None:
+        after = before
+
+    # Find the event
+    with McapRecordReaderFactory.from_file(input_path) as reader:
+        all_metadata = reader.get_metadata(name=EVENT_METADATA_NAME)
+        matching_events = [
+            m for m in all_metadata
+            if _is_event_metadata(m) and _get_event_name(m) == event_name
+        ]
+
+        if not matching_events:
+            raise ValueError(f"No event found with name '{event_name}'")
+
+        if len(matching_events) > 1:
+            # Use the first event and warn
+            logger.warning(
+                f"Multiple events found with name '{event_name}'. "
+                f"Using the first one (timestamp: {_ns_to_seconds(_get_event_timestamp(matching_events[0])):.6f}s)"
+            )
+
+        event = matching_events[0]
+        event_timestamp_ns = _get_event_timestamp(event)
+        if event_timestamp_ns is None:
+            raise ValueError(f"Event '{event_name}' has no timestamp")
+
+    event_timestamp_s = _ns_to_seconds(event_timestamp_ns)
+
+    # Calculate clip time range
+    start_time = event_timestamp_s - before
+    end_time = event_timestamp_s + after
+
+    # Default output path
+    if output_path is None:
+        safe_name = event_name.replace("/", "_").replace(" ", "_")
+        output_path = input_path.with_name(f"{input_path.stem}_clip_{safe_name}.mcap")
+
+    # Use the filter function to do the actual clipping
+    return filter_mcap(
+        input_path,
+        output_path=output_path,
+        include_topics=include_topics,
+        exclude_topics=exclude_topics,
+        start_time=start_time,
+        end_time=end_time,
+        chunk_size=chunk_size,
+        chunk_compression=chunk_compression,
+        overwrite=overwrite,
+    )
+
+
+def clip_event(
+    input_path: str | Path,
+    event_name: str,
+    output_path: str | Path | None = None,
+    before: float | None = None,
+    after: float | None = None,
+    include_topics: list[str] | None = None,
+    exclude_topics: list[str] | None = None,
+    chunk_size: int | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
+    *,
+    overwrite: bool = False,
+) -> Path:
+    """Clip an MCAP or bag file around an event."""
+    input_path = Path(input_path).resolve()
+    file_format = get_file_format_from_magic(input_path)
+
+    if file_format == "mcap":
+        return clip_event_mcap(
+            input_path,
+            event_name,
+            output_path=output_path,
+            before=before,
+            after=after,
+            include_topics=include_topics,
+            exclude_topics=exclude_topics,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
+            overwrite=overwrite,
+        )
+    else:
+        raise ValueError("Events are not supported in bag format.")
+
+
+#####################
 # CLI Parser Setup  #
 #####################
 
@@ -490,6 +632,27 @@ def _run_delete(args) -> None:
     print(f"Events deleted. Output written to: {output_path}")
 
 
+def _run_clip(args) -> None:
+    """Run the event clip command."""
+    from pybag.cli.utils import validate_compression_for_mcap
+
+    chunk_compression = validate_compression_for_mcap(args.chunk_compression)
+
+    output_path = clip_event(
+        args.input,
+        args.name,
+        output_path=args.output,
+        before=args.before,
+        after=args.after,
+        include_topics=args.include_topic,
+        exclude_topics=args.exclude_topic,
+        chunk_size=args.chunk_size,
+        chunk_compression=chunk_compression,
+        overwrite=args.overwrite,
+    )
+    print(f"Clipped around event '{args.name}'. Output written to: {output_path}")
+
+
 def add_parser(subparsers) -> None:
     """Add the event command and its subcommands to the argument parser."""
     event_parser = subparsers.add_parser(
@@ -507,6 +670,7 @@ def add_parser(subparsers) -> None:
               pybag event list <file>                - List all events
               pybag event add <file> <name> <time>   - Add a new event
               pybag event delete <file>              - Delete events
+              pybag event clip <file> <name>         - Clip MCAP around an event
 
             Note: Events are only supported in MCAP format, not bag files.
         """),
@@ -625,3 +789,66 @@ def add_parser(subparsers) -> None:
         help="Overwrite output file if it exists",
     )
     delete_parser.set_defaults(func=_run_delete)
+
+    # Clip subcommand
+    clip_parser = event_subparsers.add_parser(
+        "clip",
+        help="Extract a portion of an MCAP file around an event.",
+        description=dedent("""
+            Clip an MCAP file around an event, extracting messages within a time
+            window centered on the event's timestamp. This is useful for extracting
+            specific incidents or occurrences from a larger recording.
+
+            By default, if only --before or --after is specified, the other uses
+            the same value (symmetric clipping). If neither is specified, both
+            default to 5 seconds.
+
+            Example:
+              pybag event clip recording.mcap "collision" --before 5 --after 10
+              pybag event clip recording.mcap "start" --before 2
+              pybag event clip recording.mcap "incident" -o incident.mcap
+        """),
+    )
+    clip_parser.add_argument("input", help="Path to input MCAP file (*.mcap)")
+    clip_parser.add_argument("name", help="Name of the event to clip around")
+    clip_parser.add_argument(
+        "-o", "--output",
+        help="Output file path. If not specified, creates <input>_clip_<event_name>.mcap",
+    )
+    clip_parser.add_argument(
+        "--before",
+        type=float,
+        help="Time in seconds to include before the event (default: 5.0, or same as --after)",
+    )
+    clip_parser.add_argument(
+        "--after",
+        type=float,
+        help="Time in seconds to include after the event (default: 5.0, or same as --before)",
+    )
+    clip_parser.add_argument(
+        "--include-topic",
+        action="append",
+        help="Topics to include (supports glob patterns). Can be used multiple times.",
+    )
+    clip_parser.add_argument(
+        "--exclude-topic",
+        action="append",
+        help="Topics to exclude (supports glob patterns). Can be used multiple times.",
+    )
+    clip_parser.add_argument(
+        "--chunk-size",
+        type=int,
+        help="Chunk size of the output file in bytes",
+    )
+    clip_parser.add_argument(
+        "--chunk-compression",
+        type=str,
+        choices=["lz4", "zstd", "none"],
+        help="Compression used for chunk records",
+    )
+    clip_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite output file if it exists",
+    )
+    clip_parser.set_defaults(func=_run_clip)

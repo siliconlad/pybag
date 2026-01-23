@@ -379,3 +379,281 @@ def test_cli_event_delete_preserves_non_event_metadata(tmp_path: Path) -> None:
         assert len(all_metadata) == 1
         assert all_metadata[0].name == "config"
         assert all_metadata[0].metadata["setting"] == "value"
+
+
+#####################
+# Clip Command Tests
+#####################
+
+def test_cli_event_clip_basic(tmp_path: Path) -> None:
+    """Test basic clip around an event."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    # Create MCAP with messages spread over time
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(20):
+            # Messages at 0s, 1s, 2s, ..., 19s
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    # Add an event at 10s
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "10.0",
+    ])
+
+    # Clip around the event with 3s before and after
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--before", "3",
+        "--after", "3",
+        "-o", str(output_path),
+    ])
+
+    # Verify clipped file contains messages from 7s to 13s
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        messages = list(reader.get_messages())
+        timestamps = [m.log_time / 1e9 for m in messages]
+
+        # Should have messages at 7, 8, 9, 10, 11, 12, 13 = 7 messages
+        assert len(messages) == 7
+        assert min(timestamps) >= 7.0
+        assert max(timestamps) <= 13.0
+
+
+def test_cli_event_clip_symmetric_single_arg(tmp_path: Path) -> None:
+    """Test that clip uses symmetric margin when only --before is given."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(20):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "10.0",
+    ])
+
+    # Only specify --before, should use same value for after
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--before", "2",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        messages = list(reader.get_messages())
+        timestamps = [m.log_time / 1e9 for m in messages]
+
+        # Should have messages at 8, 9, 10, 11, 12 = 5 messages
+        assert len(messages) == 5
+        assert min(timestamps) >= 8.0
+        assert max(timestamps) <= 12.0
+
+
+def test_cli_event_clip_symmetric_after_only(tmp_path: Path) -> None:
+    """Test that clip uses symmetric margin when only --after is given."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(20):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "10.0",
+    ])
+
+    # Only specify --after, should use same value for before
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--after", "2",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        messages = list(reader.get_messages())
+        timestamps = [m.log_time / 1e9 for m in messages]
+
+        # Should have messages at 8, 9, 10, 11, 12 = 5 messages
+        assert len(messages) == 5
+        assert min(timestamps) >= 8.0
+        assert max(timestamps) <= 12.0
+
+
+def test_cli_event_clip_default_margin(tmp_path: Path) -> None:
+    """Test that clip uses default 5s margin when no --before/--after given."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(20):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "10.0",
+    ])
+
+    # No margin specified, should default to 5s before and after
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        messages = list(reader.get_messages())
+        timestamps = [m.log_time / 1e9 for m in messages]
+
+        # Should have messages at 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 = 11 messages
+        assert len(messages) == 11
+        assert min(timestamps) >= 5.0
+        assert max(timestamps) <= 15.0
+
+
+def test_cli_event_clip_asymmetric(tmp_path: Path) -> None:
+    """Test clip with different before and after values."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(20):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "10.0",
+    ])
+
+    # 2s before, 5s after
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--before", "2",
+        "--after", "5",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        messages = list(reader.get_messages())
+        timestamps = [m.log_time / 1e9 for m in messages]
+
+        # Should have messages at 8, 9, 10, 11, 12, 13, 14, 15 = 8 messages
+        assert len(messages) == 8
+        assert min(timestamps) >= 8.0
+        assert max(timestamps) <= 15.0
+
+
+def test_cli_event_clip_event_not_found(tmp_path: Path) -> None:
+    """Test that clip raises error when event not found."""
+    input_path = tmp_path / "input.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+
+    with pytest.raises(ValueError, match="No event found"):
+        cli_main([
+            "event", "clip", str(input_path),
+            "nonexistent",
+        ])
+
+
+def test_cli_event_clip_with_topic_filter(tmp_path: Path) -> None:
+    """Test clip with topic filtering."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(10):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+            writer.write_message("/bar", int(i * 1e9), Int32(data=i * 10))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "5.0",
+    ])
+
+    # Clip but only include /foo topic
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--before", "2",
+        "--after", "2",
+        "--include-topic", "/foo",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        channels = reader.get_channels()
+        # Should only have /foo channel
+        assert len(channels) == 1
+        topic_names = [ch.topic for ch in channels.values()]
+        assert "/foo" in topic_names
+        assert "/bar" not in topic_names
+
+
+def test_cli_event_clip_default_output_name(tmp_path: Path) -> None:
+    """Test that clip generates appropriate default output filename."""
+    input_path = tmp_path / "recording.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(10):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "collision", "5.0",
+    ])
+
+    # Don't specify output path
+    cli_main([
+        "event", "clip", str(input_path),
+        "collision",
+        "--before", "2",
+        "--after", "2",
+    ])
+
+    # Check that default output file was created
+    expected_output = tmp_path / "recording_clip_collision.mcap"
+    assert expected_output.exists()
+
+
+def test_cli_event_clip_preserves_metadata(tmp_path: Path) -> None:
+    """Test that clip preserves metadata and attachments within time range."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(10):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+        writer.write_metadata("config", {"key": "value"})
+        # Attachment at 5s (within clip range of 3s-7s)
+        writer.write_attachment("test.txt", b"test data", "text/plain", log_time=int(5e9))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "5.0",
+    ])
+
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--before", "2",
+        "--after", "2",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        all_metadata = reader.get_metadata()
+        # Should have config + event metadata
+        assert len(all_metadata) == 2
+
+        attachments = reader.get_attachments()
+        assert len(attachments) == 1
+        assert attachments[0].name == "test.txt"
