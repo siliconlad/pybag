@@ -309,18 +309,21 @@ pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 -o cleaned.mc
 
 **Clip around an event:**
 
-Extract a portion of the recording centered on an event's timestamp:
+Extract a portion of the recording relative to an event's timestamp:
 
 ```bash
-# Clip 5s before and 10s after the event
-pybag event clip recording.mcap "collision" --before 5 --after 10
+# Symmetric: 5s before AND after the event
+pybag event clip recording.mcap "collision" --margin 5
 
-# Symmetric: 3s before AND after (only specify one)
-pybag event clip recording.mcap "incident" --before 3
+# Before only: from (event_time - 3s) to event_time
+pybag event clip recording.mcap "end" --before 3
 
-# Default: 5s before and after
-pybag event clip recording.mcap "start"
+# After only: from event_time to (event_time + 10s)
+pybag event clip recording.mcap "start" --after 10
+
+# Asymmetric: 5s before and 10s after
+pybag event clip recording.mcap "incident" --before 5 --after 10
 
 # With topic filtering
-pybag event clip recording.mcap "crash" --include-topic "/camera/*" -o clip.mcap
+pybag event clip recording.mcap "crash" --margin 5 --include-topic "/camera/*" -o clip.mcap
 ```

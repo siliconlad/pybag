@@ -444,6 +444,7 @@ def clip_event_mcap(
     output_path: str | Path | None = None,
     before: float | None = None,
     after: float | None = None,
+    margin: float | None = None,
     include_topics: list[str] | None = None,
     exclude_topics: list[str] | None = None,
     chunk_size: int | None = None,
@@ -454,19 +455,19 @@ def clip_event_mcap(
     """Clip an MCAP file around an event.
 
     Extracts a portion of an MCAP file centered on an event's timestamp,
-    including a specified time margin before and after the event.
+    including a specified time margin before and/or after the event.
 
     Args:
         input_path: Path to input MCAP file.
         event_name: Name of the event to clip around.
         output_path: Path to output MCAP file. If None, defaults to
             <input_stem>_clip_<event_name>.mcap.
-        before: Time in seconds to include before the event. If None and after
-            is specified, uses the same value as after. If both are None,
-            defaults to 5.0 seconds.
-        after: Time in seconds to include after the event. If None and before
-            is specified, uses the same value as before. If both are None,
-            defaults to 5.0 seconds.
+        before: Time in seconds to include before the event. If specified
+            without --after, clips from (event_time - before) to event_time.
+        after: Time in seconds to include after the event. If specified
+            without --before, clips from event_time to (event_time + after).
+        margin: Symmetric margin - time in seconds to include both before
+            and after the event. Equivalent to --before X --after X.
         include_topics: List of topic patterns to include (glob patterns supported).
             If None, all topics are included.
         exclude_topics: List of topic patterns to exclude (glob patterns supported).
@@ -478,21 +479,29 @@ def clip_event_mcap(
         Path to the output MCAP file.
 
     Raises:
-        ValueError: If no event with the given name is found, or if multiple
-            events match and it's ambiguous which one to use.
+        ValueError: If no event with the given name is found, if conflicting
+            options are specified, or if no time range is specified.
     """
     from pybag.cli.filter import filter_mcap
 
     input_path = Path(input_path).resolve()
 
-    # Handle symmetric margins: if only one is given, use it for both
-    if before is None and after is None:
-        before = 5.0
-        after = 5.0
-    elif before is None:
-        before = after
-    elif after is None:
-        after = before
+    # Validate options
+    if margin is not None and (before is not None or after is not None):
+        raise ValueError("Cannot use --margin together with --before or --after")
+
+    # Determine time margins
+    if margin is not None:
+        before_margin = margin
+        after_margin = margin
+    elif before is None and after is None:
+        # Default to 5s margin if nothing specified
+        before_margin = 5.0
+        after_margin = 5.0
+    else:
+        # Use 0 for unspecified values (clip up to or from event time)
+        before_margin = before if before is not None else 0.0
+        after_margin = after if after is not None else 0.0
 
     # Find the event
     with McapRecordReaderFactory.from_file(input_path) as reader:
@@ -520,8 +529,8 @@ def clip_event_mcap(
     event_timestamp_s = _ns_to_seconds(event_timestamp_ns)
 
     # Calculate clip time range
-    start_time = event_timestamp_s - before
-    end_time = event_timestamp_s + after
+    start_time = event_timestamp_s - before_margin
+    end_time = event_timestamp_s + after_margin
 
     # Default output path
     if output_path is None:
@@ -548,6 +557,7 @@ def clip_event(
     output_path: str | Path | None = None,
     before: float | None = None,
     after: float | None = None,
+    margin: float | None = None,
     include_topics: list[str] | None = None,
     exclude_topics: list[str] | None = None,
     chunk_size: int | None = None,
@@ -566,6 +576,7 @@ def clip_event(
             output_path=output_path,
             before=before,
             after=after,
+            margin=margin,
             include_topics=include_topics,
             exclude_topics=exclude_topics,
             chunk_size=chunk_size,
@@ -644,6 +655,7 @@ def _run_clip(args) -> None:
         output_path=args.output,
         before=args.before,
         after=args.after,
+        margin=args.margin,
         include_topics=args.include_topic,
         exclude_topics=args.exclude_topic,
         chunk_size=args.chunk_size,
@@ -796,17 +808,22 @@ def add_parser(subparsers) -> None:
         help="Extract a portion of an MCAP file around an event.",
         description=dedent("""
             Clip an MCAP file around an event, extracting messages within a time
-            window centered on the event's timestamp. This is useful for extracting
+            window relative to the event's timestamp. This is useful for extracting
             specific incidents or occurrences from a larger recording.
 
-            By default, if only --before or --after is specified, the other uses
-            the same value (symmetric clipping). If neither is specified, both
-            default to 5 seconds.
+            Time range options:
+              --margin X      Symmetric: X seconds before AND after the event
+              --before X      Clip from (event_time - X) to event_time
+              --after X       Clip from event_time to (event_time + X)
+              --before X --after Y  Clip from (event_time - X) to (event_time + Y)
+
+            If no time options are specified, defaults to --margin 5.
 
             Example:
-              pybag event clip recording.mcap "collision" --before 5 --after 10
+              pybag event clip recording.mcap "collision" --margin 5
               pybag event clip recording.mcap "start" --before 2
-              pybag event clip recording.mcap "incident" -o incident.mcap
+              pybag event clip recording.mcap "end" --after 10
+              pybag event clip recording.mcap "incident" --before 5 --after 10
         """),
     )
     clip_parser.add_argument("input", help="Path to input MCAP file (*.mcap)")
@@ -816,14 +833,19 @@ def add_parser(subparsers) -> None:
         help="Output file path. If not specified, creates <input>_clip_<event_name>.mcap",
     )
     clip_parser.add_argument(
+        "--margin",
+        type=float,
+        help="Symmetric margin: seconds to include before AND after the event",
+    )
+    clip_parser.add_argument(
         "--before",
         type=float,
-        help="Time in seconds to include before the event (default: 5.0, or same as --after)",
+        help="Seconds to include before the event (clips to event_time if --after not set)",
     )
     clip_parser.add_argument(
         "--after",
         type=float,
-        help="Time in seconds to include after the event (default: 5.0, or same as --before)",
+        help="Seconds to include after the event (clips from event_time if --before not set)",
     )
     clip_parser.add_argument(
         "--include-topic",

@@ -421,8 +421,8 @@ def test_cli_event_clip_basic(tmp_path: Path) -> None:
         assert max(timestamps) <= 13.0
 
 
-def test_cli_event_clip_symmetric_single_arg(tmp_path: Path) -> None:
-    """Test that clip uses symmetric margin when only --before is given."""
+def test_cli_event_clip_before_only(tmp_path: Path) -> None:
+    """Test that --before clips from (event_time - before) to event_time."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -435,7 +435,7 @@ def test_cli_event_clip_symmetric_single_arg(tmp_path: Path) -> None:
         "incident", "10.0",
     ])
 
-    # Only specify --before, should use same value for after
+    # Only specify --before, should clip from 8s to 10s
     cli_main([
         "event", "clip", str(input_path),
         "incident",
@@ -447,14 +447,14 @@ def test_cli_event_clip_symmetric_single_arg(tmp_path: Path) -> None:
         messages = list(reader.get_messages())
         timestamps = [m.log_time / 1e9 for m in messages]
 
-        # Should have messages at 8, 9, 10, 11, 12 = 5 messages
-        assert len(messages) == 5
+        # Should have messages at 8, 9, 10 = 3 messages
+        assert len(messages) == 3
         assert min(timestamps) >= 8.0
-        assert max(timestamps) <= 12.0
+        assert max(timestamps) <= 10.0
 
 
-def test_cli_event_clip_symmetric_after_only(tmp_path: Path) -> None:
-    """Test that clip uses symmetric margin when only --after is given."""
+def test_cli_event_clip_after_only(tmp_path: Path) -> None:
+    """Test that --after clips from event_time to (event_time + after)."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -467,11 +467,43 @@ def test_cli_event_clip_symmetric_after_only(tmp_path: Path) -> None:
         "incident", "10.0",
     ])
 
-    # Only specify --after, should use same value for before
+    # Only specify --after, should clip from 10s to 12s
     cli_main([
         "event", "clip", str(input_path),
         "incident",
         "--after", "2",
+        "-o", str(output_path),
+    ])
+
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        messages = list(reader.get_messages())
+        timestamps = [m.log_time / 1e9 for m in messages]
+
+        # Should have messages at 10, 11, 12 = 3 messages
+        assert len(messages) == 3
+        assert min(timestamps) >= 10.0
+        assert max(timestamps) <= 12.0
+
+
+def test_cli_event_clip_margin(tmp_path: Path) -> None:
+    """Test that --margin clips symmetrically before and after."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        for i in range(20):
+            writer.write_message("/foo", int(i * 1e9), Int32(data=i))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "10.0",
+    ])
+
+    # Specify --margin for symmetric clipping
+    cli_main([
+        "event", "clip", str(input_path),
+        "incident",
+        "--margin", "2",
         "-o", str(output_path),
     ])
 
@@ -560,6 +592,27 @@ def test_cli_event_clip_event_not_found(tmp_path: Path) -> None:
         cli_main([
             "event", "clip", str(input_path),
             "nonexistent",
+        ])
+
+
+def test_cli_event_clip_margin_with_before_error(tmp_path: Path) -> None:
+    """Test that --margin cannot be used with --before."""
+    input_path = tmp_path / "input.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "incident", "1.0",
+    ])
+
+    with pytest.raises(ValueError, match="Cannot use --margin together with"):
+        cli_main([
+            "event", "clip", str(input_path),
+            "incident",
+            "--margin", "5",
+            "--before", "2",
         ])
 
 
