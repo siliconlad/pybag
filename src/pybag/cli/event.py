@@ -309,14 +309,41 @@ def add_event(
     input_path: str | Path,
     event_name: str,
     timestamp: float,
+    output_path: str | Path | None = None,
     description: str | None = None,
     extra_fields: dict[str, str] | None = None,
+    chunk_size: int | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
+    *,
+    overwrite: bool = False,
 ) -> Path:
-    """Add an event to an MCAP file by appending in place."""
+    """Add an event to an MCAP file.
+
+    Args:
+        input_path: Path to the input MCAP file.
+        event_name: Name of the event.
+        timestamp: Event timestamp in seconds.
+        output_path: If provided, copy the MCAP and add event to the copy.
+            If None, append the event in place.
+        description: Optional event description.
+        extra_fields: Optional extra key-value pairs to include in the event.
+        chunk_size: Target chunk size for output (only used with output_path).
+        chunk_compression: Compression algorithm (only used with output_path).
+        overwrite: Whether to overwrite output file if it exists.
+
+    Returns:
+        Path to the file with the event added.
+    """
+    from pybag.cli.filter import filter_mcap
+
     input_path = Path(input_path).resolve()
     file_format = get_file_format_from_magic(input_path)
 
-    if file_format == "mcap":
+    if file_format != "mcap":
+        raise ValueError("Events are not supported in bag format.")
+
+    if output_path is None:
+        # Append in place
         return add_event_mcap(
             input_path,
             event_name,
@@ -325,7 +352,32 @@ def add_event(
             extra_fields=extra_fields,
         )
     else:
-        raise ValueError("Events are not supported in bag format.")
+        # Copy MCAP and add event to the copy
+        output_path = Path(output_path).resolve()
+
+        if output_path == input_path:
+            raise ValueError('Input path cannot be same as output.')
+
+        if not overwrite and output_path.exists():
+            raise ValueError('Output mcap exists. Please set `overwrite` to True.')
+
+        # First, copy the MCAP using filter (no filters = full copy)
+        filter_mcap(
+            input_path,
+            output_path=output_path,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
+            overwrite=overwrite,
+        )
+
+        # Then append the event to the copy
+        return add_event_mcap(
+            output_path,
+            event_name,
+            timestamp,
+            description=description,
+            extra_fields=extra_fields,
+        )
 
 
 #####################
@@ -742,6 +794,8 @@ def _run_list(args) -> None:
 
 def _run_add(args) -> None:
     """Run the event add command."""
+    from pybag.cli.utils import validate_compression_for_mcap
+
     # Parse extra key-value pairs
     extra_fields: dict[str, str] | None = None
     if args.extra:
@@ -752,12 +806,21 @@ def _run_add(args) -> None:
             key, value = item.split("=", 1)
             extra_fields[key] = value
 
+    output_path = getattr(args, 'output', None)
+    chunk_compression = validate_compression_for_mcap(
+        getattr(args, 'chunk_compression', None)
+    )
+
     file_path = add_event(
         args.input,
         args.name,
         args.timestamp,
+        output_path=output_path,
         description=args.description,
         extra_fields=extra_fields,
+        chunk_size=getattr(args, 'chunk_size', None),
+        chunk_compression=chunk_compression,
+        overwrite=getattr(args, 'overwrite', False),
     )
     print(f"Event added to: {file_path}")
 
@@ -766,10 +829,8 @@ def _run_delete(args) -> None:
     """Run the event delete command."""
     from pybag.cli.utils import validate_compression_for_mcap
 
-    force = getattr(args, 'force', False)
-
-    if force:
-        # Hard delete requires output path
+    if args.output:
+        # Hard delete: copy MCAP and remove events from the copy
         chunk_compression = validate_compression_for_mcap(args.chunk_compression)
         output_path, _ = delete_events(
             args.input,
@@ -784,7 +845,7 @@ def _run_delete(args) -> None:
         )
         print(f"Events deleted. Output written to: {output_path}")
     else:
-        # Soft delete modifies in place
+        # Soft delete: modify in place
         output_path, count = delete_events(
             args.input,
             name=args.name,
@@ -899,13 +960,16 @@ def add_parser(subparsers) -> None:
         "add",
         help="Add an event to an MCAP file.",
         description=dedent("""
-            Add a new event to an MCAP file. The event is appended directly to
-            the file without creating a copy. Events are markers with a timestamp
+            Add a new event to an MCAP file. Events are markers with a timestamp
             and name that indicate when something significant happened.
+
+            By default, the event is appended directly to the input file.
+            Use -o to copy the MCAP and add the event to the copy instead.
 
             Example:
               pybag event add recording.mcap "collision" 10.5 --description "Hit obstacle"
               pybag event add recording.mcap "start" 0.0
+              pybag event add recording.mcap "event" 5.0 -o output.mcap  # copy mode
         """),
     )
     add_parser_cmd.add_argument("input", help="Path to MCAP file (*.mcap)")
@@ -916,6 +980,10 @@ def add_parser(subparsers) -> None:
         help="Timestamp of the event in seconds",
     )
     add_parser_cmd.add_argument(
+        "-o", "--output",
+        help="Output file path. If specified, copies the MCAP and adds the event to the copy.",
+    )
+    add_parser_cmd.add_argument(
         "--description",
         help="Optional description of the event",
     )
@@ -924,6 +992,22 @@ def add_parser(subparsers) -> None:
         action="append",
         metavar="KEY=VALUE",
         help="Extra key-value pair to include in the event (can be used multiple times)",
+    )
+    add_parser_cmd.add_argument(
+        "--chunk-size",
+        type=int,
+        help="Chunk size of the output file in bytes (only used with -o)",
+    )
+    add_parser_cmd.add_argument(
+        "--chunk-compression",
+        type=str,
+        choices=["lz4", "zstd", "none"],
+        help="Compression used for chunk records (only used with -o)",
+    )
+    add_parser_cmd.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite output file if it exists (only used with -o)",
     )
     add_parser_cmd.set_defaults(func=_run_add)
 
@@ -940,18 +1024,18 @@ def add_parser(subparsers) -> None:
             deleted events are hidden from listing by default but can be shown
             with --include-deleted.
 
-            Use --force to perform a hard delete that rewrites the file without
-            the deleted events. This creates a new output file.
+            Use -o to copy the MCAP and hard delete (remove) the events from the
+            copy instead of soft deleting in place.
 
             Example:
               pybag event delete recording.mcap --name "collision"  # soft delete
-              pybag event delete recording.mcap --force -o clean.mcap  # hard delete
+              pybag event delete recording.mcap -o clean.mcap  # hard delete to copy
         """),
     )
     delete_parser.add_argument("input", help="Path to input MCAP file (*.mcap)")
     delete_parser.add_argument(
         "-o", "--output",
-        help="Output file path (only used with --force). Defaults to <input>_filtered.mcap",
+        help="Output file path. If specified, copies MCAP and removes events from copy.",
     )
     delete_parser.add_argument(
         "--name",
@@ -968,25 +1052,20 @@ def add_parser(subparsers) -> None:
         help="Delete events with timestamp <= end_time (in seconds)",
     )
     delete_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Hard delete: rewrite the file without deleted events (creates new file)",
-    )
-    delete_parser.add_argument(
         "--chunk-size",
         type=int,
-        help="Chunk size of the output file in bytes (only used with --force)",
+        help="Chunk size of the output file in bytes (only used with -o)",
     )
     delete_parser.add_argument(
         "--chunk-compression",
         type=str,
         choices=["lz4", "zstd", "none"],
-        help="Compression used for chunk records (only used with --force)",
+        help="Compression used for chunk records (only used with -o)",
     )
     delete_parser.add_argument(
         "--overwrite",
         action="store_true",
-        help="Overwrite output file if it exists (only used with --force)",
+        help="Overwrite output file if it exists (only used with -o)",
     )
     delete_parser.set_defaults(func=_run_delete)
 

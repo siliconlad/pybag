@@ -121,6 +121,38 @@ def test_cli_event_add_multiple_events(tmp_path: Path) -> None:
         assert "end" in names
 
 
+def test_cli_event_add_with_output(tmp_path: Path) -> None:
+    """Test adding an event with -o flag copies MCAP and adds event to copy."""
+    input_path = tmp_path / "input.mcap"
+    output_path = tmp_path / "output.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+        writer.write_message("/foo", int(2e9), Int32(data=2))
+
+    # Add event with -o flag (copy mode)
+    cli_main([
+        "event", "add", str(input_path),
+        "test_event", "1.5",
+        "-o", str(output_path),
+    ])
+
+    # Verify original file is unchanged (no events)
+    with McapRecordReaderFactory.from_file(input_path) as reader:
+        metadata = reader.get_metadata(name=EVENT_METADATA_NAME)
+        assert len(metadata) == 0
+
+    # Verify output file has the event and messages
+    with McapRecordReaderFactory.from_file(output_path) as reader:
+        metadata = reader.get_metadata(name=EVENT_METADATA_NAME)
+        assert len(metadata) == 1
+        assert metadata[0].metadata["name"] == "test_event"
+
+        # Verify messages are copied
+        messages = list(reader.get_messages())
+        assert len(messages) == 2
+
+
 def test_cli_event_soft_delete(tmp_path: Path) -> None:
     """Test soft delete (default) marks events as deleted."""
     input_path = tmp_path / "input.mcap"
@@ -208,7 +240,7 @@ def test_cli_event_list_include_deleted(tmp_path: Path, capsys) -> None:
 
 
 def test_cli_event_hard_delete_all(tmp_path: Path) -> None:
-    """Test hard delete (--force) removes all events from file."""
+    """Test hard delete (-o) removes all events from file."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -222,10 +254,9 @@ def test_cli_event_hard_delete_all(tmp_path: Path) -> None:
         "event1", "1.0",
     ])
 
-    # Hard delete all events
+    # Hard delete all events (using -o triggers hard delete)
     cli_main([
         "event", "delete", str(input_path),
-        "--force",
         "-o", str(output_path),
     ])
 
@@ -254,11 +285,10 @@ def test_cli_event_hard_delete_by_name(tmp_path: Path) -> None:
         "collision", "5.0",
     ])
 
-    # Hard delete only "collision" events
+    # Hard delete only "collision" events (using -o triggers hard delete)
     cli_main([
         "event", "delete", str(input_path),
         "--name", "collision",
-        "--force",
         "-o", str(output_path),
     ])
 
@@ -290,12 +320,11 @@ def test_cli_event_hard_delete_by_time_range(tmp_path: Path) -> None:
         "event3", "10.0",
     ])
 
-    # Hard delete events between 4s and 6s
+    # Hard delete events between 4s and 6s (using -o triggers hard delete)
     cli_main([
         "event", "delete", str(input_path),
         "--start-time", "4.0",
         "--end-time", "6.0",
-        "--force",
         "-o", str(output_path),
     ])
 
@@ -455,10 +484,9 @@ def test_cli_event_hard_delete_preserves_non_event_metadata(tmp_path: Path) -> N
         "test_event", "1.0",
     ])
 
-    # Hard delete all events
+    # Hard delete all events (using -o triggers hard delete)
     cli_main([
         "event", "delete", str(input_path),
-        "--force",
         "-o", str(output_path),
     ])
 

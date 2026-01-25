@@ -292,26 +292,33 @@ pybag event list recording.mcap --json
 pybag event list recording.mcap --include-deleted  # show soft deleted events
 ```
 
-**Add events (appends in place):**
+**Add events:**
+
+By default, events are appended to the MCAP in place.
+Use `-o` to copy the MCAP and add the event to the copy instead.
 
 ```bash
+# Append in place (default)
 pybag event add recording.mcap "collision" 10.5
 pybag event add recording.mcap "start" 0.0 --description "Recording started"
 pybag event add recording.mcap "waypoint" 25.0 --extra waypoint_id=42
+
+# Copy mode: add event to a new copy
+pybag event add recording.mcap "collision" 10.5 -o with_event.mcap
 ```
 
 **Delete events:**
 
 By default, events are soft deleted (marked as deleted without rewriting the file).
-Use `--force` to perform a hard delete that rewrites the file.
+Use `-o` to copy the MCAP and hard delete (remove) the events from the copy.
 
 ```bash
 # Soft delete (default): marks events as deleted in place
 pybag event delete recording.mcap --name "collision"
 
-# Hard delete: rewrites the file without deleted events
-pybag event delete recording.mcap --name "collision" --force -o cleaned.mcap
-pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 --force -o cleaned.mcap
+# Hard delete: copies MCAP and removes events from the copy
+pybag event delete recording.mcap --name "collision" -o cleaned.mcap
+pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 -o cleaned.mcap
 ```
 
 **Clip around an event:**
