@@ -121,8 +121,94 @@ def test_cli_event_add_multiple_events(tmp_path: Path) -> None:
         assert "end" in names
 
 
-def test_cli_event_delete_all(tmp_path: Path) -> None:
-    """Test deleting all events."""
+def test_cli_event_soft_delete(tmp_path: Path) -> None:
+    """Test soft delete (default) marks events as deleted."""
+    input_path = tmp_path / "input.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+
+    # Add an event
+    cli_main([
+        "event", "add", str(input_path),
+        "event1", "1.0",
+    ])
+
+    # Soft delete (default, no --force)
+    cli_main([
+        "event", "delete", str(input_path),
+        "--name", "event1",
+    ])
+
+    # The event record should still exist but be marked as deleted
+    with McapRecordReaderFactory.from_file(input_path) as reader:
+        all_events = reader.get_metadata(name=EVENT_METADATA_NAME)
+        # Original + deleted version
+        assert len(all_events) == 2
+        # The deleted version has deleted=true
+        deleted_events = [e for e in all_events if e.metadata.get("deleted") == "true"]
+        assert len(deleted_events) == 1
+
+
+def test_cli_event_soft_delete_hidden_from_list(tmp_path: Path, capsys) -> None:
+    """Test that soft deleted events are hidden from list by default."""
+    input_path = tmp_path / "input.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "visible", "1.0",
+    ])
+    cli_main([
+        "event", "add", str(input_path),
+        "to_delete", "2.0",
+    ])
+
+    # Soft delete one event
+    cli_main([
+        "event", "delete", str(input_path),
+        "--name", "to_delete",
+    ])
+
+    capsys.readouterr()
+
+    # List should only show the visible event
+    cli_main(["event", "list", str(input_path)])
+    captured = capsys.readouterr()
+    assert "visible" in captured.out
+    assert "to_delete" not in captured.out
+
+
+def test_cli_event_list_include_deleted(tmp_path: Path, capsys) -> None:
+    """Test that --include-deleted shows soft deleted events."""
+    input_path = tmp_path / "input.mcap"
+
+    with McapFileWriter.open(input_path, chunk_size=1024) as writer:
+        writer.write_message("/foo", int(1e9), Int32(data=1))
+
+    cli_main([
+        "event", "add", str(input_path),
+        "event1", "1.0",
+    ])
+
+    # Soft delete
+    cli_main([
+        "event", "delete", str(input_path),
+        "--name", "event1",
+    ])
+
+    capsys.readouterr()
+
+    # List with --include-deleted should show the event
+    cli_main(["event", "list", str(input_path), "--include-deleted"])
+    captured = capsys.readouterr()
+    assert "event1" in captured.out
+
+
+def test_cli_event_hard_delete_all(tmp_path: Path) -> None:
+    """Test hard delete (--force) removes all events from file."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -136,9 +222,10 @@ def test_cli_event_delete_all(tmp_path: Path) -> None:
         "event1", "1.0",
     ])
 
-    # Delete all events
+    # Hard delete all events
     cli_main([
         "event", "delete", str(input_path),
+        "--force",
         "-o", str(output_path),
     ])
 
@@ -147,8 +234,8 @@ def test_cli_event_delete_all(tmp_path: Path) -> None:
         assert len(metadata) == 0
 
 
-def test_cli_event_delete_by_name(tmp_path: Path) -> None:
-    """Test deleting events by name."""
+def test_cli_event_hard_delete_by_name(tmp_path: Path) -> None:
+    """Test hard deleting events by name."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -167,10 +254,11 @@ def test_cli_event_delete_by_name(tmp_path: Path) -> None:
         "collision", "5.0",
     ])
 
-    # Delete only "collision" events
+    # Hard delete only "collision" events
     cli_main([
         "event", "delete", str(input_path),
         "--name", "collision",
+        "--force",
         "-o", str(output_path),
     ])
 
@@ -180,8 +268,8 @@ def test_cli_event_delete_by_name(tmp_path: Path) -> None:
         assert metadata[0].metadata["name"] == "start"
 
 
-def test_cli_event_delete_by_time_range(tmp_path: Path) -> None:
-    """Test deleting events by time range."""
+def test_cli_event_hard_delete_by_time_range(tmp_path: Path) -> None:
+    """Test hard deleting events by time range."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -202,11 +290,12 @@ def test_cli_event_delete_by_time_range(tmp_path: Path) -> None:
         "event3", "10.0",
     ])
 
-    # Delete events between 4s and 6s
+    # Hard delete events between 4s and 6s
     cli_main([
         "event", "delete", str(input_path),
         "--start-time", "4.0",
         "--end-time", "6.0",
+        "--force",
         "-o", str(output_path),
     ])
 
@@ -351,8 +440,8 @@ def test_cli_event_bag_not_supported(tmp_path: Path, capsys) -> None:
         ])
 
 
-def test_cli_event_delete_preserves_non_event_metadata(tmp_path: Path) -> None:
-    """Test that deleting events preserves non-event metadata."""
+def test_cli_event_hard_delete_preserves_non_event_metadata(tmp_path: Path) -> None:
+    """Test that hard deleting events preserves non-event metadata."""
     input_path = tmp_path / "input.mcap"
     output_path = tmp_path / "output.mcap"
 
@@ -366,9 +455,10 @@ def test_cli_event_delete_preserves_non_event_metadata(tmp_path: Path) -> None:
         "test_event", "1.0",
     ])
 
-    # Delete all events
+    # Hard delete all events
     cli_main([
         "event", "delete", str(input_path),
+        "--force",
         "-o", str(output_path),
     ])
 

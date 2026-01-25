@@ -289,6 +289,7 @@ Events are stored as metadata records.
 pybag event list recording.mcap
 pybag event list recording.mcap --name "collision"
 pybag event list recording.mcap --json
+pybag event list recording.mcap --include-deleted  # show soft deleted events
 ```
 
 **Add events (appends in place):**
@@ -301,10 +302,16 @@ pybag event add recording.mcap "waypoint" 25.0 --extra waypoint_id=42
 
 **Delete events:**
 
+By default, events are soft deleted (marked as deleted without rewriting the file).
+Use `--force` to perform a hard delete that rewrites the file.
+
 ```bash
-pybag event delete recording.mcap -o cleaned.mcap
-pybag event delete recording.mcap --name "collision" -o cleaned.mcap
-pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 -o cleaned.mcap
+# Soft delete (default): marks events as deleted in place
+pybag event delete recording.mcap --name "collision"
+
+# Hard delete: rewrites the file without deleted events
+pybag event delete recording.mcap --name "collision" --force -o cleaned.mcap
+pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 --force -o cleaned.mcap
 ```
 
 **Clip around an event:**
