@@ -10,7 +10,6 @@ import logging
 import shutil
 from pathlib import Path
 from textwrap import dedent
-from tkinter.constants import FALSE
 from typing import Literal
 
 from pybag.cli.filter import filter_mcap
@@ -214,6 +213,8 @@ def add_event_mcap(
     timestamp: float,
     description: str | None = None,
     extra_fields: dict[str, str] | None = None,
+    chunk_size: int | None = None,
+    chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
 ) -> Path:
     """Add an event to an MCAP file by appending in place.
 
@@ -244,7 +245,12 @@ def add_event_mcap(
         event_metadata.update(extra_fields)
 
     # Write metadata record in append
-    with McapFileWriter.open(input_path, mode='a') as writer:
+    with McapFileWriter.open(
+        input_path,
+        mode='a',
+        chunk_size=chunk_size,
+        chunk_compression=chunk_compression
+    ) as writer:
         writer.write_metadata(EVENT_METADATA_NAME, event_metadata)
 
     return input_path
@@ -253,7 +259,7 @@ def add_event_mcap(
 def add_event(
     input_path: str | Path,
     event_name: str,
-    timestamp: int,
+    timestamp: float,
     output_path: str | Path | None = None,
     description: str | None = None,
     extra_fields: dict[str, str] | None = None,
@@ -267,7 +273,7 @@ def add_event(
     Args:
         input_path: Path to the input MCAP file.
         event_name: Name of the event.
-        timestamp: Event timestamp in nanoseconds.
+        timestamp: Event timestamp in seconds.
         output_path: If provided, copy the MCAP and add event to the copy. If None, append the event in place.
         description: Optional event description.
         extra_fields: Optional extra key-value pairs to include in the event.
@@ -293,6 +299,8 @@ def add_event(
             timestamp,
             description=description,
             extra_fields=extra_fields,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
         )
     else:
         # Copy MCAP and add event to the copy
@@ -311,6 +319,8 @@ def add_event(
             timestamp,
             description=description,
             extra_fields=extra_fields,
+            chunk_size=chunk_size,
+            chunk_compression=chunk_compression,
         )
 
 
@@ -595,7 +605,7 @@ def _run_add(args) -> None:
     """Run the event add command."""
     # Parse extra key-value pairs
     extra_fields: dict[str, str] = {}
-    for item in args.extra:
+    for item in args.extra or []:
         if "=" not in item:
             raise ValueError(f"Invalid extra field format: {item}. Expected 'key=value'")
         key, value = item.split("=", 1)
@@ -604,13 +614,13 @@ def _run_add(args) -> None:
     file_path = add_event(
         args.input,
         args.name,
-        _seconds_to_ns(args.time * 1_000_000_000),
+        args.time,
         output_path=args.output,
         description=args.description,
         extra_fields=extra_fields,
-        chunk_size=getattr(args, 'chunk_size', None),
+        chunk_size=args.chunk_size,
         chunk_compression=args.chunk_compression,
-        overwrite=getattr(args, 'overwrite', False),
+        overwrite=args.overwrite,
     )
     print(f"Event added to: {file_path}")
 
@@ -637,7 +647,8 @@ def _run_clip(args) -> None:
     if args.margin is not None:
         if args.before is not None or args.after is not None:
             raise ValueError("Cannot use --margin together with --before or --after")
-        before, after = args.margin
+        before = args.margin
+        after = args.margin
     else:
         # Use 0 for unspecified values (clip up to or from event time)
         before = args.before if args.before is not None else 0.0
@@ -722,7 +733,6 @@ def add_parser(subparsers) -> None:
     add_parser_cmd.add_argument("name", help="Name of the event (e.g., 'start', 'collision')")
     add_parser_cmd.add_argument(
         "time",
-        required=True,
         type=float,
         help="Timestamp of the event in seconds",
     )
