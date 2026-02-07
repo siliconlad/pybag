@@ -276,3 +276,64 @@ pybag inspect channels recording.mcap --topic "/camera/*"
 pybag inspect metadata recording.mcap --name "calibration"
 pybag inspect attachments recording.mcap --name "calib.yaml" --data
 ```
+
+### event
+
+Manage events in MCAP files.
+
+Events are markers that indicate when something
+significant happens in the recording (e.g., collisions, waypoints, incidents).
+Events are stored as metadata records.
+
+**List events:**
+
+```bash
+pybag event list recording.mcap
+pybag event list recording.mcap --name "collision"
+pybag event list recording.mcap --json
+```
+
+**Add events:**
+
+By default, events are appended to the MCAP in place.
+Use `-o` to copy the MCAP and add the event to the copy instead.
+
+```bash
+# Append in place (default)
+pybag event add recording.mcap "collision" 10.5
+pybag event add recording.mcap "start" 0.0 --description "Recording started"
+pybag event add recording.mcap "waypoint" 25.0 --extra waypoint_id=42
+
+# Copy mode: add event to a new copy
+pybag event add recording.mcap "collision" 10.5 -o with_event.mcap
+```
+
+**Delete events:**
+
+Use `-o` to copy the MCAP and hard delete (remove) the events from the copy.
+
+```bash
+pybag event delete recording.mcap --name "collision" -o cleaned.mcap
+pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 -o cleaned.mcap
+```
+
+**Clip around an event:**
+
+Extract a portion of the recording relative to an event's timestamp:
+
+```bash
+# Symmetric: 5s before AND after the event
+pybag event clip recording.mcap "collision" --margin 5
+
+# Before only: from (event_time - 3s) to event_time
+pybag event clip recording.mcap "end" --before 3
+
+# After only: from event_time to (event_time + 10s)
+pybag event clip recording.mcap "start" --after 10
+
+# Asymmetric: 5s before and 10s after
+pybag event clip recording.mcap "incident" --before 5 --after 10
+
+# With topic filtering
+pybag event clip recording.mcap "crash" --margin 5 --include-topic "/camera/*" -o clip.mcap
+```

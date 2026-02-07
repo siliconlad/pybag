@@ -1,6 +1,15 @@
 import argparse
 
-from pybag.cli import convert, filter, info, inspect, merge, recover, sort
+from pybag.cli import (
+    convert,
+    event,
+    filter,
+    info,
+    inspect,
+    merge,
+    recover,
+    sort
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # TODO: Have some of entrypoint registration?
     convert.add_parser(subparsers)
+    event.add_parser(subparsers)
     filter.add_parser(subparsers)
     info.add_parser(subparsers)
     inspect.add_parser(subparsers)
