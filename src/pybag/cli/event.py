@@ -125,7 +125,7 @@ def _print_event_table(events: list[MetadataRecord]) -> None:
     # Print rows
     for event in events:
         timestamp = _get_event_timestamp(event)
-        timestamp_s = f"{_ns_to_seconds(timestamp):.6f}" if timestamp else "N/A"
+        timestamp_s = f"{_ns_to_seconds(timestamp):.6f}" if timestamp is not None else "N/A"
         name = _get_event_name(event)
         description = _get_event_description(event)
         if len(description) > 50:
