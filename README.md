@@ -279,7 +279,9 @@ pybag inspect attachments recording.mcap --name "calib.yaml" --data
 
 ### event
 
-Manage events in MCAP files. Events are markers that indicate when something
+Manage events in MCAP files.
+
+Events are markers that indicate when something
 significant happens in the recording (e.g., collisions, waypoints, incidents).
 Events are stored as metadata records.
 
@@ -289,7 +291,6 @@ Events are stored as metadata records.
 pybag event list recording.mcap
 pybag event list recording.mcap --name "collision"
 pybag event list recording.mcap --json
-pybag event list recording.mcap --include-deleted  # show soft deleted events
 ```
 
 **Add events:**
@@ -309,14 +310,9 @@ pybag event add recording.mcap "collision" 10.5 -o with_event.mcap
 
 **Delete events:**
 
-By default, events are soft deleted (marked as deleted without rewriting the file).
 Use `-o` to copy the MCAP and hard delete (remove) the events from the copy.
 
 ```bash
-# Soft delete (default): marks events as deleted in place
-pybag event delete recording.mcap --name "collision"
-
-# Hard delete: copies MCAP and removes events from the copy
 pybag event delete recording.mcap --name "collision" -o cleaned.mcap
 pybag event delete recording.mcap --start-time 5.0 --end-time 10.0 -o cleaned.mcap
 ```
