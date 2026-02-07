@@ -241,8 +241,11 @@ def add_event_mcap(
         "name": event_name,
         "description": description or ""
     }
-    if extra_fields:
-        event_metadata.update(extra_fields)
+    for key, value in (extra_fields or {}).items():
+        if key not in ("timestamp", "name", "description"):
+            event_metadata[key] = value
+        else:
+            raise ValueError(f"'{key}' is reserved")
 
     # Write metadata record in append
     with McapFileWriter.open(
