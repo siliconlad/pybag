@@ -8,7 +8,6 @@ description and custom key-value pairs.
 import json
 import logging
 import shutil
-from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
 from tkinter.constants import FALSE
@@ -19,12 +18,12 @@ from pybag.cli.utils import (
     get_file_format_from_magic,
     validate_compression_for_mcap
 )
-from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
 from pybag.mcap.record_writer import McapRecordWriterFactory
-from pybag.mcap.records import MessageRecord, MetadataRecord
+from pybag.mcap.records import MetadataRecord
 from pybag.mcap.summary import McapSummaryFactory
+from pybag.mcap_writer import McapFileWriter
 
 logger = logging.getLogger(__name__)
 
@@ -239,31 +238,14 @@ def add_event_mcap(
     event_metadata: dict[str, str] = {
         "timestamp": str(timestamp_ns),
         "name": event_name,
+        "description": description or ""
     }
-    if description:
-        event_metadata["description"] = description
     if extra_fields:
         event_metadata.update(extra_fields)
 
-    # TODO: Replace this with the public writer append api
-    # Load existing summary from the file using FileReader (for peek support)
-    new_event = MetadataRecord(name=EVENT_METADATA_NAME, metadata=event_metadata)
-    summary = McapSummaryFactory.create_summary(
-        file=FileReader(input_path),
-        load_summary_eagerly=True,
-   )
-    # Open file for reading and writing (append mode)
-    file_writer = FileWriter(input_path, mode="r+b")
-    # Create writer in append mode - this will seek to before the data end record
-    # and set up the CRC writer with the existing CRC
-    with McapRecordWriterFactory.create_writer(
-        file_writer,
-        summary,
-        mode='a',
-        chunk_size=1024 * 1024,  # Default chunk size (not used for metadata)
-    ) as writer:
-        # Only write the new event metadata - all other records are preserved
-        writer.write_metadata(new_event)
+    # Write metadata record in append
+    with McapFileWriter.open(input_path, mode='a') as writer:
+        writer.write_metadata(EVENT_METADATA_NAME, event_metadata)
 
     return input_path
 
@@ -379,26 +361,9 @@ def delete_events_mcap(
     start_ns = _to_ns(start_time)
     end_ns = _to_ns(end_time)
 
-    # TODO: Simplify because we onlly need to delete relevant metadata records
     with McapRecordReaderFactory.from_file(input_path) as reader:
+        all_schemas = reader.get_schemas()
         all_channels = reader.get_channels()
-        topic_to_channel_ids: dict[str, set[int]] = defaultdict(set)
-        for channel_id, channel in all_channels.items():
-            topic_to_channel_ids[channel.topic].add(channel_id)
-
-        all_attachments = reader.get_attachments()
-        all_metadata = reader.get_metadata()
-
-        # Count events to be deleted
-        events_to_delete = 0
-        for metadata in all_metadata:
-            if _is_event_metadata(metadata) and _event_matches_filters(
-                metadata, name, start_ns, end_ns
-            ):
-                events_to_delete += 1
-
-        if events_to_delete == 0:
-            logger.warning("No events match the deletion criteria.")
 
         with McapRecordWriterFactory.create_writer(
             FileWriter(output_path),
@@ -407,50 +372,35 @@ def delete_events_mcap(
             chunk_compression=chunk_compression,
             profile=reader.get_header().profile,
         ) as writer:
-            # Write message records
-            written_schema_ids: set[int] = set()
-            written_channel_ids: set[int] = set()
-            sequence_counters: dict[int, int] = defaultdict(int)
+            # Preserve all schema/channel definitions from the source file.
+            for schema_id in sorted(all_schemas):
+                writer.write_schema(all_schemas[schema_id])
 
+            for channel_id in sorted(all_channels):
+                writer.write_channel(all_channels[channel_id])
+
+            # Preserve message records as-is.
             for msg_record in reader.get_messages(in_log_time_order=False):
-                # Write the schema record the first time
-                schema_id = all_channels[msg_record.channel_id].schema_id
-                if schema_id != 0 and schema_id not in written_schema_ids:
-                    if (schema := reader.get_schema(schema_id)) is not None:
-                        writer.write_schema(schema)
-                        written_schema_ids.add(schema_id)
-
-                # Write the channel record the first time
-                if msg_record.channel_id not in written_channel_ids:
-                    writer.write_channel(all_channels[msg_record.channel_id])
-                    written_channel_ids.add(msg_record.channel_id)
-
-                # Write message with updated sequence number
-                new_record = MessageRecord(
-                    channel_id=msg_record.channel_id,
-                    sequence=sequence_counters[msg_record.channel_id],
-                    log_time=msg_record.log_time,
-                    publish_time=msg_record.publish_time,
-                    data=msg_record.data,
-                )
-                sequence_counters[msg_record.channel_id] += 1
-                writer.write_message(new_record)
+                writer.write_message(msg_record)
 
             # Write attachments
-            for attachment in all_attachments:
+            for attachment in reader.get_attachments():
                 writer.write_attachment(attachment)
 
-            # Write metadata, filtering out deleted events
+            # Write metadata, filtering out only matching event records.
             deleted_count = 0
-            for metadata in all_metadata:
-                if _is_event_metadata(metadata) and _event_matches_filters(
-                    metadata, name, start_ns, end_ns
-                ):
-                    # Skip this event (delete it)
-                    deleted_count += 1
-                    continue
+            for metadata in reader.get_metadata():
+                if metadata.name == EVENT_METADATA_NAME:
+                    if (
+                        _event_matches_name(metadata, name)
+                        and _event_matches_timestamp(metadata, start_ns, end_ns)
+                    ):
+                        deleted_count += 1
+                        continue
                 writer.write_metadata(metadata)
 
+            if deleted_count == 0:
+                logger.warning("No events match the deletion criteria.")
             logger.info(f"Deleted {deleted_count} event(s).")
 
     return output_path
