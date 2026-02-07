@@ -7,12 +7,18 @@ description and custom key-value pairs.
 
 import json
 import logging
+import shutil
 from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
+from tkinter.constants import FALSE
 from typing import Literal
 
-from pybag.cli.utils import get_file_format_from_magic
+from pybag.cli.filter import filter_mcap
+from pybag.cli.utils import (
+    get_file_format_from_magic,
+    validate_compression_for_mcap
+)
 from pybag.io.raw_reader import FileReader
 from pybag.io.raw_writer import FileWriter
 from pybag.mcap.record_reader import McapRecordReaderFactory
@@ -28,6 +34,17 @@ EVENT_METADATA_NAME = "pybag.event"
 
 def _ns_to_seconds(ns: int) -> float:
     """Convert nanoseconds to seconds."""
+    return ns / 1_000_000_000
+
+
+def _seconds_to_ns(seconds: float) -> int:
+    """Convert seconds to nanoseconds."""
+    return int(seconds * 1_000_000_000)
+
+
+def _to_s(ns: int | None) -> float | None:
+    if ns is None:
+        return None
     return ns / 1_000_000_000
 
 
@@ -59,40 +76,30 @@ def _get_event_name(metadata: MetadataRecord) -> str:
     return metadata.metadata.get("name", "")
 
 
-def _get_event_description(metadata: MetadataRecord) -> str | None:
+def _get_event_description(metadata: MetadataRecord) -> str:
     """Extract event description from event metadata."""
-    return metadata.metadata.get("description")
+    return metadata.metadata.get("description", "")
 
 
-def _is_event_deleted(metadata: MetadataRecord) -> bool:
-    """Check if an event is marked as deleted."""
-    return metadata.metadata.get("deleted", "").lower() == "true"
+def _event_matches_name(metadata: MetadataRecord, name: str | None) -> bool:
+    event_name = _get_event_name(metadata)
+    if name is not None:
+        return event_name == name
+    return True
 
 
-def _event_matches_filters(
+def _event_matches_timestamp(
     metadata: MetadataRecord,
-    name: str | None = None,
     start_time_ns: int | None = None,
     end_time_ns: int | None = None,
-    include_deleted: bool = False,
 ) -> bool:
     """Check if an event matches the given filters."""
-    # Filter out deleted events unless explicitly included
-    if not include_deleted and _is_event_deleted(metadata):
-        return False
-
-    if name is not None:
-        event_name = _get_event_name(metadata)
-        if event_name != name:
-            return False
-
     timestamp = _get_event_timestamp(metadata)
     if timestamp is not None:
         if start_time_ns is not None and timestamp < start_time_ns:
             return False
         if end_time_ns is not None and timestamp > end_time_ns:
             return False
-
     return True
 
 
@@ -122,7 +129,7 @@ def _print_event_table(events: list[MetadataRecord]) -> None:
         timestamp = _get_event_timestamp(event)
         timestamp_s = f"{_ns_to_seconds(timestamp):.6f}" if timestamp else "N/A"
         name = _get_event_name(event)
-        description = _get_event_description(event) or ""
+        description = _get_event_description(event)
         if len(description) > 50:
             description = description[:47] + "..."
         print(f"  {timestamp_s:>16}  {name:<{max_name_len}}  {description}")
@@ -130,46 +137,18 @@ def _print_event_table(events: list[MetadataRecord]) -> None:
 
 def _event_to_json(event: MetadataRecord) -> dict:
     """Convert event metadata to JSON-serializable dict."""
-    timestamp = _get_event_timestamp(event)
     result = {
-        "timestamp": timestamp,
-        "timestamp_seconds": _ns_to_seconds(timestamp) if timestamp else None,
+        "timestamp": _get_event_timestamp(event),
         "name": _get_event_name(event),
+        "description": _get_event_description(event)
     }
-    description = _get_event_description(event)
-    if description:
-        result["description"] = description
-
-    # Include deleted status if the event is deleted
-    if _is_event_deleted(event):
-        result["deleted"] = True
 
     # Add any extra custom fields
     for key, value in event.metadata.items():
-        if key not in ("timestamp", "name", "description", "deleted"):
+        if key not in ("timestamp", "name", "description"):
             result[key] = value
 
     return result
-
-
-def _get_event_identity(metadata: MetadataRecord) -> tuple[int | None, str]:
-    """Get the unique identity of an event (timestamp, name)."""
-    return (_get_event_timestamp(metadata), _get_event_name(metadata))
-
-
-def _get_deleted_event_identities(
-    all_metadata: list[MetadataRecord],
-) -> set[tuple[int | None, str]]:
-    """Build a set of deleted event identities from metadata records.
-
-    Soft delete works by appending a copy of the event with deleted=true.
-    This function finds all events marked as deleted and returns their identities.
-    """
-    deleted_identities: set[tuple[int | None, str]] = set()
-    for metadata in all_metadata:
-        if _is_event_metadata(metadata) and _is_event_deleted(metadata):
-            deleted_identities.add(_get_event_identity(metadata))
-    return deleted_identities
 
 
 def list_events_mcap(
@@ -178,7 +157,6 @@ def list_events_mcap(
     name: str | None = None,
     start_time: float | None = None,
     end_time: float | None = None,
-    include_deleted: bool = False,
     output_json: bool = False,
 ) -> None:
     """List events in an MCAP file."""
@@ -188,24 +166,13 @@ def list_events_mcap(
     with McapRecordReaderFactory.from_file(input_path) as reader:
         all_metadata = reader.get_metadata(name=EVENT_METADATA_NAME)
 
-        # Build set of deleted event identities for filtering
-        deleted_identities = _get_deleted_event_identities(all_metadata)
-
         # Filter events - also check if event identity is in deleted set
-        events: list[MetadataRecord] = []
-        for m in all_metadata:
-            if not _is_event_metadata(m):
-                continue
-            # Skip records that are explicitly marked as deleted
-            if _is_event_deleted(m):
-                continue
-            # Skip events whose identity matches a deleted event (unless include_deleted)
-            if not include_deleted and _get_event_identity(m) in deleted_identities:
-                continue
-            # Apply other filters (name, time range)
-            if not _event_matches_filters(m, name, start_ns, end_ns, include_deleted=True):
-                continue
-            events.append(m)
+        events: list[MetadataRecord] = [
+            m for m in all_metadata
+            if _is_event_metadata(m)
+            and _event_matches_name(m, name)
+            and _event_matches_timestamp(m, start_ns, end_ns)
+        ]
 
         if output_json:
             print(json.dumps([_event_to_json(e) for e in events], indent=2))
@@ -220,7 +187,6 @@ def list_events(
     name: str | None = None,
     start_time: float | None = None,
     end_time: float | None = None,
-    include_deleted: bool = False,
     output_json: bool = False,
 ) -> None:
     """List events in an MCAP or bag file."""
@@ -233,11 +199,10 @@ def list_events(
             name=name,
             start_time=start_time,
             end_time=end_time,
-            include_deleted=include_deleted,
             output_json=output_json,
         )
     else:
-        print("Events are not supported in bag format.")
+        raise ValueError("Events are not supported in bag format.")
 
 
 #####################
@@ -280,17 +245,15 @@ def add_event_mcap(
     if extra_fields:
         event_metadata.update(extra_fields)
 
-    new_event = MetadataRecord(name=EVENT_METADATA_NAME, metadata=event_metadata)
-
+    # TODO: Replace this with the public writer append api
     # Load existing summary from the file using FileReader (for peek support)
+    new_event = MetadataRecord(name=EVENT_METADATA_NAME, metadata=event_metadata)
     summary = McapSummaryFactory.create_summary(
         file=FileReader(input_path),
         load_summary_eagerly=True,
-    )
-
+   )
     # Open file for reading and writing (append mode)
     file_writer = FileWriter(input_path, mode="r+b")
-
     # Create writer in append mode - this will seek to before the data end record
     # and set up the CRC writer with the existing CRC
     with McapRecordWriterFactory.create_writer(
@@ -308,7 +271,7 @@ def add_event_mcap(
 def add_event(
     input_path: str | Path,
     event_name: str,
-    timestamp: float,
+    timestamp: int,
     output_path: str | Path | None = None,
     description: str | None = None,
     extra_fields: dict[str, str] | None = None,
@@ -322,9 +285,8 @@ def add_event(
     Args:
         input_path: Path to the input MCAP file.
         event_name: Name of the event.
-        timestamp: Event timestamp in seconds.
-        output_path: If provided, copy the MCAP and add event to the copy.
-            If None, append the event in place.
+        timestamp: Event timestamp in nanoseconds.
+        output_path: If provided, copy the MCAP and add event to the copy. If None, append the event in place.
         description: Optional event description.
         extra_fields: Optional extra key-value pairs to include in the event.
         chunk_size: Target chunk size for output (only used with output_path).
@@ -334,13 +296,12 @@ def add_event(
     Returns:
         Path to the file with the event added.
     """
-    from pybag.cli.filter import filter_mcap
-
     input_path = Path(input_path).resolve()
     file_format = get_file_format_from_magic(input_path)
 
     if file_format != "mcap":
         raise ValueError("Events are not supported in bag format.")
+    _ = validate_compression_for_mcap(chunk_compression)
 
     if output_path is None:
         # Append in place
@@ -357,20 +318,11 @@ def add_event(
 
         if output_path == input_path:
             raise ValueError('Input path cannot be same as output.')
-
         if not overwrite and output_path.exists():
             raise ValueError('Output mcap exists. Please set `overwrite` to True.')
 
-        # First, copy the MCAP using filter (no filters = full copy)
-        filter_mcap(
-            input_path,
-            output_path=output_path,
-            chunk_size=chunk_size,
-            chunk_compression=chunk_compression,
-            overwrite=overwrite,
-        )
-
-        # Then append the event to the copy
+        # Append the event to the copy
+        shutil.copyfile(input_path, output_path)
         return add_event_mcap(
             output_path,
             event_name,
@@ -384,77 +336,7 @@ def add_event(
 # Event Deletion    #
 #####################
 
-def soft_delete_events_mcap(
-    input_path: str | Path,
-    name: str | None = None,
-    start_time: float | None = None,
-    end_time: float | None = None,
-) -> tuple[Path, int]:
-    """Soft delete events by marking them with deleted=true.
-
-    This function appends new metadata records that mark matching events as
-    deleted without rewriting the entire file. The original event records
-    remain in the file but will be filtered out by default when listing.
-
-    Args:
-        input_path: Path to the MCAP file to modify.
-        name: Filter events to delete by name.
-        start_time: Filter events with timestamp >= start_time (seconds).
-        end_time: Filter events with timestamp <= end_time (seconds).
-
-    Returns:
-        Tuple of (path to modified file, number of events marked as deleted).
-    """
-    input_path = Path(input_path).resolve()
-    start_ns = _to_ns(start_time)
-    end_ns = _to_ns(end_time)
-
-    # Find events to delete
-    events_to_delete: list[MetadataRecord] = []
-    with McapRecordReaderFactory.from_file(input_path) as reader:
-        all_metadata = reader.get_metadata(name=EVENT_METADATA_NAME)
-        for metadata in all_metadata:
-            if _is_event_metadata(metadata) and _event_matches_filters(
-                metadata, name, start_ns, end_ns, include_deleted=False
-            ):
-                events_to_delete.append(metadata)
-
-    if not events_to_delete:
-        logger.warning("No events match the deletion criteria.")
-        return input_path, 0
-
-    # Load existing summary from the file using FileReader (for peek support)
-    summary = McapSummaryFactory.create_summary(
-        file=FileReader(input_path),
-        load_summary_eagerly=True,
-    )
-
-    # Open file for reading and writing (append mode)
-    file_writer = FileWriter(input_path, mode="r+b")
-
-    # Create writer in append mode
-    with McapRecordWriterFactory.create_writer(
-        file_writer,
-        summary,
-        mode='a',
-        chunk_size=1024 * 1024,
-    ) as writer:
-        # Write new metadata records marking events as deleted
-        for event in events_to_delete:
-            # Copy existing metadata and add deleted flag
-            deleted_metadata = dict(event.metadata)
-            deleted_metadata["deleted"] = "true"
-            deleted_event = MetadataRecord(
-                name=EVENT_METADATA_NAME,
-                metadata=deleted_metadata,
-            )
-            writer.write_metadata(deleted_event)
-
-    logger.info(f"Soft deleted {len(events_to_delete)} event(s).")
-    return input_path, len(events_to_delete)
-
-
-def hard_delete_events_mcap(
+def delete_events_mcap(
     input_path: str | Path,
     output_path: str | Path | None = None,
     name: str | None = None,
@@ -469,10 +351,8 @@ def hard_delete_events_mcap(
 
     Args:
         input_path: Path to input MCAP file.
-        output_path: Path to output MCAP file. If None, defaults to
-            <input_stem>_filtered.mcap.
-        name: Filter events to delete by name. If None, all events matching
-            other filters will be deleted.
+        output_path: Path to output MCAP file. If None, defaults to <input_stem>_filtered.mcap.
+        name: Filter events to delete by name. If None, all events matching other filters will be deleted.
         start_time: Filter events to delete with timestamp >= start_time (seconds).
         end_time: Filter events to delete with timestamp <= end_time (seconds).
         chunk_size: Target chunk size in bytes for the output file.
@@ -483,8 +363,7 @@ def hard_delete_events_mcap(
         Path to the output MCAP file.
 
     Raises:
-        ValueError: If input and output paths are the same, or if output exists
-            and overwrite is False.
+        ValueError: If input and output paths are the same, or if output exists and overwrite is False.
     """
     input_path = Path(input_path).resolve()
     if output_path is None:
@@ -500,6 +379,7 @@ def hard_delete_events_mcap(
     start_ns = _to_ns(start_time)
     end_ns = _to_ns(end_time)
 
+    # TODO: Simplify because we onlly need to delete relevant metadata records
     with McapRecordReaderFactory.from_file(input_path) as reader:
         all_channels = reader.get_channels()
         topic_to_channel_ids: dict[str, set[int]] = defaultdict(set)
@@ -585,13 +465,9 @@ def delete_events(
     chunk_size: int | None = None,
     chunk_compression: Literal["none", "lz4", "zstd"] | None = None,
     *,
-    force: bool = False,
     overwrite: bool = False,
-) -> tuple[Path, int]:
+) -> Path:
     """Delete events from an MCAP or bag file.
-
-    By default, performs a soft delete by marking events with deleted=true.
-    Use force=True to perform a hard delete that rewrites the file.
 
     Args:
         input_path: Path to input file.
@@ -601,7 +477,6 @@ def delete_events(
         end_time: Filter events with timestamp <= end_time (seconds).
         chunk_size: Target chunk size for output (only used for hard delete).
         chunk_compression: Compression algorithm (only used for hard delete).
-        force: If True, performs hard delete (rewrites file). Default is soft delete.
         overwrite: Whether to overwrite output file if it exists.
 
     Returns:
@@ -612,30 +487,19 @@ def delete_events(
 
     if file_format != "mcap":
         raise ValueError("Events are not supported in bag format.")
+    _ = validate_compression_for_mcap(chunk_compression)
 
-    if force:
-        # Hard delete: rewrite the file without matching events
-        result_path = hard_delete_events_mcap(
-            input_path,
-            output_path=output_path,
-            name=name,
-            start_time=start_time,
-            end_time=end_time,
-            chunk_size=chunk_size,
-            chunk_compression=chunk_compression,
-            overwrite=overwrite,
-        )
-        # Count deleted events for return value
-        # (hard_delete_events_mcap logs but doesn't return count)
-        return result_path, -1  # -1 indicates count not available
-    else:
-        # Soft delete: mark events as deleted without rewriting
-        return soft_delete_events_mcap(
-            input_path,
-            name=name,
-            start_time=start_time,
-            end_time=end_time,
-        )
+    # Hard delete: rewrite the file without matching events
+    return delete_events_mcap(
+        input_path,
+        output_path=output_path,
+        name=name,
+        start_time=start_time,
+        end_time=end_time,
+        chunk_size=chunk_size,
+        chunk_compression=chunk_compression,
+        overwrite=overwrite,
+    )
 
 
 #####################
@@ -646,8 +510,8 @@ def clip_event_mcap(
     input_path: str | Path,
     event_name: str,
     output_path: str | Path | None = None,
-    before: float = 5.0,
-    after: float = 5.0,
+    before_timestamp: float = 5.0,
+    after_timestamp: float = 5.0,
     include_topics: list[str] | None = None,
     exclude_topics: list[str] | None = None,
     chunk_size: int | None = None,
@@ -663,14 +527,10 @@ def clip_event_mcap(
     Args:
         input_path: Path to input MCAP file.
         event_name: Name of the event to clip around.
-        output_path: Path to output MCAP file. If None, defaults to
-            <input_stem>_clip_<event_name>.mcap.
-        before: Time in seconds to include before the event. Clips from
-            (event_time - before) to (event_time + after). Default: 5.0.
-        after: Time in seconds to include after the event. Clips from
-            (event_time - before) to (event_time + after). Default: 5.0.
-        include_topics: List of topic patterns to include (glob patterns supported).
-            If None, all topics are included.
+        output_path: Path to output MCAP file. If None, defaults to <input_stem>_clip_<event_name>.mcap.
+        before_timestamp: Time in seconds to include before the event. Clips from (event_time - before) to (event_time + after).
+        after_timestamp: Time in seconds to include after the event. Clips from (event_time - before) to (event_time + after).
+        include_topics: List of topic patterns to include (glob patterns supported). If None, all topics are included.
         exclude_topics: List of topic patterns to exclude (glob patterns supported).
         chunk_size: Target chunk size in bytes for the output file.
         chunk_compression: Compression algorithm for chunks.
@@ -682,46 +542,36 @@ def clip_event_mcap(
     Raises:
         ValueError: If no event with the given name is found.
     """
-    from pybag.cli.filter import filter_mcap
-
     input_path = Path(input_path).resolve()
+    _ = validate_compression_for_mcap(chunk_compression)
 
-    # Find the event (excluding soft-deleted events)
+    # Get all the relevant metadata records
     with McapRecordReaderFactory.from_file(input_path) as reader:
         all_metadata = reader.get_metadata(name=EVENT_METADATA_NAME)
 
-        # Build set of deleted event identities
-        deleted_identities = _get_deleted_event_identities(all_metadata)
-
-        # Find matching non-deleted events
         matching_events = [
             m for m in all_metadata
             if _is_event_metadata(m)
             and _get_event_name(m) == event_name
-            and not _is_event_deleted(m)
-            and _get_event_identity(m) not in deleted_identities
         ]
-
         if not matching_events:
             raise ValueError(f"No event found with name '{event_name}'")
-
-        if len(matching_events) > 1:
-            # Use the first event and warn
-            logger.warning(
-                f"Multiple events found with name '{event_name}'. "
-                f"Using the first one (timestamp: {_ns_to_seconds(_get_event_timestamp(matching_events[0])):.6f}s)"
-            )
 
         event = matching_events[0]
         event_timestamp_ns = _get_event_timestamp(event)
         if event_timestamp_ns is None:
             raise ValueError(f"Event '{event_name}' has no timestamp")
-
-    event_timestamp_s = _ns_to_seconds(event_timestamp_ns)
+        if len(matching_events) > 1:
+            # Use the first event and warn
+            logger.warning(
+                f"Multiple events found with name '{event_name}'. "
+                f"Using the first one (timestamp: {_to_s(event_timestamp_ns):.6f}s)"
+            )
 
     # Calculate clip time range
-    start_time = event_timestamp_s - before
-    end_time = event_timestamp_s + after
+    event_timestamp_s = _ns_to_seconds(event_timestamp_ns)
+    start_time = event_timestamp_s - before_timestamp
+    end_time = event_timestamp_s + after_timestamp
 
     # Default output path
     if output_path is None:
@@ -746,8 +596,8 @@ def clip_event(
     input_path: str | Path,
     event_name: str,
     output_path: str | Path | None = None,
-    before: float = 5.0,
-    after: float = 5.0,
+    before_timestamp: float = 5.0,
+    after_timestamp: float = 5.0,
     include_topics: list[str] | None = None,
     exclude_topics: list[str] | None = None,
     chunk_size: int | None = None,
@@ -764,8 +614,8 @@ def clip_event(
             input_path,
             event_name,
             output_path=output_path,
-            before=before,
-            after=after,
+            before_timestamp=before_timestamp,
+            after_timestamp=after_timestamp,
             include_topics=include_topics,
             exclude_topics=exclude_topics,
             chunk_size=chunk_size,
@@ -787,39 +637,29 @@ def _run_list(args) -> None:
         name=args.name,
         start_time=args.start_time,
         end_time=args.end_time,
-        include_deleted=getattr(args, 'include_deleted', False),
         output_json=args.output_json,
     )
 
 
 def _run_add(args) -> None:
     """Run the event add command."""
-    from pybag.cli.utils import validate_compression_for_mcap
-
     # Parse extra key-value pairs
-    extra_fields: dict[str, str] | None = None
-    if args.extra:
-        extra_fields = {}
-        for item in args.extra:
-            if "=" not in item:
-                raise ValueError(f"Invalid extra field format: {item}. Expected 'key=value'")
-            key, value = item.split("=", 1)
-            extra_fields[key] = value
-
-    output_path = getattr(args, 'output', None)
-    chunk_compression = validate_compression_for_mcap(
-        getattr(args, 'chunk_compression', None)
-    )
+    extra_fields: dict[str, str] = {}
+    for item in args.extra:
+        if "=" not in item:
+            raise ValueError(f"Invalid extra field format: {item}. Expected 'key=value'")
+        key, value = item.split("=", 1)
+        extra_fields[key] = value
 
     file_path = add_event(
         args.input,
         args.name,
-        args.timestamp,
-        output_path=output_path,
+        _seconds_to_ns(args.time * 1_000_000_000),
+        output_path=args.output,
         description=args.description,
         extra_fields=extra_fields,
         chunk_size=getattr(args, 'chunk_size', None),
-        chunk_compression=chunk_compression,
+        chunk_compression=args.chunk_compression,
         overwrite=getattr(args, 'overwrite', False),
     )
     print(f"Event added to: {file_path}")
@@ -827,54 +667,27 @@ def _run_add(args) -> None:
 
 def _run_delete(args) -> None:
     """Run the event delete command."""
-    from pybag.cli.utils import validate_compression_for_mcap
-
-    if args.output:
-        # Hard delete: copy MCAP and remove events from the copy
-        chunk_compression = validate_compression_for_mcap(args.chunk_compression)
-        output_path, _ = delete_events(
-            args.input,
-            output_path=args.output,
-            name=args.name,
-            start_time=args.start_time,
-            end_time=args.end_time,
-            chunk_size=args.chunk_size,
-            chunk_compression=chunk_compression,
-            force=True,
-            overwrite=args.overwrite,
-        )
-        print(f"Events deleted. Output written to: {output_path}")
-    else:
-        # Soft delete: modify in place
-        output_path, count = delete_events(
-            args.input,
-            name=args.name,
-            start_time=args.start_time,
-            end_time=args.end_time,
-            force=False,
-        )
-        if count == 0:
-            print("No events matched the deletion criteria.")
-        else:
-            print(f"Marked {count} event(s) as deleted in: {output_path}")
+    # Hard delete: copy MCAP and remove events from the copy
+    output_path = delete_events(
+        args.input,
+        output_path=args.output,
+        name=args.name,
+        start_time=args.start_time,
+        end_time=args.end_time,
+        chunk_size=args.chunk_size,
+        chunk_compression=args.chunk_compression,
+        overwrite=args.overwrite,
+    )
+    print(f"Events deleted. Output written to: {output_path}")
 
 
 def _run_clip(args) -> None:
     """Run the event clip command."""
-    from pybag.cli.utils import validate_compression_for_mcap
-
-    chunk_compression = validate_compression_for_mcap(args.chunk_compression)
-
     # Handle --margin flag: it's a CLI convenience that sets both before and after
     if args.margin is not None:
         if args.before is not None or args.after is not None:
             raise ValueError("Cannot use --margin together with --before or --after")
-        before = args.margin
-        after = args.margin
-    elif args.before is None and args.after is None:
-        # Default to 5s margin if nothing specified
-        before = 5.0
-        after = 5.0
+        before, after = args.margin
     else:
         # Use 0 for unspecified values (clip up to or from event time)
         before = args.before if args.before is not None else 0.0
@@ -884,12 +697,12 @@ def _run_clip(args) -> None:
         args.input,
         args.name,
         output_path=args.output,
-        before=before,
-        after=after,
+        before_timestamp=before,
+        after_timestamp=after,
         include_topics=args.include_topic,
         exclude_topics=args.exclude_topic,
         chunk_size=args.chunk_size,
-        chunk_compression=chunk_compression,
+        chunk_compression=args.chunk_compression,
         overwrite=args.overwrite,
     )
     print(f"Clipped around event '{args.name}'. Output written to: {output_path}")
@@ -907,12 +720,6 @@ def add_parser(subparsers) -> None:
 
             Events are stored as metadata records with a special name. Each event
             has a timestamp, a name, and an optional description.
-
-            Subcommands:
-              pybag event list <file>                - List all events
-              pybag event add <file> <name> <time>   - Add a new event
-              pybag event delete <file>              - Delete events
-              pybag event clip <file> <name>         - Clip MCAP around an event
 
             Note: Events are only supported in MCAP format, not bag files.
         """),
@@ -947,12 +754,6 @@ def add_parser(subparsers) -> None:
         dest="output_json",
         help="Output in JSON format",
     )
-    list_parser.add_argument(
-        "--include-deleted",
-        action="store_true",
-        dest="include_deleted",
-        help="Include events that have been soft deleted",
-    )
     list_parser.set_defaults(func=_run_list)
 
     # Add subcommand
@@ -965,17 +766,13 @@ def add_parser(subparsers) -> None:
 
             By default, the event is appended directly to the input file.
             Use -o to copy the MCAP and add the event to the copy instead.
-
-            Example:
-              pybag event add recording.mcap "collision" 10.5 --description "Hit obstacle"
-              pybag event add recording.mcap "start" 0.0
-              pybag event add recording.mcap "event" 5.0 -o output.mcap  # copy mode
         """),
     )
     add_parser_cmd.add_argument("input", help="Path to MCAP file (*.mcap)")
     add_parser_cmd.add_argument("name", help="Name of the event (e.g., 'start', 'collision')")
     add_parser_cmd.add_argument(
-        "timestamp",
+        "time",
+        required=True,
         type=float,
         help="Timestamp of the event in seconds",
     )
@@ -1018,23 +815,12 @@ def add_parser(subparsers) -> None:
         description=dedent("""
             Delete events from an MCAP file. Use filters to select which events
             to delete. If no filters are provided, all events will be deleted.
-
-            By default, events are soft deleted by marking them with a "deleted"
-            flag. This modifies the file in place without rewriting it. Soft
-            deleted events are hidden from listing by default but can be shown
-            with --include-deleted.
-
-            Use -o to copy the MCAP and hard delete (remove) the events from the
-            copy instead of soft deleting in place.
-
-            Example:
-              pybag event delete recording.mcap --name "collision"  # soft delete
-              pybag event delete recording.mcap -o clean.mcap  # hard delete to copy
         """),
     )
     delete_parser.add_argument("input", help="Path to input MCAP file (*.mcap)")
     delete_parser.add_argument(
         "-o", "--output",
+        required=True,
         help="Output file path. If specified, copies MCAP and removes events from copy.",
     )
     delete_parser.add_argument(
@@ -1083,14 +869,6 @@ def add_parser(subparsers) -> None:
               --before X      Clip from (event_time - X) to event_time
               --after X       Clip from event_time to (event_time + X)
               --before X --after Y  Clip from (event_time - X) to (event_time + Y)
-
-            If no time options are specified, defaults to --margin 5.
-
-            Example:
-              pybag event clip recording.mcap "collision" --margin 5
-              pybag event clip recording.mcap "start" --before 2
-              pybag event clip recording.mcap "end" --after 10
-              pybag event clip recording.mcap "incident" --before 5 --after 10
         """),
     )
     clip_parser.add_argument("input", help="Path to input MCAP file (*.mcap)")
